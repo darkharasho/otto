@@ -49,3 +49,43 @@ describe('buildShellTools', () => {
     expect(byName.get('shell_wait')!.actionClassFor).toBeUndefined();
   });
 });
+
+import { buildScreenshotTool } from './tools';
+
+describe('buildScreenshotTool', () => {
+  it('returns a tool named screenshot with static read class', () => {
+    const t = buildScreenshotTool();
+    expect(t.name).toBe('screenshot');
+    expect(t.actionClass).toBe('read');
+    expect(t.actionClassFor).toBeUndefined();
+    expect(t.denyPatterns).toBeUndefined();
+  });
+
+  it('schema accepts no args (region optional)', () => {
+    const t = buildScreenshotTool();
+    expect(t.schema.parse({})).toEqual({});
+  });
+
+  it('schema accepts a well-formed region', () => {
+    const t = buildScreenshotTool();
+    expect(t.schema.parse({ region: { x: 10, y: 20, w: 30, h: 40 } })).toEqual({
+      region: { x: 10, y: 20, w: 30, h: 40 },
+    });
+  });
+
+  it('schema rejects negative coords', () => {
+    const t = buildScreenshotTool();
+    expect(() => t.schema.parse({ region: { x: -1, y: 0, w: 10, h: 10 } })).toThrow();
+  });
+
+  it('schema rejects zero or negative dimensions', () => {
+    const t = buildScreenshotTool();
+    expect(() => t.schema.parse({ region: { x: 0, y: 0, w: 0, h: 10 } })).toThrow();
+    expect(() => t.schema.parse({ region: { x: 0, y: 0, w: 10, h: -1 } })).toThrow();
+  });
+
+  it('direct run throws (handler intercepts)', async () => {
+    const t = buildScreenshotTool();
+    await expect(t.run({})).rejects.toThrow(/SDK handler/);
+  });
+});

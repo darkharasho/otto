@@ -150,3 +150,25 @@ export function buildShellTools(getRegistry: () => ProcessRegistry): OttoTool[] 
 }
 
 export const stubTools: OttoTool[] = [echoTool, fakeMutateTool, fakeWipeTool];
+
+export function buildScreenshotTool(): OttoTool {
+  return {
+    name: 'screenshot',
+    description:
+      'Capture the active monitor (or an optional region of it) as a PNG. Returns { path, width, height, monitor }. The captured image is attached so the model can see it.',
+    actionClass: 'read',
+    schema: z.object({
+      region: z
+        .object({
+          x: z.number().int().nonnegative(),
+          y: z.number().int().nonnegative(),
+          w: z.number().int().positive(),
+          h: z.number().int().positive(),
+        })
+        .optional(),
+    }),
+    async run(_input) {
+      throw new Error('screenshot must be invoked via the SDK handler');
+    },
+  };
+}
