@@ -37,7 +37,8 @@ export class SessionManager {
     private readonly repo: Repo,
     private readonly sdk: SdkClient,
     private readonly defaultModel: string,
-    private readonly emit: Emitter
+    private readonly emit: Emitter,
+    private readonly onAssistantMessageId: (messageId: string) => void = () => {}
   ) {}
 
   getActiveSessionId(): string | null {
@@ -75,6 +76,7 @@ export class SessionManager {
     this.aborts.set(sessionId, controller);
     this.activeSessionId = sessionId;
 
+    this.onAssistantMessageId(assistant.id);
     this.emit({ type: 'message-start', sessionId, messageId: assistant.id });
 
     try {
