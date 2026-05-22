@@ -135,7 +135,9 @@ export function createRealSdkClient(): SdkClient {
             allowedTools,
             mcpServers: { 'otto-tools': ottoMcp },
             abortController,
-            resume: sessionId,
+            // Skeleton limitation: each turn is a fresh SDK session.
+            // Proper session continuity (capture init message id, resume later)
+            // is a follow-up.
           },
         });
         try {

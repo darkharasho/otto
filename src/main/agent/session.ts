@@ -1,5 +1,6 @@
 import type { Repo } from '../db/repo';
 import type { SessionEvent, StructuredError } from '@shared/ipc-contract';
+import { logger } from '../logger';
 import {
   newAssistantMessage,
   newUserMessage,
@@ -133,6 +134,7 @@ export class SessionManager {
       } else {
         assistant.errored = true;
         const structured = toStructuredError(err);
+        logger.error('SDK turn failed', err);
         this.emit({ type: 'error', sessionId, error: structured });
       }
     } finally {
