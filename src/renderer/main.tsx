@@ -1,4 +1,6 @@
 import { createRoot } from 'react-dom/client';
+import { App } from './App';
+import './index.css';
 
 const root = createRoot(document.getElementById('root')!);
-root.render(<div className="p-4">Otto skeleton boot</div>);
+root.render(<App />);
