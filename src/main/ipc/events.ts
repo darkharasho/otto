@@ -1,8 +1,19 @@
 import { BrowserWindow } from 'electron';
-import { SESSION_EVENT_CHANNEL, type SessionEvent } from '@shared/ipc-contract';
+import {
+  SESSION_EVENT_CHANNEL,
+  AUTONOMY_EVENT_CHANNEL,
+  type SessionEvent,
+  type AutonomyEvent,
+} from '@shared/ipc-contract';
 
 export function emitSessionEvent(event: SessionEvent): void {
   for (const w of BrowserWindow.getAllWindows()) {
     if (!w.isDestroyed()) w.webContents.send(SESSION_EVENT_CHANNEL, event);
+  }
+}
+
+export function emitAutonomyEvent(event: AutonomyEvent): void {
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (!w.isDestroyed()) w.webContents.send(AUTONOMY_EVENT_CHANNEL, event);
   }
 }

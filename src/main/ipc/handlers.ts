@@ -2,6 +2,8 @@ import { ipcMain } from 'electron';
 import type { Repo } from '../db/repo';
 import type { SessionManager } from '../agent/session';
 import type { WindowManager } from '../window';
+import type { DecisionBroker } from '../autonomy/decision-broker';
+import type { Settings } from '../autonomy/settings';
 import type {
   SessionStartArgs,
   SessionStartResult,
@@ -9,15 +11,18 @@ import type {
   SessionCancelArgs,
   SessionLoadArgs,
 } from '@shared/ipc-contract';
-import type { Message, SessionMeta } from '@shared/messages';
+import type { AutonomyMode, Message, SessionMeta } from '@shared/messages';
+import { emitAutonomyEvent } from './events';
 import { logger } from '../logger';
 
 export function registerIpcHandlers(deps: {
   repo: Repo;
   sessions: SessionManager;
   window: WindowManager;
+  broker: DecisionBroker;
+  settings: Settings;
 }): void {
-  const { repo, sessions, window } = deps;
+  const { repo, sessions, window, broker, settings } = deps;
 
   ipcMain.handle('session.start', async (_e, args: SessionStartArgs): Promise<SessionStartResult> => {
     return sessions.start(args);
@@ -41,6 +46,33 @@ export function registerIpcHandlers(deps: {
 
   ipcMain.handle('window.setMode', async (_e, args: { mode: 'bar' | 'panel' }): Promise<void> => {
     window.setMode(args.mode);
+  });
+
+  ipcMain.handle(
+    'autonomy.decide',
+    async (
+      _e,
+      args: { decisionId: string; decision: 'approve' | 'approve-session' | 'deny' }
+    ): Promise<void> => {
+      broker.resolve(args.decisionId, args.decision);
+    }
+  );
+
+  ipcMain.handle('autonomy.getMode', async (): Promise<AutonomyMode> => settings.getMode());
+
+  ipcMain.handle('autonomy.setMode', async (_e, args: { mode: AutonomyMode }): Promise<void> => {
+    try {
+      await settings.setMode(args.mode);
+    } catch (err) {
+      logger.error('failed to set mode', err);
+      emitAutonomyEvent({ type: 'mode-changed', mode: settings.getMode() });
+      throw err;
+    }
+  });
+
+  settings.onChange((mode) => {
+    broker.setMode(mode);
+    emitAutonomyEvent({ type: 'mode-changed', mode });
   });
 
   logger.info('ipc handlers registered');
