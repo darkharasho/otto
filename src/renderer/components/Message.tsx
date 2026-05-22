@@ -1,7 +1,17 @@
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import type { Message as MessageType, ContentBlock } from '@shared/messages';
 import { ToolCallCard } from './ToolCallCard';
 import { ApprovalCard } from './ApprovalCard';
 import { ProcessCard } from './ProcessCard';
+
+function MarkdownBlock({ text }: { text: string }) {
+  return (
+    <div className="md text-sm leading-relaxed">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+    </div>
+  );
+}
 
 interface Props {
   message: MessageType;
@@ -57,7 +67,7 @@ function renderBlocks(content: ContentBlock[]) {
       continue;
     }
     if (textBuffer) {
-      elements.push(<p key={`t-${i}`} className="text-sm leading-relaxed whitespace-pre-wrap">{textBuffer}</p>);
+      elements.push(<MarkdownBlock key={`t-${i}`} text={textBuffer} />);
       textBuffer = '';
     }
     if (b.type === 'tool_use') {
@@ -88,7 +98,7 @@ function renderBlocks(content: ContentBlock[]) {
     }
   }
   if (textBuffer) {
-    elements.push(<p key="t-tail" className="text-sm leading-relaxed whitespace-pre-wrap">{textBuffer}</p>);
+    elements.push(<MarkdownBlock key="t-tail" text={textBuffer} />);
   }
   return <>{elements}</>;
 }
