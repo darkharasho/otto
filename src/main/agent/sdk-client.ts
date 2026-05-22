@@ -1,11 +1,14 @@
 import type { SdkClient, SdkStreamEvent, SdkTurn } from './session';
-import { buildShellTools, stubTools, type OttoTool } from './tools';
+import { buildScreenshotTool, buildShellTools, stubTools, type OttoTool } from './tools';
 import type { DecisionBroker } from '../autonomy/decision-broker';
 import type { ProcessRegistry } from '../shell/process-registry';
 import { logger } from '../logger';
 import { classify, denyReason } from '../shell/command-class';
 import { exec } from '../shell/executor';
 import { getPlatformAdapter } from '../platform';
+import { capture } from '../screenshot/executor';
+import { downscaleIfNeeded } from '../screenshot/processor';
+import { save } from '../screenshot/store';
 import { tmpdir } from 'node:os';
 
 // The Agent SDK ships as ESM; loading it via `require()` from the bundled
@@ -29,6 +32,7 @@ export interface RealSdkClientDeps {
   /** Returns the messageId of the assistant message being authored for the current turn. */
   currentMessageId: () => string;
   getRegistry: () => ProcessRegistry;
+  getConfigDir: () => string;
 }
 
 interface ToolCtx {
@@ -36,6 +40,7 @@ interface ToolCtx {
   sessionId: string;
   messageId: string;
   getRegistry: () => ProcessRegistry;
+  getConfigDir: () => string;
 }
 
 /**
@@ -59,7 +64,11 @@ interface ToolCtx {
  */
 function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
   const { createSdkMcpServer, tool } = sdk;
-  const allTools: OttoTool[] = [...stubTools, ...buildShellTools(ctx.getRegistry)];
+  const allTools: OttoTool[] = [
+    ...stubTools,
+    ...buildShellTools(ctx.getRegistry),
+    buildScreenshotTool(),
+  ];
   const sdkTools = allTools.map((t) => {
     const shape = (t.schema as unknown as { shape?: Record<string, unknown> }).shape;
     if (!shape) {
@@ -109,6 +118,32 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
           };
         }
 
+        if (t.name === 'screenshot') {
+          const sArgs = args as { region?: { x: number; y: number; w: number; h: number } };
+          const captured = await capture(sArgs, getPlatformAdapter());
+          const downscaled = await downscaleIfNeeded(captured.bytes, 4096);
+          const savedPath = await save(captured.bytes, ctx.sessionId, ctx.getConfigDir());
+          const meta = {
+            path: savedPath,
+            width: captured.width,
+            height: captured.height,
+            monitor: captured.monitor,
+          };
+          return {
+            content: [
+              {
+                type: 'image' as const,
+                source: {
+                  type: 'base64' as const,
+                  media_type: 'image/png' as const,
+                  data: downscaled.bytes.toString('base64'),
+                },
+              },
+              { type: 'text' as const, text: JSON.stringify(meta) },
+            ],
+          };
+        }
+
         const result = await t.run(args);
         return {
           content: [
@@ -128,6 +163,7 @@ function createFakeSdkClient(deps?: {
   broker?: DecisionBroker;
   currentMessageId?: () => string;
   getRegistry?: () => ProcessRegistry;
+  getConfigDir?: () => string;
 }): SdkClient {
   let counter = 0;
   return {
@@ -222,7 +258,11 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
   // SDK-defined tools registered via MCP appear to the model with the prefix
   // `mcp__<server-name>__<tool-name>`. Whitelist them via `allowedTools` so they
   // don't trigger permission prompts during the skeleton smoke.
-  const allToolsForAllow: OttoTool[] = [...stubTools, ...buildShellTools(deps.getRegistry)];
+  const allToolsForAllow: OttoTool[] = [
+    ...stubTools,
+    ...buildShellTools(deps.getRegistry),
+    buildScreenshotTool(),
+  ];
   const allowedTools = allToolsForAllow.map((t) => `mcp__otto-tools__${t.name}`);
 
   return {
@@ -256,6 +296,7 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
           sessionId,
           messageId: deps.currentMessageId(),
           getRegistry: deps.getRegistry,
+          getConfigDir: deps.getConfigDir,
         });
         const iter = sdk.query({
           prompt: text,

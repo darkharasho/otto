@@ -73,6 +73,7 @@ async function startElectron(): Promise<void> {
     broker,
     currentMessageId: () => currentMessageId ?? '',
     getRegistry: () => registry,
+    getConfigDir: () => ottoConfigDir,
   });
   const sessions = new SessionManager(
     repo,
