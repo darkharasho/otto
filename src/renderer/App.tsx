@@ -14,6 +14,7 @@ export function App() {
   const windowMode = useOttoStore((s) => s.windowMode);
   const activeSession = useOttoStore((s) => s.activeSession);
   const sessions = useOttoStore((s) => s.sessions);
+  const mode = useOttoStore((s) => s.mode);
   const setWindowMode = useOttoStore((s) => s.setWindowMode);
   const beginSession = useOttoStore((s) => s.beginSession);
   const loadSession = useOttoStore((s) => s.loadSession);
@@ -28,6 +29,18 @@ export function App() {
   useEffect(() => {
     void ipc.invoke('session.list', undefined).then(setSessions);
   }, [setSessions]);
+
+  useEffect(() => {
+    void ipc.invoke('autonomy.getMode', undefined).then((m) => useOttoStore.getState().setMode(m));
+  }, []);
+
+  useEffect(() => {
+    return ipc.onAutonomyEvent((e) => {
+      if (e.type === 'mode-changed') {
+        useOttoStore.getState().setMode(e.mode);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -101,6 +114,7 @@ export function App() {
               model={MODEL}
               sessionId={activeSession?.id ?? null}
               streaming={activeSession?.streaming ?? false}
+              mode={mode}
             />
           </div>
         }
