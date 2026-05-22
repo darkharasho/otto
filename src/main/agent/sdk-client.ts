@@ -1,6 +1,7 @@
 import type { SdkClient, SdkStreamEvent, SdkTurn } from './session';
-import { stubTools } from './tools';
+import { buildShellTools, stubTools, type OttoTool } from './tools';
 import type { DecisionBroker } from '../autonomy/decision-broker';
+import type { ProcessRegistry } from '../shell/process-registry';
 import { logger } from '../logger';
 
 // The Agent SDK ships as ESM; loading it via `require()` from the bundled
@@ -23,12 +24,14 @@ export interface RealSdkClientDeps {
   broker: DecisionBroker;
   /** Returns the messageId of the assistant message being authored for the current turn. */
   currentMessageId: () => string;
+  getRegistry: () => ProcessRegistry;
 }
 
 interface ToolCtx {
   broker: DecisionBroker;
   sessionId: string;
   messageId: string;
+  getRegistry: () => ProcessRegistry;
 }
 
 /**
@@ -52,7 +55,8 @@ interface ToolCtx {
  */
 function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
   const { createSdkMcpServer, tool } = sdk;
-  const sdkTools = stubTools.map((t) => {
+  const allTools: OttoTool[] = [...stubTools, ...buildShellTools(ctx.getRegistry)];
+  const sdkTools = allTools.map((t) => {
     const shape = (t.schema as unknown as { shape?: Record<string, unknown> }).shape;
     if (!shape) {
       throw new Error(`OttoTool ${t.name} schema must be a z.object(...) so we can pull .shape`);
@@ -67,12 +71,13 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
             ? String((_extra as { toolUseId?: unknown }).toolUseId ?? '')
             : '') || `${t.name}-${Date.now().toString(36)}`;
 
+        const cls = t.actionClassFor ? t.actionClassFor(args) : t.actionClass;
         const outcome = await ctx.broker.decide({
           sessionId: ctx.sessionId,
           messageId: ctx.messageId,
           callId,
           toolName: t.name,
-          actionClass: t.actionClass,
+          actionClass: cls,
           input: args,
           denyPatternsFn: t.denyPatterns ? (i: unknown) => t.denyPatterns!(i) : null,
         });
@@ -81,6 +86,22 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
           return {
             isError: true,
             content: [{ type: 'text' as const, text: `Denied by Otto autonomy policy` }],
+          };
+        }
+
+        if (t.name === 'shell.spawn') {
+          const spawnArgs = args as { command: string; cwd?: string };
+          const cwd = spawnArgs.cwd ?? process.env.HOME ?? '/';
+          const p = ctx.getRegistry().spawn({
+            sessionId: ctx.sessionId,
+            messageId: ctx.messageId,
+            command: spawnArgs.command,
+            cwd,
+          });
+          return {
+            content: [
+              { type: 'text' as const, text: JSON.stringify({ handle: p.handle, pid: p.pid }) },
+            ],
           };
         }
 
@@ -99,7 +120,11 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
   return createSdkMcpServer({ name: 'otto-tools', version: '0.1.0', tools: sdkTools });
 }
 
-function createFakeSdkClient(deps?: { broker?: DecisionBroker; currentMessageId?: () => string }): SdkClient {
+function createFakeSdkClient(deps?: {
+  broker?: DecisionBroker;
+  currentMessageId?: () => string;
+  getRegistry?: () => ProcessRegistry;
+}): SdkClient {
   let counter = 0;
   return {
     async startSession() {
@@ -151,7 +176,8 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
   // SDK-defined tools registered via MCP appear to the model with the prefix
   // `mcp__<server-name>__<tool-name>`. Whitelist them via `allowedTools` so they
   // don't trigger permission prompts during the skeleton smoke.
-  const allowedTools = stubTools.map((t) => `mcp__otto-tools__${t.name}`);
+  const allToolsForAllow: OttoTool[] = [...stubTools, ...buildShellTools(deps.getRegistry)];
+  const allowedTools = allToolsForAllow.map((t) => `mcp__otto-tools__${t.name}`);
 
   return {
     async startSession({ resume }) {
@@ -183,6 +209,7 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
           broker: deps.broker,
           sessionId,
           messageId: deps.currentMessageId(),
+          getRegistry: deps.getRegistry,
         });
         const iter = sdk.query({
           prompt: text,
