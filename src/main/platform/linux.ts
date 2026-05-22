@@ -71,7 +71,7 @@ export class LinuxAdapter implements PlatformAdapter {
             '-o',
             tmp,
           ]
-        : ['-bnf', '-o', tmp];
+        : ['-bnm', '-o', tmp];
 
       await this.runSpectacle(args, 5_000);
 
