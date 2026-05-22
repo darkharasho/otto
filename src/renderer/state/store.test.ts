@@ -217,3 +217,131 @@ describe('store: tool approval events', () => {
     });
   });
 });
+
+describe('store: shell process events', () => {
+  beforeEach(() => {
+    useOttoStore.getState().reset();
+    useOttoStore.getState().beginSession('s1');
+    useOttoStore.getState().applyEvent({
+      type: 'message-start',
+      sessionId: 's1',
+      messageId: 'm1',
+    });
+  });
+
+  it('process-spawned appends a process_output block with status running', () => {
+    useOttoStore.getState().applyEvent({
+      type: 'process-spawned',
+      sessionId: 's1',
+      messageId: 'm1',
+      handle: 'h1',
+      pid: 1234,
+      command: 'sleep 30',
+      cwd: '/tmp',
+    });
+    const blocks = useOttoStore.getState().activeSession!.messages[0]!.content;
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: 'process_output',
+      handle: 'h1',
+      command: 'sleep 30',
+      cwd: '/tmp',
+      status: 'running',
+      lines: [],
+      exitCode: null,
+    });
+  });
+
+  it('process-stdout appends a stdout line to the matching block', () => {
+    useOttoStore.getState().applyEvent({
+      type: 'process-spawned',
+      sessionId: 's1',
+      messageId: 'm1',
+      handle: 'h1',
+      pid: 1,
+      command: 'x',
+      cwd: '/tmp',
+    });
+    useOttoStore.getState().applyEvent({
+      type: 'process-stdout',
+      sessionId: 's1',
+      messageId: 'm1',
+      handle: 'h1',
+      data: 'hello',
+    });
+    const blocks = useOttoStore.getState().activeSession!.messages[0]!.content;
+    const b = blocks[0]!;
+    if (b.type !== 'process_output') throw new Error('unexpected block');
+    expect(b.lines).toEqual([{ stream: 'stdout', data: 'hello' }]);
+  });
+
+  it('process-stderr appends a stderr line', () => {
+    useOttoStore.getState().applyEvent({
+      type: 'process-spawned',
+      sessionId: 's1',
+      messageId: 'm1',
+      handle: 'h1',
+      pid: 1,
+      command: 'x',
+      cwd: '/tmp',
+    });
+    useOttoStore.getState().applyEvent({
+      type: 'process-stderr',
+      sessionId: 's1',
+      messageId: 'm1',
+      handle: 'h1',
+      data: 'oops',
+    });
+    const blocks = useOttoStore.getState().activeSession!.messages[0]!.content;
+    const b = blocks[0]!;
+    if (b.type !== 'process_output') throw new Error('unexpected block');
+    expect(b.lines).toEqual([{ stream: 'stderr', data: 'oops' }]);
+  });
+
+  it('process-exited sets status to exited with exitCode', () => {
+    useOttoStore.getState().applyEvent({
+      type: 'process-spawned',
+      sessionId: 's1',
+      messageId: 'm1',
+      handle: 'h1',
+      pid: 1,
+      command: 'x',
+      cwd: '/tmp',
+    });
+    useOttoStore.getState().applyEvent({
+      type: 'process-exited',
+      sessionId: 's1',
+      messageId: 'm1',
+      handle: 'h1',
+      exitCode: 0,
+      signal: null,
+    });
+    const blocks = useOttoStore.getState().activeSession!.messages[0]!.content;
+    const b = blocks[0]!;
+    if (b.type !== 'process_output') throw new Error('unexpected block');
+    expect(b.status).toBe('exited');
+    expect(b.exitCode).toBe(0);
+  });
+
+  it('process-killed sets status to killed', () => {
+    useOttoStore.getState().applyEvent({
+      type: 'process-spawned',
+      sessionId: 's1',
+      messageId: 'm1',
+      handle: 'h1',
+      pid: 1,
+      command: 'x',
+      cwd: '/tmp',
+    });
+    useOttoStore.getState().applyEvent({
+      type: 'process-killed',
+      sessionId: 's1',
+      messageId: 'm1',
+      handle: 'h1',
+    });
+    const blocks = useOttoStore.getState().activeSession!.messages[0]!.content;
+    const b = blocks[0]!;
+    if (b.type !== 'process_output') throw new Error('unexpected block');
+    expect(b.status).toBe('killed');
+  });
+});

@@ -192,6 +192,77 @@ export const useOttoStore = create<OttoState>((set, get) => ({
         set({ activeSession: next });
         return;
       }
+      case 'process-spawned': {
+        const next = updateAssistant(session, event.messageId, (m) => ({
+          ...m,
+          content: [
+            ...m.content,
+            {
+              type: 'process_output' as const,
+              handle: event.handle,
+              command: event.command,
+              cwd: event.cwd,
+              lines: [],
+              status: 'running' as const,
+              exitCode: null,
+            },
+          ],
+        }));
+        set({ activeSession: next });
+        return;
+      }
+      case 'process-stdout': {
+        const next = updateAssistant(session, event.messageId, (m) => ({
+          ...m,
+          content: m.content.map((b) =>
+            b.type === 'process_output' && b.handle === event.handle
+              ? { ...b, lines: [...b.lines, { stream: 'stdout' as const, data: event.data }] }
+              : b
+          ),
+        }));
+        set({ activeSession: next });
+        return;
+      }
+      case 'process-stderr': {
+        const next = updateAssistant(session, event.messageId, (m) => ({
+          ...m,
+          content: m.content.map((b) =>
+            b.type === 'process_output' && b.handle === event.handle
+              ? { ...b, lines: [...b.lines, { stream: 'stderr' as const, data: event.data }] }
+              : b
+          ),
+        }));
+        set({ activeSession: next });
+        return;
+      }
+      case 'process-exited': {
+        const next = updateAssistant(session, event.messageId, (m) => ({
+          ...m,
+          content: m.content.map((b) =>
+            b.type === 'process_output' && b.handle === event.handle
+              ? {
+                  ...b,
+                  status: (b.status === 'killed' ? 'killed' : 'exited') as 'exited' | 'killed',
+                  exitCode: event.exitCode,
+                }
+              : b
+          ),
+        }));
+        set({ activeSession: next });
+        return;
+      }
+      case 'process-killed': {
+        const next = updateAssistant(session, event.messageId, (m) => ({
+          ...m,
+          content: m.content.map((b) =>
+            b.type === 'process_output' && b.handle === event.handle
+              ? { ...b, status: 'killed' as const }
+              : b
+          ),
+        }));
+        set({ activeSession: next });
+        return;
+      }
       case 'message-end':
         return;
       case 'error': {
