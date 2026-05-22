@@ -45,7 +45,8 @@ export type IpcRequest =
       result: void;
     }
   | { channel: 'autonomy.getMode'; args: void; result: AutonomyMode }
-  | { channel: 'autonomy.setMode'; args: { mode: AutonomyMode }; result: void };
+  | { channel: 'autonomy.setMode'; args: { mode: AutonomyMode }; result: void }
+  | { channel: 'shell.kill'; args: { handle: string }; result: { killed: boolean } };
 
 export type IpcChannel = IpcRequest['channel'];
 
@@ -84,7 +85,19 @@ export type SessionEvent =
       name: string;
       input: unknown;
       reason: string;
-    };
+    }
+  | { type: 'process-spawned'; sessionId: string; messageId: string; handle: string; pid: number; command: string; cwd: string }
+  | { type: 'process-stdout'; sessionId: string; messageId: string; handle: string; data: string }
+  | { type: 'process-stderr'; sessionId: string; messageId: string; handle: string; data: string }
+  | {
+      type: 'process-exited';
+      sessionId: string;
+      messageId: string;
+      handle: string;
+      exitCode: number | null;
+      signal: string | null;
+    }
+  | { type: 'process-killed'; sessionId: string; messageId: string; handle: string };
 
 export const SESSION_EVENT_CHANNEL = 'session.event';
 

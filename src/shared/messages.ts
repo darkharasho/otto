@@ -15,7 +15,16 @@ export type ContentBlock =
       reason: string;
       decision: 'pending' | 'approved' | 'approved-session' | 'denied';
     }
-  | { type: 'tool_denied'; callId: string; name: string; input: unknown; reason: string };
+  | { type: 'tool_denied'; callId: string; name: string; input: unknown; reason: string }
+  | {
+      type: 'process_output';
+      handle: string;
+      command: string;
+      cwd: string;
+      lines: Array<{ stream: 'stdout' | 'stderr'; data: string }>;
+      status: 'running' | 'exited' | 'killed';
+      exitCode: number | null;
+    };
 
 export interface BaseMessage {
   id: string;
