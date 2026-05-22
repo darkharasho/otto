@@ -32,6 +32,7 @@ async function startElectron(): Promise<void> {
   const { ToggleServer } = await import('./toggle-server');
   const { Settings } = await import('./autonomy/settings');
   const { DecisionBroker } = await import('./autonomy/decision-broker');
+  const { ProcessRegistry } = await import('./shell/process-registry');
 
   const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
 
@@ -63,9 +64,15 @@ async function startElectron(): Promise<void> {
   let currentMessageId: string | null = null;
   const broker = new DecisionBroker(settings.getMode(), emitSessionEvent);
 
+  const registry = new ProcessRegistry(
+    emitSessionEvent,
+    (command, cwd) => platform.shell.spawnShell(command, cwd)
+  );
+
   const sdk = createRealSdkClient({
     broker,
     currentMessageId: () => currentMessageId ?? '',
+    getRegistry: () => registry,
   });
   const sessions = new SessionManager(
     repo,
@@ -80,7 +87,7 @@ async function startElectron(): Promise<void> {
   const preloadPath = path.join(app.getAppPath(), 'out', 'preload', 'index.js');
   window.create(preloadPath, rendererEntry());
 
-  registerIpcHandlers({ repo, sessions, window, broker, settings });
+  registerIpcHandlers({ repo, sessions, window, broker, settings, registry });
 
   const onToggle = () => {
     const mode = shouldResume(repo, sessions) ? 'panel' : 'bar';
@@ -118,6 +125,7 @@ async function startElectron(): Promise<void> {
   app.on('before-quit', () => {
     hotkey.unregisterAll();
     void toggleServer.stop();
+    void registry.killAll();
     db.close();
   });
 
