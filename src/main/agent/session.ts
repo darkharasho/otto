@@ -14,7 +14,8 @@ export type SdkStreamEvent =
   | { type: 'tool-call-start'; callId: string; name: string; input: unknown }
   | { type: 'tool-call-result'; callId: string; result: unknown; isError: boolean }
   | { type: 'message-end' }
-  | { type: 'done' };
+  | { type: 'done' }
+  | { type: 'session-id'; id: string };
 
 export interface SdkTurn {
   signal: AbortSignal;
@@ -23,7 +24,7 @@ export interface SdkTurn {
 
 export interface SdkClient {
   startSession(args: { resume?: string; model: string }): Promise<{ id: string }>;
-  sendTurn(sessionId: string, text: string, signal: AbortSignal): SdkTurn;
+  sendTurn(sessionId: string, text: string, signal: AbortSignal, resumeId?: string): SdkTurn;
 }
 
 type Emitter = (event: SessionEvent) => void;
@@ -77,12 +78,17 @@ export class SessionManager {
     this.emit({ type: 'message-start', sessionId, messageId: assistant.id });
 
     try {
-      const turn = this.sdk.sendTurn(sessionId, text, controller.signal);
+      const resumeId = this.repo.getSession(sessionId)?.sdkSessionId ?? undefined;
+      const turn = this.sdk.sendTurn(sessionId, text, controller.signal, resumeId);
       for await (const ev of turn.events()) {
         switch (ev.type) {
           case 'message-start':
             // already emitted
             break;
+          case 'session-id': {
+            this.repo.setSdkSessionId(sessionId, ev.id);
+            break;
+          }
           case 'text-delta': {
             appendText(assistant.content, ev.text);
             this.emit({ type: 'text-delta', sessionId, messageId: assistant.id, text: ev.text });

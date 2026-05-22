@@ -31,8 +31,13 @@ CREATE TABLE IF NOT EXISTS schema_version (
 );
 `;
 
+const MIGRATION_002_SDK_SESSION_ID = `
+ALTER TABLE sessions ADD COLUMN sdk_session_id TEXT;
+`;
+
 const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 1, sql: MIGRATION_001_INIT },
+  { version: 2, sql: MIGRATION_002_SDK_SESSION_ID },
 ];
 
 export function openDatabase(dbPath: string): DB {

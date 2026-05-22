@@ -17,11 +17,11 @@ function freshDir(): string {
 }
 
 describe('openDatabase', () => {
-  it('creates schema on first open and reports version 1', () => {
+  it('creates schema on first open and reports latest version', () => {
     const dir = freshDir();
     const db = openDatabase(path.join(dir, 'otto.db'));
-    const row = db.prepare('SELECT version FROM schema_version').get() as { version: number };
-    expect(row.version).toBe(1);
+    const row = db.prepare('SELECT MAX(version) AS v FROM schema_version').get() as { v: number };
+    expect(row.v).toBe(2);
     db.close();
   });
 
@@ -30,8 +30,19 @@ describe('openDatabase', () => {
     const p = path.join(dir, 'otto.db');
     openDatabase(p).close();
     const db = openDatabase(p);
-    const row = db.prepare('SELECT version FROM schema_version').get() as { version: number };
-    expect(row.version).toBe(1);
+    const rows = db
+      .prepare('SELECT version FROM schema_version ORDER BY version')
+      .all() as { version: number }[];
+    // Each migration should have been applied exactly once.
+    expect(rows.map((r) => r.version)).toEqual([1, 2]);
+    db.close();
+  });
+
+  it('exposes sdk_session_id column on sessions after v2 migration', () => {
+    const dir = freshDir();
+    const db = openDatabase(path.join(dir, 'otto.db'));
+    const cols = db.prepare("PRAGMA table_info(sessions)").all() as { name: string }[];
+    expect(cols.map((c) => c.name)).toContain('sdk_session_id');
     db.close();
   });
 

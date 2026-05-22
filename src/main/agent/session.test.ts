@@ -120,6 +120,26 @@ describe('SessionManager', () => {
     expect(assistant && 'cancelled' in assistant && assistant.cancelled).toBe(true);
   });
 
+  it('persists the sdk session id when received, and passes it as resume on the next turn', async () => {
+    const sendTurnSpy = vi.fn((_sid: string, _text: string, signal: AbortSignal, _resumeId?: string): SdkTurn => ({
+      signal,
+      async *events(): AsyncGenerator<SdkStreamEvent> {
+        yield { type: 'message-start' };
+        yield { type: 'session-id', id: 'sdk-1' };
+        yield { type: 'text-delta', text: 'ok' };
+        yield { type: 'message-end' };
+        yield { type: 'done' };
+      },
+    }));
+    fakeSdk.sendTurn = sendTurnSpy;
+    const { sessionId } = await manager.start({});
+    await manager.send({ sessionId, text: 'first' });
+    expect(repo.getSession(sessionId)?.sdkSessionId).toBe('sdk-1');
+    expect(sendTurnSpy.mock.calls[0]![3]).toBeUndefined();
+    await manager.send({ sessionId, text: 'second' });
+    expect(sendTurnSpy.mock.calls[1]![3]).toBe('sdk-1');
+  });
+
   it('sets session title from the first user message', async () => {
     const { sessionId } = await manager.start({});
     await manager.send({ sessionId, text: 'first prompt here' });

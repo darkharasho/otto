@@ -15,6 +15,7 @@ interface SessionRow {
   last_active: number;
   model: string;
   status: 'active' | 'idle' | 'ended';
+  sdk_session_id: string | null;
 }
 
 interface MessageRow {
@@ -32,10 +33,16 @@ export class Repo {
   createSession(args: CreateSessionArgs): void {
     this.db
       .prepare(
-        `INSERT INTO sessions (id, title, created_at, last_active, model, status)
-         VALUES (?, NULL, ?, ?, ?, 'active')`
+        `INSERT INTO sessions (id, title, created_at, last_active, model, status, sdk_session_id)
+         VALUES (?, NULL, ?, ?, ?, 'active', NULL)`
       )
       .run(args.id, args.createdAt, args.lastActive, args.model);
+  }
+
+  setSdkSessionId(ottoSessionId: string, sdkSessionId: string): void {
+    this.db
+      .prepare(`UPDATE sessions SET sdk_session_id = ? WHERE id = ?`)
+      .run(sdkSessionId, ottoSessionId);
   }
 
   setSessionTitleIfMissing(id: string, title: string): void {
@@ -97,6 +104,7 @@ function rowToMeta(row: SessionRow): SessionMeta {
     lastActive: row.last_active,
     model: row.model,
     status: row.status,
+    sdkSessionId: row.sdk_session_id ?? null,
   };
 }
 

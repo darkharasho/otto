@@ -38,6 +38,13 @@ describe('Repo.sessions', () => {
     expect(s!.status).toBe('ended');
   });
 
+  it('persists and reads sdk_session_id', () => {
+    repo.createSession({ id: 's1', model: 'm', createdAt: 1, lastActive: 1 });
+    expect(repo.getSession('s1')?.sdkSessionId).toBeNull();
+    repo.setSdkSessionId('s1', 'sdk-abc');
+    expect(repo.getSession('s1')?.sdkSessionId).toBe('sdk-abc');
+  });
+
   it('sets a title once', () => {
     repo.createSession({ id: 's1', model: 'm', createdAt: 1, lastActive: 1 });
     repo.setSessionTitleIfMissing('s1', 'first prompt');

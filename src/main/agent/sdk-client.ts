@@ -68,9 +68,11 @@ function createFakeSdkClient(): SdkClient {
       counter += 1;
       return { id: `fake-${counter}` };
     },
-    sendTurn(_sid, text, signal) {
+    sendTurn(_sid, text, signal, _resumeId) {
+      const fakeSdkId = `fake-sdk-${(counter += 1)}`;
       async function* events(): AsyncIterable<SdkStreamEvent> {
         yield { type: 'message-start' };
+        yield { type: 'session-id', id: fakeSdkId };
         for (const ch of `echo: ${text}`) {
           if (signal.aborted) return;
           yield { type: 'text-delta', text: ch };
@@ -112,7 +114,7 @@ export function createRealSdkClient(): SdkClient {
       return { id };
     },
 
-    sendTurn(sessionId, text, signal): SdkTurn {
+    sendTurn(sessionId, text, signal, resumeId): SdkTurn {
       // The SDK takes an AbortController, not a raw AbortSignal. Bridge by
       // creating a controller and aborting it when the upstream signal fires.
       const abortController = new AbortController();
@@ -135,9 +137,10 @@ export function createRealSdkClient(): SdkClient {
             allowedTools,
             mcpServers: { 'otto-tools': ottoMcp },
             abortController,
-            // Skeleton limitation: each turn is a fresh SDK session.
-            // Proper session continuity (capture init message id, resume later)
-            // is a follow-up.
+            // Session continuity: pass a captured SDK session id to resume the
+            // prior conversation. On the first turn this is undefined; we'll
+            // capture the id from the init system message below.
+            ...(resumeId ? { resume: resumeId } : {}),
           },
         });
         try {
@@ -173,7 +176,11 @@ export function createRealSdkClient(): SdkClient {
  */
 function mapSdkMessage(msg: unknown): SdkStreamEvent[] {
   if (!msg || typeof msg !== 'object') return [];
-  const m = msg as { type?: string };
+  const m = msg as { type?: string; subtype?: string; session_id?: unknown };
+
+  if (m.type === 'system' && m.subtype === 'init' && typeof m.session_id === 'string') {
+    return [{ type: 'session-id', id: m.session_id }];
+  }
 
   if (m.type === 'assistant') {
     const am = msg as {

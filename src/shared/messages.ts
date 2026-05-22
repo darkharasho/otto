@@ -34,6 +34,7 @@ export interface SessionMeta {
   lastActive: number;
   model: string;
   status: 'active' | 'idle' | 'ended';
+  sdkSessionId: string | null;
 }
 
 let counter = 0;
