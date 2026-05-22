@@ -75,8 +75,6 @@ export class SessionManager {
 
     this.emit({ type: 'message-start', sessionId, messageId: assistant.id });
 
-    const pendingToolCalls = new Map<string, { name: string; input: unknown }>();
-
     try {
       const turn = this.sdk.sendTurn(sessionId, text, controller.signal);
       for await (const ev of turn.events()) {
@@ -91,7 +89,6 @@ export class SessionManager {
           }
           case 'tool-call-start': {
             assistant.content.push({ type: 'tool_use', callId: ev.callId, name: ev.name, input: ev.input });
-            pendingToolCalls.set(ev.callId, { name: ev.name, input: ev.input });
             this.emit({
               type: 'tool-call-start',
               sessionId,
@@ -109,7 +106,6 @@ export class SessionManager {
               result: ev.result,
               isError: ev.isError,
             });
-            pendingToolCalls.delete(ev.callId);
             this.emit({
               type: 'tool-call-result',
               sessionId,
