@@ -13,9 +13,9 @@ import { emitSessionEvent } from './ipc/events';
 
 const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
 
-async function bootstrap() {
-  app.commandLine.appendSwitch('disable-features', 'Wayland'); // best-effort
+app.commandLine.appendSwitch('disable-features', 'Wayland'); // best-effort, must be before whenReady
 
+async function bootstrap() {
   await app.whenReady();
 
   let db;
