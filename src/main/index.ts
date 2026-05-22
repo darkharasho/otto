@@ -43,9 +43,13 @@ async function bootstrap() {
     const mode = shouldResume(repo, sessions) ? 'panel' : 'bar';
     window.toggle(mode);
   });
-  const hotkeyState = hotkey.register();
-  if (!hotkeyState.registered) {
-    logger.warn(`hotkey not registered: ${hotkeyState.failureReason}`);
+  try {
+    const hotkeyState = await hotkey.register();
+    if (!hotkeyState.registered) {
+      logger.warn(`hotkey not registered: ${hotkeyState.failureReason}`);
+    }
+  } catch (err) {
+    logger.warn(`hotkey registration threw: ${err instanceof Error ? err.message : err}`);
   }
 
   app.on('window-all-closed', () => {
