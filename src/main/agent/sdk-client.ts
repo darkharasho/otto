@@ -176,6 +176,7 @@ function createFakeSdkClient(deps?: {
       const wantsShell = text.includes('[shell]') && !!deps?.broker;
       const wantsSpawn = text.includes('[spawn]') && !!deps?.broker && !!deps?.getRegistry;
       const wantsMutate = text.includes('[mutate]') && !!deps?.broker;
+      const wantsScreenshot = text.includes('[screenshot]') && !!deps?.broker;
       async function* events(): AsyncIterable<SdkStreamEvent> {
         yield { type: 'message-start' };
         yield { type: 'session-id', id: fakeSdkId };
@@ -240,6 +241,45 @@ function createFakeSdkClient(deps?: {
             yield { type: 'tool-call-result', callId: 'c-mut', result: 'Pretended to mutate X', isError: false };
           }
           // On deny: broker already emitted tool-call-denied; nothing more to do.
+        } else if (wantsScreenshot && deps?.broker) {
+          const messageId = deps.currentMessageId?.() ?? 'fake-msg';
+          const outcome = await deps.broker.decide({
+            sessionId: sid,
+            messageId,
+            callId: 'c-ss',
+            toolName: 'screenshot',
+            actionClass: 'read',
+            input: {},
+            denyPatternsFn: null,
+          });
+          if (outcome === 'allow') {
+            try {
+              const captured = await capture({}, getPlatformAdapter());
+              const downscaled = await downscaleIfNeeded(captured.bytes, 4096);
+              const savedPath = await save(
+                captured.bytes,
+                sid,
+                deps?.getConfigDir?.() ?? `${process.env.XDG_CONFIG_HOME ?? '/tmp'}/otto`
+              );
+              const meta = {
+                path: savedPath,
+                width: captured.width,
+                height: captured.height,
+                monitor: captured.monitor,
+              };
+              void downscaled;
+              yield { type: 'tool-call-start', callId: 'c-ss', name: 'screenshot', input: {} };
+              yield { type: 'tool-call-result', callId: 'c-ss', result: meta, isError: false };
+            } catch (err) {
+              yield { type: 'tool-call-start', callId: 'c-ss', name: 'screenshot', input: {} };
+              yield {
+                type: 'tool-call-result',
+                callId: 'c-ss',
+                result: { error: err instanceof Error ? err.message : String(err) },
+                isError: true,
+              };
+            }
+          }
         } else {
           yield { type: 'tool-call-start', callId: 'c1', name: 'echo', input: { msg: text } };
           yield { type: 'tool-call-result', callId: 'c1', result: text, isError: false };

@@ -7,13 +7,33 @@ export interface ProcessResult {
   downscaled: boolean;
 }
 
+/**
+ * Read PNG dimensions from the IHDR chunk without invoking sharp/libvips.
+ * Sharp's `metadata()` call has been observed to abort the Electron process
+ * with a libvips assertion on some Linux builds, so we avoid touching sharp
+ * unless we actually need to resize.
+ */
+function readPngDims(bytes: Buffer): { width: number; height: number } | null {
+  if (bytes.length < 24) return null;
+  if (bytes.toString('latin1', 0, 8) !== '\x89PNG\r\n\x1a\n') return null;
+  return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+}
+
 export async function downscaleIfNeeded(
   pngBytes: Buffer,
   maxEdge: number
 ): Promise<ProcessResult> {
-  const meta = await sharp(pngBytes).metadata();
-  const width = meta.width ?? 0;
-  const height = meta.height ?? 0;
+  const native = readPngDims(pngBytes);
+  let width: number;
+  let height: number;
+  if (native) {
+    width = native.width;
+    height = native.height;
+  } else {
+    const meta = await sharp(pngBytes).metadata();
+    width = meta.width ?? 0;
+    height = meta.height ?? 0;
+  }
   if (!width || !height) {
     throw new Error('could not read PNG dimensions');
   }
