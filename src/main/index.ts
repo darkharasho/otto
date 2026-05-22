@@ -13,7 +13,11 @@ import { emitSessionEvent } from './ipc/events';
 
 const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
 
-app.commandLine.appendSwitch('disable-features', 'Wayland'); // best-effort, must be before whenReady
+// Prefer Wayland native rendering when available; fall back to X11.
+app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
+app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations,UseOzonePlatform');
+// Some Wayland compositors crash the GPU process on transparent windows; disable hw accel.
+app.disableHardwareAcceleration();
 
 async function bootstrap() {
   await app.whenReady();

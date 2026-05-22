@@ -132,15 +132,36 @@ export class WaylandPortalHotkey {
       return { ok: false, reason: 'GlobalShortcuts portal interface not found' };
     }
 
+    // KDE's portal is occasionally flaky and returns "An app id is required"
+    // on the first call even with app_id in options. Retry once after a short delay.
+    const createSessionWithRetry = async (): Promise<void> => {
+      const attempt = async (token: string, sessionToken: string): Promise<void> => {
+        await this.waitForResponse(
+          `/org/freedesktop/portal/desktop/request/${senderToken}/${token}`,
+          async () => {
+            await shortcuts.CreateSession({
+              handle_token: new dbus.Variant('s', token),
+              session_handle_token: new dbus.Variant('s', sessionToken),
+              app_id: new dbus.Variant('s', 'dev.otto.app'),
+            });
+          }
+        );
+      };
+      try {
+        await attempt(createHandleToken, sessionHandleToken);
+      } catch (err) {
+        if (errMsg(err).toLowerCase().includes('app id')) {
+          logger.warn(`portal CreateSession transient failure, retrying: ${errMsg(err)}`);
+          await new Promise((r) => setTimeout(r, 250));
+          await attempt(randomToken(), sessionHandleToken);
+        } else {
+          throw err;
+        }
+      }
+    };
+
     try {
-      await this.waitForResponse(createRequestPath, async () => {
-        await shortcuts.CreateSession({
-          handle_token: new dbus.Variant('s', createHandleToken),
-          session_handle_token: new dbus.Variant('s', sessionHandleToken),
-          // KDE's portal requires this; freedesktop spec marks it optional.
-          app_id: new dbus.Variant('s', 'dev.otto.app'),
-        });
-      });
+      await createSessionWithRetry();
     } catch (err) {
       return { ok: false, reason: `CreateSession failed: ${errMsg(err)}` };
     }
