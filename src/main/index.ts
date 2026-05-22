@@ -13,6 +13,16 @@ import { emitSessionEvent } from './ipc/events';
 
 const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
 
+// Advertise app identity to Wayland compositors / desktop portals.
+// KDE's xdg-desktop-portal-kde derives app_id from the connection's process,
+// not from the options dict we pass — these settings are what lets it match.
+const OTTO_APP_ID = 'dev.otto.app';
+app.setName('Otto');
+app.setDesktopName(`${OTTO_APP_ID}.desktop`);
+process.title = OTTO_APP_ID;
+app.commandLine.appendSwitch('class', OTTO_APP_ID);
+app.commandLine.appendSwitch('name', OTTO_APP_ID);
+
 // Prefer Wayland native rendering when available; fall back to X11.
 app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
 app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations,UseOzonePlatform');
