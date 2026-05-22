@@ -1,5 +1,6 @@
 import type { SdkClient, SdkStreamEvent, SdkTurn } from './session';
 import { stubTools } from './tools';
+import type { DecisionBroker } from '../autonomy/decision-broker';
 import { logger } from '../logger';
 
 // The Agent SDK ships as ESM; loading it via `require()` from the bundled
@@ -18,6 +19,18 @@ function loadAgentSdk(): Promise<AgentSdkModule> {
 const SYSTEM_PROMPT =
   'You are Otto, a desktop coworking agent. In this skeleton build no real tools exist yet; the only available tool is `echo` for pipeline testing. Be concise.';
 
+export interface RealSdkClientDeps {
+  broker: DecisionBroker;
+  /** Returns the messageId of the assistant message being authored for the current turn. */
+  currentMessageId: () => string;
+}
+
+interface ToolCtx {
+  broker: DecisionBroker;
+  sessionId: string;
+  messageId: string;
+}
+
 /**
  * Build the in-process MCP server that exposes Otto's stub tools to the SDK.
  *
@@ -27,16 +40,19 @@ const SYSTEM_PROMPT =
  * (object of zod schemas), so we extract `.shape` from the `z.object(...)`
  * schemas defined in `tools.ts`.
  *
+ * Each handler consults the {@link DecisionBroker} before executing so the
+ * autonomy policy can allow, prompt, or deny. The MCP server is rebuilt per
+ * `sendTurn` so each invocation captures a fresh `{ sessionId, messageId }`
+ * closure.
+ *
  * NOTE: This uses `as any` in a couple of places to bridge between Otto's
  * generic `OttoTool` interface (`schema: ZodTypeAny`) and the SDK's stricter
  * `AnyZodRawShape`-based generics. The values are correct at runtime; this is
  * purely a TypeScript variance gap.
  */
-function buildOttoMcpServer(sdk: AgentSdkModule) {
+function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
   const { createSdkMcpServer, tool } = sdk;
   const sdkTools = stubTools.map((t) => {
-    // We require all OttoTools to be defined as z.object({...}) so we can pull
-    // .shape off for the SDK's tool() helper.
     const shape = (t.schema as unknown as { shape?: Record<string, unknown> }).shape;
     if (!shape) {
       throw new Error(`OttoTool ${t.name} schema must be a z.object(...) so we can pull .shape`);
@@ -45,7 +61,29 @@ function buildOttoMcpServer(sdk: AgentSdkModule) {
       t.name,
       t.description,
       shape as any,
-      async (args: unknown) => {
+      async (args: unknown, _extra: unknown) => {
+        const callId =
+          (typeof _extra === 'object' && _extra && 'toolUseId' in _extra
+            ? String((_extra as { toolUseId?: unknown }).toolUseId ?? '')
+            : '') || `${t.name}-${Date.now().toString(36)}`;
+
+        const outcome = await ctx.broker.decide({
+          sessionId: ctx.sessionId,
+          messageId: ctx.messageId,
+          callId,
+          toolName: t.name,
+          actionClass: t.actionClass,
+          input: args,
+          denyPatternsFn: t.denyPatterns ? (i: unknown) => t.denyPatterns!(i) : null,
+        });
+
+        if (outcome === 'deny') {
+          return {
+            isError: true,
+            content: [{ type: 'text' as const, text: `Denied by Otto autonomy policy` }],
+          };
+        }
+
         const result = await t.run(args);
         return {
           content: [
@@ -88,20 +126,13 @@ function createFakeSdkClient(): SdkClient {
   };
 }
 
-export function createRealSdkClient(): SdkClient {
+export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
   if (process.env.OTTO_FAKE_SDK === '1') return createFakeSdkClient();
   let sessionCounter = 0;
   // SDK-defined tools registered via MCP appear to the model with the prefix
   // `mcp__<server-name>__<tool-name>`. Whitelist them via `allowedTools` so they
   // don't trigger permission prompts during the skeleton smoke.
   const allowedTools = stubTools.map((t) => `mcp__otto-tools__${t.name}`);
-  let ottoMcpPromise: Promise<ReturnType<typeof buildOttoMcpServer>> | null = null;
-  async function getOttoMcp() {
-    if (!ottoMcpPromise) {
-      ottoMcpPromise = loadAgentSdk().then((sdk) => buildOttoMcpServer(sdk));
-    }
-    return ottoMcpPromise;
-  }
 
   return {
     async startSession({ resume }) {
@@ -127,7 +158,13 @@ export function createRealSdkClient(): SdkClient {
       async function* events(): AsyncIterable<SdkStreamEvent> {
         yield { type: 'message-start' };
         const sdk = await loadAgentSdk();
-        const ottoMcp = await getOttoMcp();
+        // Rebuild MCP server per turn so the closure captures a fresh
+        // { sessionId, messageId, broker } context.
+        const ottoMcp = buildOttoMcpServer(sdk, {
+          broker: deps.broker,
+          sessionId,
+          messageId: deps.currentMessageId(),
+        });
         const iter = sdk.query({
           prompt: text,
           options: {
