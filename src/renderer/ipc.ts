@@ -1,4 +1,4 @@
-import type { IpcChannel, OttoBridge, SessionEvent } from '@shared/ipc-contract';
+import type { AutonomyEvent, IpcChannel, OttoBridge, SessionEvent } from '@shared/ipc-contract';
 
 export const ipc: OttoBridge = {
   invoke: ((channel: IpcChannel, args: unknown) =>
@@ -8,5 +8,8 @@ export const ipc: OttoBridge = {
     )) as OttoBridge['invoke'],
   onSessionEvent(handler: (e: SessionEvent) => void): () => void {
     return window.otto.onSessionEvent(handler);
+  },
+  onAutonomyEvent(handler: (e: AutonomyEvent) => void): () => void {
+    return window.otto.onAutonomyEvent(handler);
   },
 };

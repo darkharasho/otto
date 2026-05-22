@@ -1,7 +1,21 @@
+export type AutonomyMode = 'strict' | 'balanced' | 'full-allow';
+export type ActionClass = 'read' | 'reversible' | 'destructive' | 'irreversible';
+
 export type ContentBlock =
   | { type: 'text'; text: string }
   | { type: 'tool_use'; callId: string; name: string; input: unknown }
-  | { type: 'tool_result'; callId: string; result: unknown; isError?: boolean };
+  | { type: 'tool_result'; callId: string; result: unknown; isError?: boolean }
+  | {
+      type: 'pending_tool_use';
+      callId: string;
+      decisionId: string;
+      name: string;
+      input: unknown;
+      actionClass: ActionClass;
+      reason: string;
+      decision: 'pending' | 'approved' | 'approved-session' | 'denied';
+    }
+  | { type: 'tool_denied'; callId: string; name: string; input: unknown; reason: string };
 
 export interface BaseMessage {
   id: string;
