@@ -1,25 +1,38 @@
 import Database, { type Database as DB } from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-// Resolve directory of this source file in a way that works in both ESM (Vitest)
-// and CJS (Electron main bundle) contexts. `__dirname` is not available under
-// ESNext modules used by Vitest, so we fall back to `import.meta.url`.
-const here = (() => {
-  try {
-    if (typeof __dirname !== 'undefined') return __dirname;
-  } catch {
-    /* not in CJS */
-  }
-  return path.dirname(fileURLToPath(import.meta.url));
-})();
+// Migrations are inlined as TypeScript strings so they survive bundling by
+// electron-vite. Previously this loaded a .sql file from disk, which failed
+// in the bundled main process because the file wasn't copied to out/main/.
+const MIGRATION_001_INIT = `
+CREATE TABLE IF NOT EXISTS sessions (
+  id           TEXT PRIMARY KEY,
+  title        TEXT,
+  created_at   INTEGER NOT NULL,
+  last_active  INTEGER NOT NULL,
+  model        TEXT NOT NULL,
+  status       TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id           TEXT PRIMARY KEY,
+  session_id   TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
+  seq          INTEGER NOT NULL,
+  role         TEXT NOT NULL,
+  content      TEXT NOT NULL,
+  created_at   INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_session_seq ON messages(session_id, seq);
+
+CREATE TABLE IF NOT EXISTS schema_version (
+  version INTEGER PRIMARY KEY
+);
+`;
 
 const MIGRATIONS: { version: number; sql: string }[] = [
-  {
-    version: 1,
-    sql: fs.readFileSync(path.join(here, 'migrations', '001_init.sql'), 'utf8'),
-  },
+  { version: 1, sql: MIGRATION_001_INIT },
 ];
 
 export function openDatabase(dbPath: string): DB {
