@@ -10,6 +10,26 @@ export interface ShellChild {
   exited: Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>;
 }
 
+export interface MonitorInfo {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  scale: number;
+}
+
+export interface CaptureOptions {
+  region?: { x: number; y: number; w: number; h: number };
+}
+
+export interface CaptureResult {
+  bytes: Buffer;
+  width: number;
+  height: number;
+  monitor: MonitorInfo;
+}
+
 export interface PlatformAdapter {
   readonly name: 'linux' | 'darwin' | 'win32';
   detectDisplayServer(): DisplayServer;
@@ -17,6 +37,9 @@ export interface PlatformAdapter {
   shell: {
     spawnShell(command: string, cwd: string): ShellChild;
     composeEnv(): NodeJS.ProcessEnv;
+  };
+  screenshot: {
+    capture(opts: CaptureOptions): Promise<CaptureResult>;
   };
 }
 
