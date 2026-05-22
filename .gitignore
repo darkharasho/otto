@@ -10,3 +10,4 @@ out
 .sai/
 test-results/
 playwright-report/
+node_modules/.otto-abi-state
