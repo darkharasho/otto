@@ -34,7 +34,7 @@ export function App() {
       if (e.key !== 'Escape') return;
       if (windowMode === 'panel') {
         setWindowMode('bar');
-        void ipc.invoke('window.collapseToBar', undefined);
+        void ipc.invoke('window.setMode', { mode: 'bar' });
       }
     };
     window.addEventListener('keydown', handler);
@@ -44,6 +44,7 @@ export function App() {
   const handleSubmit = useCallback(
     async (text: string) => {
       setWindowMode('panel');
+      void ipc.invoke('window.setMode', { mode: 'panel' });
       let sessionId = activeSession?.id;
       if (!sessionId) {
         const { sessionId: newId } = await ipc.invoke('session.start', {});
@@ -62,6 +63,7 @@ export function App() {
       const messages = await ipc.invoke('session.load', { sessionId: id });
       loadSession(id, messages);
       setWindowMode('panel');
+      void ipc.invoke('window.setMode', { mode: 'panel' });
     },
     [loadSession, setWindowMode]
   );
@@ -70,6 +72,7 @@ export function App() {
     const { sessionId } = await ipc.invoke('session.start', {});
     beginSession(sessionId);
     setWindowMode('panel');
+    void ipc.invoke('window.setMode', { mode: 'panel' });
   }, [beginSession, setWindowMode]);
 
   if (windowMode === 'bar') {

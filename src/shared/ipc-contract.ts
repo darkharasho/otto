@@ -38,7 +38,7 @@ export type IpcRequest =
   | { channel: 'session.cancel'; args: SessionCancelArgs; result: void }
   | { channel: 'session.list'; args: void; result: SessionMeta[] }
   | { channel: 'session.load'; args: SessionLoadArgs; result: Message[] }
-  | { channel: 'window.collapseToBar'; args: void; result: void };
+  | { channel: 'window.setMode'; args: { mode: 'bar' | 'panel' }; result: void };
 
 export type IpcChannel = IpcRequest['channel'];
 

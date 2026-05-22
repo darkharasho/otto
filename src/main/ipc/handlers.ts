@@ -39,8 +39,8 @@ export function registerIpcHandlers(deps: {
     return repo.loadMessages(args.sessionId);
   });
 
-  ipcMain.handle('window.collapseToBar', async (): Promise<void> => {
-    window.setMode('bar');
+  ipcMain.handle('window.setMode', async (_e, args: { mode: 'bar' | 'panel' }): Promise<void> => {
+    window.setMode(args.mode);
   });
 
   logger.info('ipc handlers registered');
