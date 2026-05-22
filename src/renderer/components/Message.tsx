@@ -1,6 +1,7 @@
 import type { Message as MessageType, ContentBlock } from '@shared/messages';
 import { ToolCallCard } from './ToolCallCard';
 import { ApprovalCard } from './ApprovalCard';
+import { ProcessCard } from './ProcessCard';
 
 interface Props {
   message: MessageType;
@@ -72,6 +73,8 @@ function renderBlocks(content: ContentBlock[]) {
       );
     } else if (b.type === 'pending_tool_use') {
       elements.push(<ApprovalCard key={b.callId} block={b} />);
+    } else if (b.type === 'process_output') {
+      elements.push(<ProcessCard key={b.handle} block={b} />);
     } else if (b.type === 'tool_denied') {
       elements.push(
         <div
