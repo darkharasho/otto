@@ -1,0 +1,17 @@
+appId: dev.otto.app
+productName: Otto
+directories:
+  output: dist
+  buildResources: build
+files:
+  - out/**
+  - package.json
+linux:
+  target:
+    - AppImage
+    - deb
+  category: Utility
+  maintainer: otto-dev@otto.app
+  artifactName: ${productName}-${version}-${arch}.${ext}
+asarUnpack:
+  - "**/node_modules/better-sqlite3/**"
