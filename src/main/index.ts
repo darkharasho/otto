@@ -30,6 +30,8 @@ async function startElectron(): Promise<void> {
   const { registerIpcHandlers } = await import('./ipc/handlers');
   const { emitSessionEvent } = await import('./ipc/events');
   const { ToggleServer } = await import('./toggle-server');
+  const { Settings } = await import('./autonomy/settings');
+  const { DecisionBroker } = await import('./autonomy/decision-broker');
 
   const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
 
@@ -54,13 +56,31 @@ async function startElectron(): Promise<void> {
   const repo = new Repo(db);
   const platform = getPlatformAdapter();
   const window = new WindowManager();
-  const sdk = createRealSdkClient();
-  const sessions = new SessionManager(repo, sdk, 'claude-sonnet-4-6', emitSessionEvent);
+
+  const settings = new Settings(path.join(ottoConfigDir, 'settings.json'));
+  await settings.load();
+
+  let currentMessageId: string | null = null;
+  const broker = new DecisionBroker(settings.getMode(), emitSessionEvent);
+
+  const sdk = createRealSdkClient({
+    broker,
+    currentMessageId: () => currentMessageId ?? '',
+  });
+  const sessions = new SessionManager(
+    repo,
+    sdk,
+    'claude-sonnet-4-6',
+    emitSessionEvent,
+    (id) => {
+      currentMessageId = id;
+    }
+  );
 
   const preloadPath = path.join(app.getAppPath(), 'out', 'preload', 'index.js');
   window.create(preloadPath, rendererEntry());
 
-  registerIpcHandlers({ repo, sessions, window });
+  registerIpcHandlers({ repo, sessions, window, broker, settings });
 
   const onToggle = () => {
     const mode = shouldResume(repo, sessions) ? 'panel' : 'bar';
