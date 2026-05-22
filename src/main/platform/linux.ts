@@ -11,6 +11,6 @@ export class LinuxAdapter implements PlatformAdapter {
   }
 
   defaultHotkey(): string {
-    return 'Control+Alt+Space';
+    return 'Super+Space';
   }
 }
