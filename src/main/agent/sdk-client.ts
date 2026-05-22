@@ -99,15 +99,16 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
   return createSdkMcpServer({ name: 'otto-tools', version: '0.1.0', tools: sdkTools });
 }
 
-function createFakeSdkClient(): SdkClient {
+function createFakeSdkClient(deps?: { broker?: DecisionBroker; currentMessageId?: () => string }): SdkClient {
   let counter = 0;
   return {
     async startSession() {
       counter += 1;
       return { id: `fake-${counter}` };
     },
-    sendTurn(_sid, text, signal, _resumeId) {
+    sendTurn(sid, text, signal, _resumeId) {
       const fakeSdkId = `fake-sdk-${(counter += 1)}`;
+      const wantsMutate = text.includes('[mutate]') && !!deps?.broker;
       async function* events(): AsyncIterable<SdkStreamEvent> {
         yield { type: 'message-start' };
         yield { type: 'session-id', id: fakeSdkId };
@@ -116,8 +117,26 @@ function createFakeSdkClient(): SdkClient {
           yield { type: 'text-delta', text: ch };
           await new Promise((r) => setTimeout(r, 5));
         }
-        yield { type: 'tool-call-start', callId: 'c1', name: 'echo', input: { msg: text } };
-        yield { type: 'tool-call-result', callId: 'c1', result: text, isError: false };
+        if (wantsMutate && deps?.broker) {
+          const messageId = deps.currentMessageId?.() ?? 'fake-msg';
+          const outcome = await deps.broker.decide({
+            sessionId: sid,
+            messageId,
+            callId: 'c-mut',
+            toolName: 'fake-mutate',
+            actionClass: 'destructive',
+            input: { target: 'X' },
+            denyPatternsFn: null,
+          });
+          if (outcome === 'allow') {
+            yield { type: 'tool-call-start', callId: 'c-mut', name: 'fake-mutate', input: { target: 'X' } };
+            yield { type: 'tool-call-result', callId: 'c-mut', result: 'Pretended to mutate X', isError: false };
+          }
+          // On deny: broker already emitted tool-call-denied; nothing more to do.
+        } else {
+          yield { type: 'tool-call-start', callId: 'c1', name: 'echo', input: { msg: text } };
+          yield { type: 'tool-call-result', callId: 'c1', result: text, isError: false };
+        }
         yield { type: 'message-end' };
         yield { type: 'done' };
       }
@@ -127,7 +146,7 @@ function createFakeSdkClient(): SdkClient {
 }
 
 export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
-  if (process.env.OTTO_FAKE_SDK === '1') return createFakeSdkClient();
+  if (process.env.OTTO_FAKE_SDK === '1') return createFakeSdkClient(deps);
   let sessionCounter = 0;
   // SDK-defined tools registered via MCP appear to the model with the prefix
   // `mcp__<server-name>__<tool-name>`. Whitelist them via `allowedTools` so they
