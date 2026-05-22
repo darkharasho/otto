@@ -1,16 +1,15 @@
 import { globalShortcut } from 'electron';
 import { logger } from './logger';
 import type { PlatformAdapter } from './platform';
-import { WaylandPortalHotkey } from './platform/wayland-portal';
 
 export interface HotkeyState {
   registered: boolean;
   failureReason: string | null;
+  usingExternalToggle?: boolean;
 }
 
 export class HotkeyManager {
   private state: HotkeyState = { registered: false, failureReason: null };
-  private waylandHotkey: WaylandPortalHotkey | null = null;
 
   constructor(
     private readonly platform: PlatformAdapter,
@@ -22,16 +21,13 @@ export class HotkeyManager {
     const display = this.platform.name === 'linux' ? this.platform.detectDisplayServer() : 'n/a';
 
     if (this.platform.name === 'linux' && display === 'wayland') {
-      const portal = new WaylandPortalHotkey(accelerator, 'toggle', 'Toggle Otto');
-      const result = await portal.register(this.onTrigger);
-      if (!result.ok) {
-        logger.warn(`wayland portal hotkey unavailable: ${result.reason}`);
-        this.state = { registered: false, failureReason: result.reason };
-        return this.state;
-      }
-      this.waylandHotkey = portal;
-      this.state = { registered: true, failureReason: null };
-      logger.info(`hotkey registered via xdg-desktop-portal: ${accelerator}`);
+      // Wayland has no portable global-hotkey API for Electron, and
+      // xdg-desktop-portal's GlobalShortcuts interface is unreliable across
+      // compositors (notably broken on Bazzite/KDE). Instead, the main
+      // process runs a toggle server on a Unix socket; users bind their DE
+      // keyboard shortcut to `otto toggle`, which talks to that socket.
+      logger.info('Wayland detected — running toggle server. Bind a DE keyboard shortcut to: otto toggle');
+      this.state = { registered: false, failureReason: null, usingExternalToggle: true };
       return this.state;
     }
 
@@ -49,11 +45,6 @@ export class HotkeyManager {
 
   unregisterAll(): void {
     globalShortcut.unregisterAll();
-    if (this.waylandHotkey) {
-      const wh = this.waylandHotkey;
-      this.waylandHotkey = null;
-      wh.dispose().catch((err) => logger.warn(`wayland portal dispose failed: ${err}`));
-    }
   }
 
   getState(): HotkeyState {
