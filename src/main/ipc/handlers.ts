@@ -4,6 +4,7 @@ import type { SessionManager } from '../agent/session';
 import type { WindowManager } from '../window';
 import type { DecisionBroker } from '../autonomy/decision-broker';
 import type { Settings } from '../autonomy/settings';
+import type { ProcessRegistry } from '../shell/process-registry';
 import type {
   SessionStartArgs,
   SessionStartResult,
@@ -21,8 +22,9 @@ export function registerIpcHandlers(deps: {
   window: WindowManager;
   broker: DecisionBroker;
   settings: Settings;
+  registry: ProcessRegistry;
 }): void {
-  const { repo, sessions, window, broker, settings } = deps;
+  const { repo, sessions, window, broker, settings, registry } = deps;
 
   ipcMain.handle('session.start', async (_e, args: SessionStartArgs): Promise<SessionStartResult> => {
     return sessions.start(args);
@@ -69,6 +71,14 @@ export function registerIpcHandlers(deps: {
       throw err;
     }
   });
+
+  ipcMain.handle(
+    'shell.kill',
+    async (_e, args: { handle: string }): Promise<{ killed: boolean }> => {
+      const killed = registry.kill(args.handle);
+      return { killed };
+    }
+  );
 
   settings.onChange((mode) => {
     broker.setMode(mode);
