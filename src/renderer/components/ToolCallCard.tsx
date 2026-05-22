@@ -37,6 +37,13 @@ export function ToolCallCard({ name, input, result, isError }: Props) {
             <div className="text-muted mb-1">input</div>
             <pre className="bg-bg/60 rounded p-2 overflow-x-auto">{JSON.stringify(input, null, 2)}</pre>
           </div>
+          {name === 'screenshot' && hasPath(result) && (
+            <img
+              src={`file://${(result as { path: string }).path}`}
+              alt="screenshot"
+              className="my-2 max-w-full rounded border border-border"
+            />
+          )}
           {result !== undefined && (
             <div>
               <div className="text-muted mb-1">result</div>
@@ -46,5 +53,14 @@ export function ToolCallCard({ name, input, result, isError }: Props) {
         </div>
       )}
     </div>
+  );
+}
+
+function hasPath(result: unknown): result is { path: string } {
+  return (
+    typeof result === 'object' &&
+    result !== null &&
+    'path' in result &&
+    typeof (result as { path: unknown }).path === 'string'
   );
 }

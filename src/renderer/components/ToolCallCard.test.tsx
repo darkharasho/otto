@@ -23,3 +23,38 @@ describe('ToolCallCard', () => {
     expect(screen.getByText(/error/i)).toBeInTheDocument();
   });
 });
+
+describe('ToolCallCard: screenshot rendering', () => {
+  it('renders an <img> with file:// URL when name === "screenshot" and result has path', async () => {
+    render(
+      <ToolCallCard
+        name="screenshot"
+        input={{}}
+        result={{
+          path: '/tmp/otto-screenshots/sess/abc.png',
+          width: 1920,
+          height: 1080,
+          monitor: { id: '1', x: 0, y: 0, w: 1920, h: 1080, scale: 1 },
+        }}
+        isError={false}
+      />
+    );
+    await userEvent.click(screen.getByRole('button', { name: /screenshot/i }));
+    const img = screen.getByRole('img');
+    expect(img).toHaveAttribute('src', 'file:///tmp/otto-screenshots/sess/abc.png');
+  });
+
+  it('does not render an <img> for non-screenshot tools', async () => {
+    render(
+      <ToolCallCard name="shell_exec" input={{}} result={{ stdout: 'hi' }} isError={false} />
+    );
+    await userEvent.click(screen.getByRole('button', { name: /shell_exec/i }));
+    expect(screen.queryByRole('img')).toBeNull();
+  });
+
+  it('does not render an <img> for screenshot results without a path', async () => {
+    render(<ToolCallCard name="screenshot" input={{}} result={{}} isError={false} />);
+    await userEvent.click(screen.getByRole('button', { name: /screenshot/i }));
+    expect(screen.queryByRole('img')).toBeNull();
+  });
+});
