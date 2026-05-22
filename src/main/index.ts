@@ -17,8 +17,7 @@ const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
 // KDE's xdg-desktop-portal-kde derives app_id from the connection's process,
 // not from the options dict we pass — these settings are what lets it match.
 const OTTO_APP_ID = 'dev.otto.app';
-app.setName('Otto');
-app.setDesktopName(`${OTTO_APP_ID}.desktop`);
+app.setName(OTTO_APP_ID);
 process.title = OTTO_APP_ID;
 app.commandLine.appendSwitch('class', OTTO_APP_ID);
 app.commandLine.appendSwitch('name', OTTO_APP_ID);
