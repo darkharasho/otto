@@ -13,39 +13,39 @@ describe('buildShellTools', () => {
   it('returns five tools', () => {
     const { tools } = makeTools();
     const names = tools.map((t) => t.name).sort();
-    expect(names).toEqual(['shell.exec', 'shell.kill', 'shell.read', 'shell.spawn', 'shell.wait']);
+    expect(names).toEqual(['shell_exec', 'shell_kill', 'shell_read', 'shell_spawn', 'shell_wait']);
   });
 
-  it('shell.exec uses dynamic action class', () => {
+  it('shell_exec uses dynamic action class', () => {
     const { byName } = makeTools();
-    const exec = byName.get('shell.exec')!;
+    const exec = byName.get('shell_exec')!;
     expect(exec.actionClassFor).toBeTruthy();
     expect(exec.actionClassFor!({ command: 'ls' })).toBe('read');
     expect(exec.actionClassFor!({ command: 'rm -rf foo' })).toBe('irreversible');
     expect(exec.actionClassFor!({ command: 'mv a b' })).toBe('destructive');
   });
 
-  it('shell.exec exposes denyPatterns', () => {
+  it('shell_exec exposes denyPatterns', () => {
     const { byName } = makeTools();
-    const exec = byName.get('shell.exec')!;
+    const exec = byName.get('shell_exec')!;
     expect(exec.denyPatterns).toBeTruthy();
     expect(exec.denyPatterns!({ command: 'rm -rf /' })).toBeTruthy();
     expect(exec.denyPatterns!({ command: 'ls' })).toBeNull();
   });
 
-  it('shell.kill has static destructive class and no command-based deny', () => {
+  it('shell_kill has static destructive class and no command-based deny', () => {
     const { byName } = makeTools();
-    const kill = byName.get('shell.kill')!;
+    const kill = byName.get('shell_kill')!;
     expect(kill.actionClass).toBe('destructive');
     expect(kill.actionClassFor).toBeUndefined();
     expect(kill.denyPatterns).toBeUndefined();
   });
 
-  it('shell.read and shell.wait are static read class (they take a handle, not a command)', () => {
+  it('shell_read and shell_wait are static read class (they take a handle, not a command)', () => {
     const { byName } = makeTools();
-    expect(byName.get('shell.read')!.actionClass).toBe('read');
-    expect(byName.get('shell.wait')!.actionClass).toBe('read');
-    expect(byName.get('shell.read')!.actionClassFor).toBeUndefined();
-    expect(byName.get('shell.wait')!.actionClassFor).toBeUndefined();
+    expect(byName.get('shell_read')!.actionClass).toBe('read');
+    expect(byName.get('shell_wait')!.actionClass).toBe('read');
+    expect(byName.get('shell_read')!.actionClassFor).toBeUndefined();
+    expect(byName.get('shell_wait')!.actionClassFor).toBeUndefined();
   });
 });

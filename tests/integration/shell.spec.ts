@@ -20,7 +20,7 @@ async function launch(cfg: string) {
   });
 }
 
-test('shell: approve shell.exec, see stdout in result', async () => {
+test('shell: approve shell_exec, see stdout in result', async () => {
   const cfg = mkdtempSync(path.join(tmpdir(), 'otto-shell-exec-e2e-'));
   const app = await launch(cfg);
   try {
@@ -33,9 +33,9 @@ test('shell: approve shell.exec, see stdout in result', async () => {
     await page.fill('input[placeholder*="Ask Otto" i]', '[shell] please');
     await page.press('input[placeholder*="Ask Otto" i]', 'Enter');
 
-    // Approval card for shell.exec — first() because the same name may appear
+    // Approval card for shell_exec — first() because the same name may appear
     // in multiple places once decided.
-    await expect(page.getByText('shell.exec').first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('shell_exec').first()).toBeVisible({ timeout: 5_000 });
     await page.getByRole('button', { name: /^approve$/i }).click();
 
     // Expand the ToolCallCard to see result.
@@ -47,7 +47,7 @@ test('shell: approve shell.exec, see stdout in result', async () => {
   }
 });
 
-test('shell: approve shell.spawn, ProcessCard appears, Cancel kills it', async () => {
+test('shell: approve shell_spawn, ProcessCard appears, Cancel kills it', async () => {
   const cfg = mkdtempSync(path.join(tmpdir(), 'otto-shell-spawn-e2e-'));
   const app = await launch(cfg);
   try {
@@ -60,7 +60,7 @@ test('shell: approve shell.spawn, ProcessCard appears, Cancel kills it', async (
     await page.fill('input[placeholder*="Ask Otto" i]', '[spawn] please');
     await page.press('input[placeholder*="Ask Otto" i]', 'Enter');
 
-    await expect(page.getByText('shell.spawn').first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.getByText('shell_spawn').first()).toBeVisible({ timeout: 5_000 });
     await page.getByRole('button', { name: /^approve$/i }).click();
 
     // ProcessCard renders (use exact match to disambiguate from the

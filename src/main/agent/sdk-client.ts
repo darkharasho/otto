@@ -93,7 +93,7 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
           };
         }
 
-        if (t.name === 'shell.spawn') {
+        if (t.name === 'shell_spawn') {
           const spawnArgs = args as { command: string; cwd?: string };
           const cwd = spawnArgs.cwd ?? process.env.HOME ?? '/';
           const p = ctx.getRegistry().spawn({
@@ -157,14 +157,14 @@ function createFakeSdkClient(deps?: {
             sessionId: sid,
             messageId,
             callId: 'c-sh',
-            toolName: 'shell.exec',
+            toolName: 'shell_exec',
             actionClass: classify(cmd),
             input: { command: cmd },
             denyPatternsFn: (i: unknown) => denyReason((i as { command: string }).command),
           });
           if (outcome === 'allow') {
             const r = await exec({ command: cmd, cwd: tmpdir(), timeoutMs: 5_000 }, getPlatformAdapter());
-            yield { type: 'tool-call-start', callId: 'c-sh', name: 'shell.exec', input: { command: cmd } };
+            yield { type: 'tool-call-start', callId: 'c-sh', name: 'shell_exec', input: { command: cmd } };
             yield { type: 'tool-call-result', callId: 'c-sh', result: r, isError: false };
           }
         } else if (wantsSpawn && deps?.broker && deps?.getRegistry) {
@@ -174,7 +174,7 @@ function createFakeSdkClient(deps?: {
             sessionId: sid,
             messageId,
             callId: 'c-sp',
-            toolName: 'shell.spawn',
+            toolName: 'shell_spawn',
             actionClass: classify(cmd),
             input: { command: cmd },
             denyPatternsFn: (i: unknown) => denyReason((i as { command: string }).command),

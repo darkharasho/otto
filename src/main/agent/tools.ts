@@ -82,7 +82,7 @@ function defaultCwd(): string {
 export function buildShellTools(getRegistry: () => ProcessRegistry): OttoTool[] {
   return [
     {
-      name: 'shell.exec',
+      name: 'shell_exec',
       description:
         'Run a shell command via `sh -c`. Blocks until completion. Default timeout 60s. Returns stdout, stderr, exitCode, durationMs, timedOut.',
       actionClass: 'destructive',
@@ -99,7 +99,7 @@ export function buildShellTools(getRegistry: () => ProcessRegistry): OttoTool[] 
       },
     },
     {
-      name: 'shell.spawn',
+      name: 'shell_spawn',
       description:
         'Start a long-running shell command via `sh -c`. Returns immediately with { handle, pid }. Output streams into the chat; use shell.read or shell.wait for follow-up.',
       actionClass: 'destructive',
@@ -113,7 +113,7 @@ export function buildShellTools(getRegistry: () => ProcessRegistry): OttoTool[] 
       },
     },
     {
-      name: 'shell.read',
+      name: 'shell_read',
       description:
         'Read buffered output for a spawned process by handle. Pass `since` to read incrementally; the returned `nextIndex` is the offset for the next call.',
       actionClass: 'read',
@@ -124,7 +124,7 @@ export function buildShellTools(getRegistry: () => ProcessRegistry): OttoTool[] 
       },
     },
     {
-      name: 'shell.wait',
+      name: 'shell_wait',
       description:
         'Block until the spawned process exits (or timeout_ms elapses). Returns { exitCode, signal, timedOut }.',
       actionClass: 'read',
@@ -135,7 +135,7 @@ export function buildShellTools(getRegistry: () => ProcessRegistry): OttoTool[] 
       },
     },
     {
-      name: 'shell.kill',
+      name: 'shell_kill',
       description:
         'Send SIGTERM to a spawned process by handle. Returns { killed: boolean }.',
       actionClass: 'destructive',
