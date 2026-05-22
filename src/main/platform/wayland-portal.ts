@@ -137,6 +137,8 @@ export class WaylandPortalHotkey {
         await shortcuts.CreateSession({
           handle_token: new dbus.Variant('s', createHandleToken),
           session_handle_token: new dbus.Variant('s', sessionHandleToken),
+          // KDE's portal requires this; freedesktop spec marks it optional.
+          app_id: new dbus.Variant('s', 'dev.otto.app'),
         });
       });
     } catch (err) {
