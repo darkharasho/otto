@@ -34,8 +34,8 @@ describe('Repo.sessions', () => {
     repo.createSession({ id: 's1', model: 'm', createdAt: 1, lastActive: 10 });
     repo.updateSessionActivity('s1', 99, 'ended');
     const [s] = repo.listSessions();
-    expect(s.lastActive).toBe(99);
-    expect(s.status).toBe('ended');
+    expect(s!.lastActive).toBe(99);
+    expect(s!.status).toBe('ended');
   });
 
   it('sets a title once', () => {
@@ -43,7 +43,7 @@ describe('Repo.sessions', () => {
     repo.setSessionTitleIfMissing('s1', 'first prompt');
     repo.setSessionTitleIfMissing('s1', 'second prompt');
     const [s] = repo.listSessions();
-    expect(s.title).toBe('first prompt');
+    expect(s!.title).toBe('first prompt');
   });
 });
 
