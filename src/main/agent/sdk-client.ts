@@ -1,11 +1,19 @@
-import {
-  query as agentQuery,
-  createSdkMcpServer,
-  tool,
-} from '@anthropic-ai/claude-agent-sdk';
 import type { SdkClient, SdkStreamEvent, SdkTurn } from './session';
 import { stubTools } from './tools';
 import { logger } from '../logger';
+
+// The Agent SDK ships as ESM; loading it via `require()` from the bundled
+// CommonJS main process throws ERR_REQUIRE_ESM. Defer to a dynamic import so
+// it's only evaluated when a real session actually runs. The fake client
+// (OTTO_FAKE_SDK=1) skips the import entirely.
+type AgentSdkModule = typeof import('@anthropic-ai/claude-agent-sdk');
+let sdkModulePromise: Promise<AgentSdkModule> | null = null;
+function loadAgentSdk(): Promise<AgentSdkModule> {
+  if (!sdkModulePromise) {
+    sdkModulePromise = import('@anthropic-ai/claude-agent-sdk');
+  }
+  return sdkModulePromise;
+}
 
 const SYSTEM_PROMPT =
   'You are Otto, a desktop coworking agent. In this skeleton build no real tools exist yet; the only available tool is `echo` for pipeline testing. Be concise.';
@@ -24,7 +32,8 @@ const SYSTEM_PROMPT =
  * `AnyZodRawShape`-based generics. The values are correct at runtime; this is
  * purely a TypeScript variance gap.
  */
-function buildOttoMcpServer() {
+function buildOttoMcpServer(sdk: AgentSdkModule) {
+  const { createSdkMcpServer, tool } = sdk;
   const sdkTools = stubTools.map((t) => {
     // We require all OttoTools to be defined as z.object({...}) so we can pull
     // .shape off for the SDK's tool() helper.
@@ -52,13 +61,45 @@ function buildOttoMcpServer() {
   return createSdkMcpServer({ name: 'otto-tools', version: '0.1.0', tools: sdkTools });
 }
 
+function createFakeSdkClient(): SdkClient {
+  let counter = 0;
+  return {
+    async startSession() {
+      counter += 1;
+      return { id: `fake-${counter}` };
+    },
+    sendTurn(_sid, text, signal) {
+      async function* events(): AsyncIterable<SdkStreamEvent> {
+        yield { type: 'message-start' };
+        for (const ch of `echo: ${text}`) {
+          if (signal.aborted) return;
+          yield { type: 'text-delta', text: ch };
+          await new Promise((r) => setTimeout(r, 5));
+        }
+        yield { type: 'tool-call-start', callId: 'c1', name: 'echo', input: { msg: text } };
+        yield { type: 'tool-call-result', callId: 'c1', result: text, isError: false };
+        yield { type: 'message-end' };
+        yield { type: 'done' };
+      }
+      return { signal, events };
+    },
+  };
+}
+
 export function createRealSdkClient(): SdkClient {
+  if (process.env.OTTO_FAKE_SDK === '1') return createFakeSdkClient();
   let sessionCounter = 0;
-  const ottoMcp = buildOttoMcpServer();
   // SDK-defined tools registered via MCP appear to the model with the prefix
   // `mcp__<server-name>__<tool-name>`. Whitelist them via `allowedTools` so they
   // don't trigger permission prompts during the skeleton smoke.
   const allowedTools = stubTools.map((t) => `mcp__otto-tools__${t.name}`);
+  let ottoMcpPromise: Promise<ReturnType<typeof buildOttoMcpServer>> | null = null;
+  async function getOttoMcp() {
+    if (!ottoMcpPromise) {
+      ottoMcpPromise = loadAgentSdk().then((sdk) => buildOttoMcpServer(sdk));
+    }
+    return ottoMcpPromise;
+  }
 
   return {
     async startSession({ resume }) {
@@ -81,21 +122,22 @@ export function createRealSdkClient(): SdkClient {
         signal.addEventListener('abort', () => abortController.abort(), { once: true });
       }
 
-      const iter = agentQuery({
-        prompt: text,
-        options: {
-          systemPrompt: SYSTEM_PROMPT,
-          // Disable all built-in Claude Code tools; we only want our MCP tool.
-          tools: [],
-          allowedTools,
-          mcpServers: { 'otto-tools': ottoMcp },
-          abortController,
-          resume: sessionId,
-        },
-      });
-
       async function* events(): AsyncIterable<SdkStreamEvent> {
         yield { type: 'message-start' };
+        const sdk = await loadAgentSdk();
+        const ottoMcp = await getOttoMcp();
+        const iter = sdk.query({
+          prompt: text,
+          options: {
+            systemPrompt: SYSTEM_PROMPT,
+            // Disable all built-in Claude Code tools; we only want our MCP tool.
+            tools: [],
+            allowedTools,
+            mcpServers: { 'otto-tools': ottoMcp },
+            abortController,
+            resume: sessionId,
+          },
+        });
         try {
           for await (const msg of iter) {
             for (const ev of mapSdkMessage(msg)) {

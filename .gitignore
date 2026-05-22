@@ -8,3 +8,5 @@ out
 *.log
 .superpowers
 .sai/
+test-results/
+playwright-report/
