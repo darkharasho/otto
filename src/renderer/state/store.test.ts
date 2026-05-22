@@ -103,3 +103,117 @@ describe('useOttoStore', () => {
     expect(useOttoStore.getState().activeSession!.streaming).toBe(false);
   });
 });
+
+describe('autonomy mode state', () => {
+  it('defaults to balanced', () => {
+    expect(useOttoStore.getState().mode).toBe('balanced');
+  });
+
+  it('setMode updates the mode', () => {
+    useOttoStore.getState().setMode('strict');
+    expect(useOttoStore.getState().mode).toBe('strict');
+  });
+});
+
+describe('store: tool approval events', () => {
+  beforeEach(() => {
+    useOttoStore.getState().reset();
+    useOttoStore.getState().beginSession('s1');
+    useOttoStore.getState().applyEvent({
+      type: 'message-start',
+      sessionId: 's1',
+      messageId: 'm1',
+    });
+  });
+
+  it('handles tool-call-pending by appending a pending_tool_use block', () => {
+    useOttoStore.getState().applyEvent({
+      type: 'tool-call-pending',
+      sessionId: 's1',
+      messageId: 'm1',
+      callId: 'c1',
+      decisionId: 'd1',
+      name: 'fake-mutate',
+      input: { target: 'x' },
+      actionClass: 'destructive',
+      reason: 'mode=balanced',
+    });
+    const blocks = useOttoStore.getState().activeSession!.messages[0]!.content;
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: 'pending_tool_use',
+      callId: 'c1',
+      decisionId: 'd1',
+      decision: 'pending',
+      actionClass: 'destructive',
+    });
+  });
+
+  it('transforms pending block on tool-call-decided approve', () => {
+    useOttoStore.getState().applyEvent({
+      type: 'tool-call-pending',
+      sessionId: 's1',
+      messageId: 'm1',
+      callId: 'c1',
+      decisionId: 'd1',
+      name: 'fake-mutate',
+      input: { target: 'x' },
+      actionClass: 'destructive',
+      reason: 'mode=balanced',
+    });
+    useOttoStore.getState().applyEvent({
+      type: 'tool-call-decided',
+      sessionId: 's1',
+      messageId: 'm1',
+      callId: 'c1',
+      decisionId: 'd1',
+      decision: 'approve',
+    });
+    const blocks = useOttoStore.getState().activeSession!.messages[0]!.content;
+    expect(blocks[0]).toMatchObject({ type: 'pending_tool_use', decision: 'approved' });
+  });
+
+  it('transforms pending block on tool-call-decided deny', () => {
+    useOttoStore.getState().applyEvent({
+      type: 'tool-call-pending',
+      sessionId: 's1',
+      messageId: 'm1',
+      callId: 'c1',
+      decisionId: 'd1',
+      name: 'fake-mutate',
+      input: { target: 'x' },
+      actionClass: 'destructive',
+      reason: 'mode=balanced',
+    });
+    useOttoStore.getState().applyEvent({
+      type: 'tool-call-decided',
+      sessionId: 's1',
+      messageId: 'm1',
+      callId: 'c1',
+      decisionId: 'd1',
+      decision: 'deny',
+    });
+    const blocks = useOttoStore.getState().activeSession!.messages[0]!.content;
+    expect(blocks[0]).toMatchObject({ type: 'pending_tool_use', decision: 'denied' });
+  });
+
+  it('appends tool_denied block on tool-call-denied', () => {
+    useOttoStore.getState().applyEvent({
+      type: 'tool-call-denied',
+      sessionId: 's1',
+      messageId: 'm1',
+      callId: 'c2',
+      name: 'fake-wipe',
+      input: { target: 'y' },
+      reason: 'mode=strict, class=irreversible',
+    });
+    const blocks = useOttoStore.getState().activeSession!.messages[0]!.content;
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: 'tool_denied',
+      callId: 'c2',
+      name: 'fake-wipe',
+      reason: 'mode=strict, class=irreversible',
+    });
+  });
+});

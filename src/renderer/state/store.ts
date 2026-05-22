@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { SessionEvent, StructuredError } from '@shared/ipc-contract';
-import type { AssistantMessage, ContentBlock, Message, SessionMeta, UserMessage } from '@shared/messages';
+import type { AssistantMessage, AutonomyMode, ContentBlock, Message, SessionMeta, UserMessage } from '@shared/messages';
 
 export type WindowMode = 'bar' | 'panel';
 
@@ -15,6 +15,7 @@ interface OttoState {
   windowMode: WindowMode;
   activeSession: ActiveSessionState | null;
   sessions: SessionMeta[];
+  mode: AutonomyMode;
 
   setWindowMode(mode: WindowMode): void;
   beginSession(id: string): void;
@@ -22,6 +23,7 @@ interface OttoState {
   appendUserMessage(id: string, text: string): void;
   applyEvent(event: SessionEvent): void;
   setSessions(list: SessionMeta[]): void;
+  setMode(mode: AutonomyMode): void;
   reset(): void;
 }
 
@@ -29,6 +31,7 @@ const initial = {
   windowMode: 'bar' as WindowMode,
   activeSession: null as ActiveSessionState | null,
   sessions: [] as SessionMeta[],
+  mode: 'balanced' as AutonomyMode,
 };
 
 export const useOttoStore = create<OttoState>((set, get) => ({
@@ -132,6 +135,63 @@ export const useOttoStore = create<OttoState>((set, get) => ({
         set({ activeSession: next });
         return;
       }
+      case 'tool-call-pending': {
+        const next = updateAssistant(session, event.messageId, (m) => ({
+          ...m,
+          content: [
+            ...m.content,
+            {
+              type: 'pending_tool_use' as const,
+              callId: event.callId,
+              decisionId: event.decisionId,
+              name: event.name,
+              input: event.input,
+              actionClass: event.actionClass,
+              reason: event.reason,
+              decision: 'pending' as const,
+            },
+          ],
+        }));
+        set({ activeSession: next });
+        return;
+      }
+      case 'tool-call-decided': {
+        const next = updateAssistant(session, event.messageId, (m) => ({
+          ...m,
+          content: m.content.map((b) =>
+            b.type === 'pending_tool_use' && b.decisionId === event.decisionId
+              ? {
+                  ...b,
+                  decision:
+                    event.decision === 'approve'
+                      ? ('approved' as const)
+                      : event.decision === 'approve-session'
+                        ? ('approved-session' as const)
+                        : ('denied' as const),
+                }
+              : b
+          ),
+        }));
+        set({ activeSession: next });
+        return;
+      }
+      case 'tool-call-denied': {
+        const next = updateAssistant(session, event.messageId, (m) => ({
+          ...m,
+          content: [
+            ...m.content,
+            {
+              type: 'tool_denied' as const,
+              callId: event.callId,
+              name: event.name,
+              input: event.input,
+              reason: event.reason,
+            },
+          ],
+        }));
+        set({ activeSession: next });
+        return;
+      }
       case 'message-end':
         return;
       case 'error': {
@@ -149,6 +209,10 @@ export const useOttoStore = create<OttoState>((set, get) => ({
 
   setSessions(list) {
     set({ sessions: list });
+  },
+
+  setMode(mode) {
+    set({ mode });
   },
 
   reset() {
