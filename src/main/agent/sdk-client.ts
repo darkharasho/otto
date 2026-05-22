@@ -3,6 +3,10 @@ import { buildShellTools, stubTools, type OttoTool } from './tools';
 import type { DecisionBroker } from '../autonomy/decision-broker';
 import type { ProcessRegistry } from '../shell/process-registry';
 import { logger } from '../logger';
+import { classify, denyReason } from '../shell/command-class';
+import { exec } from '../shell/executor';
+import { getPlatformAdapter } from '../platform';
+import { tmpdir } from 'node:os';
 
 // The Agent SDK ships as ESM; loading it via `require()` from the bundled
 // CommonJS main process throws ERR_REQUIRE_ESM. Defer to a dynamic import so
@@ -133,6 +137,8 @@ function createFakeSdkClient(deps?: {
     },
     sendTurn(sid, text, signal, _resumeId) {
       const fakeSdkId = `fake-sdk-${(counter += 1)}`;
+      const wantsShell = text.includes('[shell]') && !!deps?.broker;
+      const wantsSpawn = text.includes('[spawn]') && !!deps?.broker && !!deps?.getRegistry;
       const wantsMutate = text.includes('[mutate]') && !!deps?.broker;
       async function* events(): AsyncIterable<SdkStreamEvent> {
         yield { type: 'message-start' };
@@ -142,7 +148,47 @@ function createFakeSdkClient(deps?: {
           yield { type: 'text-delta', text: ch };
           await new Promise((r) => setTimeout(r, 5));
         }
-        if (wantsMutate && deps?.broker) {
+        if (wantsShell && deps?.broker) {
+          const messageId = deps.currentMessageId?.() ?? 'fake-msg';
+          // Use sh -c so the command classifies as 'destructive' (not the
+          // read-allowlisted bare `echo`), exercising the approval flow.
+          const cmd = "sh -c 'echo hi'";
+          const outcome = await deps.broker.decide({
+            sessionId: sid,
+            messageId,
+            callId: 'c-sh',
+            toolName: 'shell.exec',
+            actionClass: classify(cmd),
+            input: { command: cmd },
+            denyPatternsFn: (i: unknown) => denyReason((i as { command: string }).command),
+          });
+          if (outcome === 'allow') {
+            const r = await exec({ command: cmd, cwd: tmpdir(), timeoutMs: 5_000 }, getPlatformAdapter());
+            yield { type: 'tool-call-start', callId: 'c-sh', name: 'shell.exec', input: { command: cmd } };
+            yield { type: 'tool-call-result', callId: 'c-sh', result: r, isError: false };
+          }
+        } else if (wantsSpawn && deps?.broker && deps?.getRegistry) {
+          const messageId = deps.currentMessageId?.() ?? 'fake-msg';
+          const cmd = 'sleep 10';
+          const outcome = await deps.broker.decide({
+            sessionId: sid,
+            messageId,
+            callId: 'c-sp',
+            toolName: 'shell.spawn',
+            actionClass: classify(cmd),
+            input: { command: cmd },
+            denyPatternsFn: (i: unknown) => denyReason((i as { command: string }).command),
+          });
+          if (outcome === 'allow') {
+            // Registry emits process-spawned + later process-stdout/exited.
+            deps.getRegistry().spawn({
+              sessionId: sid,
+              messageId,
+              command: cmd,
+              cwd: tmpdir(),
+            });
+          }
+        } else if (wantsMutate && deps?.broker) {
           const messageId = deps.currentMessageId?.() ?? 'fake-msg';
           const outcome = await deps.broker.decide({
             sessionId: sid,
