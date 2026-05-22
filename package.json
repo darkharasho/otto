@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "playwright test",
+    "toggle": "node out/main/index.js toggle",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "lint": "eslint . --ext .ts,.tsx",
     "postinstall": "electron-builder install-app-deps"
