@@ -172,3 +172,87 @@ export function buildScreenshotTool(): OttoTool {
     },
   };
 }
+
+const coord = z.number().int().nonnegative();
+const buttonSchema = z.enum(['left', 'right', 'middle']).default('left');
+const delayMs = z.number().int().nonnegative().optional();
+
+const cursorPositionSchema = z.object({});
+const moveSchema = z.object({ x: coord, y: coord });
+const scrollSchema = z.object({
+  dx: z.number().int(),
+  dy: z.number().int(),
+  x: coord.optional(),
+  y: coord.optional(),
+});
+const clickSchema = z.object({ x: coord, y: coord, button: buttonSchema, delay_ms: delayMs });
+const doubleClickSchema = z.object({ x: coord, y: coord, button: buttonSchema });
+const dragSchema = z.object({
+  x1: coord, y1: coord, x2: coord, y2: coord, button: buttonSchema,
+});
+const typeSchema = z.object({ text: z.string(), delay_ms: delayMs });
+const keySchema = z.object({ combo: z.string(), delay_ms: delayMs });
+
+const INPUT_HANDLER_THROW = 'must be invoked via the SDK handler';
+
+export function buildInputTools(): OttoTool[] {
+  return [
+    {
+      name: 'get_cursor_position',
+      description: 'Return the current cursor position in active-monitor pixels: { x, y }.',
+      actionClass: 'read',
+      schema: cursorPositionSchema,
+      async run(_input) { throw new Error(`get_cursor_position ${INPUT_HANDLER_THROW}`); },
+    },
+    {
+      name: 'move',
+      description: 'Move the cursor to (x, y) in active-monitor pixels.',
+      actionClass: 'reversible',
+      schema: moveSchema,
+      async run(_input) { throw new Error(`move ${INPUT_HANDLER_THROW}`); },
+    },
+    {
+      name: 'scroll',
+      description: 'Scroll by (dx, dy). Optional (x, y) moves the cursor there first.',
+      actionClass: 'reversible',
+      schema: scrollSchema,
+      async run(_input) { throw new Error(`scroll ${INPUT_HANDLER_THROW}`); },
+    },
+    {
+      name: 'click',
+      description: 'Click at (x, y) in active-monitor pixels. button: left|right|middle. Optional delay_ms.',
+      actionClass: 'destructive',
+      schema: clickSchema,
+      async run(_input) { throw new Error(`click ${INPUT_HANDLER_THROW}`); },
+    },
+    {
+      name: 'double_click',
+      description: 'Double-click at (x, y) in active-monitor pixels.',
+      actionClass: 'destructive',
+      schema: doubleClickSchema,
+      async run(_input) { throw new Error(`double_click ${INPUT_HANDLER_THROW}`); },
+    },
+    {
+      name: 'drag',
+      description: 'Drag from (x1, y1) to (x2, y2) with the given button held down.',
+      actionClass: 'destructive',
+      schema: dragSchema,
+      async run(_input) { throw new Error(`drag ${INPUT_HANDLER_THROW}`); },
+    },
+    {
+      name: 'type',
+      description: 'Type literal text into the focused window. Optional delay_ms.',
+      actionClass: 'destructive',
+      schema: typeSchema,
+      async run(_input) { throw new Error(`type ${INPUT_HANDLER_THROW}`); },
+    },
+    {
+      name: 'key',
+      description:
+        'Send a key combo to the focused window (e.g. "Control+S", "F5", "Return"). xdotool-style naming.',
+      actionClass: 'destructive',
+      schema: keySchema,
+      async run(_input) { throw new Error(`key ${INPUT_HANDLER_THROW}`); },
+    },
+  ];
+}

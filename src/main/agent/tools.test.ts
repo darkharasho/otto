@@ -89,3 +89,84 @@ describe('buildScreenshotTool', () => {
     await expect(t.run({})).rejects.toThrow(/SDK handler/);
   });
 });
+
+import { buildInputTools } from './tools';
+
+describe('buildInputTools', () => {
+  it('returns 8 tools with expected names', () => {
+    const names = buildInputTools().map((t) => t.name).sort();
+    expect(names).toEqual([
+      'click', 'double_click', 'drag', 'get_cursor_position',
+      'key', 'move', 'scroll', 'type',
+    ]);
+  });
+
+  it('action classes match the matrix', () => {
+    const byName = new Map(buildInputTools().map((t) => [t.name, t]));
+    expect(byName.get('get_cursor_position')!.actionClass).toBe('read');
+    expect(byName.get('move')!.actionClass).toBe('reversible');
+    expect(byName.get('scroll')!.actionClass).toBe('reversible');
+    expect(byName.get('click')!.actionClass).toBe('destructive');
+    expect(byName.get('double_click')!.actionClass).toBe('destructive');
+    expect(byName.get('drag')!.actionClass).toBe('destructive');
+    expect(byName.get('type')!.actionClass).toBe('destructive');
+    expect(byName.get('key')!.actionClass).toBe('destructive');
+  });
+
+  it('click schema accepts coords + optional button/delay', () => {
+    const t = buildInputTools().find((t) => t.name === 'click')!;
+    expect(t.schema.parse({ x: 10, y: 20 })).toEqual({ x: 10, y: 20, button: 'left' });
+    expect(t.schema.parse({ x: 10, y: 20, button: 'right', delay_ms: 50 })).toEqual({
+      x: 10, y: 20, button: 'right', delay_ms: 50,
+    });
+  });
+
+  it('click schema rejects negative coords', () => {
+    const t = buildInputTools().find((t) => t.name === 'click')!;
+    expect(() => t.schema.parse({ x: -1, y: 0 })).toThrow();
+  });
+
+  it('type schema requires text', () => {
+    const t = buildInputTools().find((t) => t.name === 'type')!;
+    expect(t.schema.parse({ text: 'hi' })).toEqual({ text: 'hi' });
+    expect(() => t.schema.parse({})).toThrow();
+  });
+
+  it('key schema requires combo string', () => {
+    const t = buildInputTools().find((t) => t.name === 'key')!;
+    expect(t.schema.parse({ combo: 'Control+S' })).toEqual({ combo: 'Control+S' });
+    expect(() => t.schema.parse({})).toThrow();
+  });
+
+  it('scroll allows negative deltas', () => {
+    const t = buildInputTools().find((t) => t.name === 'scroll')!;
+    expect(t.schema.parse({ dx: -5, dy: 3 })).toEqual({ dx: -5, dy: 3 });
+  });
+
+  it('drag requires all four coords', () => {
+    const t = buildInputTools().find((t) => t.name === 'drag')!;
+    expect(() => t.schema.parse({ x1: 1, y1: 2 })).toThrow();
+    expect(t.schema.parse({ x1: 1, y1: 2, x2: 3, y2: 4 })).toEqual({
+      x1: 1, y1: 2, x2: 3, y2: 4, button: 'left',
+    });
+  });
+
+  it('direct run throws for every tool', async () => {
+    for (const t of buildInputTools()) {
+      const validInput = (() => {
+        switch (t.name) {
+          case 'get_cursor_position': return {};
+          case 'move': return { x: 0, y: 0 };
+          case 'scroll': return { dx: 0, dy: 0 };
+          case 'click': return { x: 0, y: 0 };
+          case 'double_click': return { x: 0, y: 0 };
+          case 'drag': return { x1: 0, y1: 0, x2: 0, y2: 0 };
+          case 'type': return { text: '' };
+          case 'key': return { combo: 'a' };
+          default: throw new Error('unhandled');
+        }
+      })();
+      await expect(t.run(validInput)).rejects.toThrow(/SDK handler/);
+    }
+  });
+});
