@@ -17,7 +17,7 @@ if (isToggleInvocation()) {
 }
 
 async function startElectron(): Promise<void> {
-  const { app, dialog, shell } = await import('electron');
+  const { app, dialog, shell, BrowserWindow } = await import('electron');
   const path = await import('node:path');
   const { logger, ottoConfigDir } = await import('./logger');
   const { openDatabase } = await import('./db/db');
@@ -28,6 +28,7 @@ async function startElectron(): Promise<void> {
   const { SessionManager } = await import('./agent/session');
   const { createRealSdkClient } = await import('./agent/sdk-client');
   const { registerIpcHandlers } = await import('./ipc/handlers');
+  const { setupUpdaterIpc, disposeUpdater } = await import('./ipc/updater');
   const { emitSessionEvent } = await import('./ipc/events');
   const { ToggleServer } = await import('./toggle-server');
   const { TrayManager } = await import('./tray');
@@ -148,6 +149,8 @@ async function startElectron(): Promise<void> {
     },
   });
 
+  setupUpdaterIpc(() => BrowserWindow.getAllWindows());
+
   const onToggle = () => {
     const mode = shouldResume(repo, sessions) ? 'panel' : 'bar';
     window.toggle(mode);
@@ -194,6 +197,7 @@ async function startElectron(): Promise<void> {
   });
 
   app.on('before-quit', () => {
+    disposeUpdater();
     hotkey.unregisterAll();
     void toggleServer.stop();
     void registry.killAll();

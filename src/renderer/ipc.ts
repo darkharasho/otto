@@ -12,4 +12,5 @@ export const ipc: OttoBridge = {
   onAutonomyEvent(handler: (e: AutonomyEvent) => void): () => void {
     return window.otto.onAutonomyEvent(handler);
   },
+  updater: window.otto.updater,
 };

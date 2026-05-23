@@ -133,6 +133,25 @@ export const AUTONOMY_EVENT_CHANNEL = 'autonomy.event';
 export type AutonomyEvent =
   | { type: 'mode-changed'; mode: AutonomyMode };
 
+export type UpdaterState =
+  | { kind: 'idle' }
+  | { kind: 'checking' }
+  | { kind: 'up-to-date' }
+  | { kind: 'available'; version: string }
+  | { kind: 'downloading'; version: string; percent: number }
+  | { kind: 'downloaded'; version: string }
+  | { kind: 'error'; message: string };
+
+export const UPDATER_EVENT_CHANNEL = 'updater:state';
+
+export interface UpdaterBridge {
+  status(): Promise<UpdaterState>;
+  check(): Promise<UpdaterState>;
+  download(): Promise<UpdaterState>;
+  install(): Promise<void>;
+  onStateChange(cb: (state: UpdaterState) => void): () => void;
+}
+
 export interface OttoBridge {
   invoke<C extends IpcChannel>(
     channel: C,
@@ -140,6 +159,7 @@ export interface OttoBridge {
   ): Promise<Extract<IpcRequest, { channel: C }>['result']>;
   onSessionEvent(handler: (event: SessionEvent) => void): () => void;
   onAutonomyEvent(handler: (event: AutonomyEvent) => void): () => void;
+  updater: UpdaterBridge;
 }
 
 declare global {
