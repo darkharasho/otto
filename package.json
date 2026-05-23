@@ -18,6 +18,7 @@
     "test:watch": "node scripts/ensure-abi.mjs node && vitest",
     "test:integration": "node scripts/ensure-abi.mjs electron && playwright test",
     "toggle": "node out/main/index.js toggle",
+    "toggle:dev": "node out/main/index.js toggle --dev",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "lint": "eslint . --ext .ts,.tsx",
     "tray-icon": "node scripts/generate-tray-icon.mjs",

@@ -64,7 +64,19 @@ export type IpcRequest =
   | { channel: 'settings.setHideOnBlur'; args: { enabled: boolean }; result: void }
   | { channel: 'settings.openLogsDir'; args: void; result: void }
   | { channel: 'settings.resetAllSessions'; args: void; result: { deleted: number } }
-  | { channel: 'shell.kill'; args: { handle: string }; result: { killed: boolean } };
+  | { channel: 'shell.kill'; args: { handle: string }; result: { killed: boolean } }
+  | { channel: 'shortcut.info'; args: void; result: ShortcutInfoView }
+  | { channel: 'shortcut.openKeyboardSettings'; args: void; result: { launched: boolean } };
+
+export interface ShortcutInfoView {
+  desktopEnv: 'kde' | 'gnome' | 'xfce' | 'cinnamon' | 'mate' | 'hyprland' | 'sway' | 'other' | 'unknown';
+  displayServer: 'x11' | 'wayland' | 'unknown';
+  mechanism: 'global-shortcut' | 'external-toggle' | 'none';
+  registered: boolean;
+  recommendedChord: string;
+  friendlyName: string;
+  commands: { prod: string; dev?: string };
+}
 
 export interface SettingsView {
   autonomy: { mode: AutonomyMode };

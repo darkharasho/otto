@@ -12,10 +12,14 @@ import type {
   SessionCancelArgs,
   SessionLoadArgs,
   SettingsView,
+  ShortcutInfoView,
 } from '@shared/ipc-contract';
 import type { AutonomyMode, Message, SessionMeta } from '@shared/messages';
 import { emitAutonomyEvent } from './events';
 import { logger } from '../logger';
+import { gatherShortcutInfo, openKeyboardSettings } from '../shortcut';
+import { instanceDisplayName } from '../instance';
+import type { HotkeyManager } from '../hotkey';
 
 export function registerIpcHandlers(deps: {
   repo: Repo;
@@ -25,6 +29,8 @@ export function registerIpcHandlers(deps: {
   settings: Settings;
   registry: ProcessRegistry;
   appVersion: string;
+  recommendedChord: string;
+  hotkey: HotkeyManager;
   applyStartAtLogin(enabled: boolean): void;
   openLogsDir(): void;
 }): void {
@@ -142,6 +148,33 @@ export function registerIpcHandlers(deps: {
     const deleted = repo.deleteAllSessions();
     return { deleted };
   });
+
+  function shortcutInfo(): ShortcutInfoView {
+    const info = gatherShortcutInfo({
+      recommendedChord: deps.recommendedChord,
+      friendlyName: instanceDisplayName(),
+      hotkeyState: deps.hotkey.getState(),
+    });
+    return {
+      desktopEnv: info.desktopEnv,
+      displayServer: info.displayServer,
+      mechanism: info.mechanism,
+      registered: info.registered,
+      recommendedChord: info.recommendedChord,
+      friendlyName: info.friendlyName,
+      commands: info.commands,
+    };
+  }
+
+  ipcMain.handle('shortcut.info', async (): Promise<ShortcutInfoView> => shortcutInfo());
+
+  ipcMain.handle(
+    'shortcut.openKeyboardSettings',
+    async (): Promise<{ launched: boolean }> => {
+      const launched = await openKeyboardSettings(shortcutInfo().desktopEnv);
+      return { launched };
+    }
+  );
 
   settings.onChange((snap) => {
     broker.setMode(snap.autonomy.mode);

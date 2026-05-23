@@ -1,6 +1,7 @@
 import { Tray, Menu, nativeImage, app, type NativeImage } from 'electron';
 import path from 'node:path';
 import { logger } from './logger';
+import { instanceDisplayName } from './instance';
 
 export interface TrayActions {
   onShow(): void;
@@ -36,7 +37,7 @@ export class TrayManager {
       return;
     }
 
-    this.tray.setToolTip('Otto');
+    this.tray.setToolTip(instanceDisplayName());
     this.refreshMenu();
     // Left-click on the tray shows the bar (matches the hotkey).
     this.tray.on('click', () => this.actions.onShow());
@@ -44,12 +45,13 @@ export class TrayManager {
 
   private refreshMenu(): void {
     if (!this.tray) return;
+    const name = instanceDisplayName();
     const menu = Menu.buildFromTemplate([
-      { label: 'Show Otto', click: () => this.actions.onShow() },
+      { label: `Show ${name}`, click: () => this.actions.onShow() },
       { type: 'separator' },
       { label: 'Settings…', click: () => this.actions.onOpenSettings() },
       { type: 'separator' },
-      { label: 'Quit Otto', click: () => this.actions.onQuit() },
+      { label: `Quit ${name}`, click: () => this.actions.onQuit() },
     ]);
     this.tray.setContextMenu(menu);
   }

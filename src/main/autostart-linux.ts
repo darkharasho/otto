@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { logger } from './logger';
+import { instanceDisplayName, instanceSuffix } from './instance';
 
 // Electron's app.setLoginItemSettings is a no-op on Linux. The XDG-standard
 // way to autostart a desktop app is a .desktop file under ~/.config/autostart.
@@ -9,7 +10,7 @@ import { logger } from './logger';
 // the user config dir.
 function autostartFilePath(): string {
   const base = process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config');
-  return path.join(base, 'autostart', 'otto.desktop');
+  return path.join(base, 'autostart', `otto${instanceSuffix()}.desktop`);
 }
 
 // Prefer the original AppImage path so the autostart entry survives version
@@ -23,7 +24,7 @@ function desktopFileContents(): string {
   return [
     '[Desktop Entry]',
     'Type=Application',
-    'Name=Otto',
+    `Name=${instanceDisplayName()}`,
     'Comment=General-purpose computer coworking agent',
     `Exec=${execTarget()}`,
     'Terminal=false',

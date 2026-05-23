@@ -20,6 +20,17 @@ async function startElectron(): Promise<void> {
   const { app, dialog, shell, BrowserWindow } = await import('electron');
   const path = await import('node:path');
   const { logger, ottoConfigDir } = await import('./logger');
+  const { isDevInstance, instanceDisplayName } = await import('./instance');
+
+  // Give the dev build its own identity so it doesn't clobber the installed
+  // prod build's userData (Chromium profile, IndexedDB, cookies, etc.).
+  // Set this before app.whenReady() — Electron caches the userData path on
+  // first access.
+  if (isDevInstance()) {
+    app.setName(instanceDisplayName());
+    app.setPath('userData', path.join(app.getPath('appData'), instanceDisplayName()));
+    logger.info(`running as ${instanceDisplayName()} — userData=${app.getPath('userData')}, configDir=${ottoConfigDir}`);
+  }
   const { openDatabase } = await import('./db/db');
   const { Repo } = await import('./db/repo');
   const { WindowManager, rendererEntry } = await import('./window');
@@ -143,6 +154,13 @@ async function startElectron(): Promise<void> {
   const preloadPath = path.join(app.getAppPath(), 'out', 'preload', 'index.js');
   window.create(preloadPath, rendererEntry());
 
+  const onToggle = () => {
+    const mode = shouldResume(repo, sessions) ? 'panel' : 'bar';
+    window.toggle(mode);
+  };
+
+  const hotkey = new HotkeyManager(platform, onToggle);
+
   registerIpcHandlers({
     repo,
     sessions,
@@ -151,6 +169,8 @@ async function startElectron(): Promise<void> {
     settings,
     registry,
     appVersion: app.getVersion(),
+    recommendedChord: platform.defaultHotkey(),
+    hotkey,
     applyStartAtLogin,
     openLogsDir: () => {
       void shell.openPath(ottoConfigDir);
@@ -159,19 +179,10 @@ async function startElectron(): Promise<void> {
 
   setupUpdaterIpc(() => BrowserWindow.getAllWindows(), notifier);
 
-  const onToggle = () => {
-    const mode = shouldResume(repo, sessions) ? 'panel' : 'bar';
-    window.toggle(mode);
-  };
-
-  const hotkey = new HotkeyManager(platform, onToggle);
-  let hotkeyState: { registered: boolean; failureReason: string | null; usingExternalToggle?: boolean } = {
-    registered: false,
-    failureReason: null,
-  };
+  let hotkeyState = hotkey.getState();
   try {
     hotkeyState = await hotkey.register();
-    if (!hotkeyState.registered && !hotkeyState.usingExternalToggle) {
+    if (!hotkeyState.registered && hotkeyState.mechanism !== 'external-toggle') {
       logger.warn(`hotkey not registered: ${hotkeyState.failureReason}`);
     }
   } catch (err) {

@@ -5,6 +5,7 @@ import { ModelSwitcher } from './components/ModelSwitcher';
 import { OttoMark } from './components/OttoMark';
 import { Section, Toggle, RadioGroup, NumberField } from './components/SettingsControls';
 import { UpdaterSection } from './components/UpdaterSection';
+import { ShortcutSection } from './components/ShortcutSection';
 import type { SettingsView } from '@shared/ipc-contract';
 import type { AutonomyMode } from '@shared/messages';
 
@@ -157,6 +158,8 @@ export function SettingsApp() {
               description="When on, clicking outside Otto hides it (like a popover). When off, Otto stays open until you dismiss it with the hotkey."
             />
           </Section>
+
+          <ShortcutSection />
 
           <Section title="System">
             <Toggle

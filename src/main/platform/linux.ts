@@ -18,6 +18,7 @@ import type {
   PlatformInput,
   ShellChild,
 } from './index';
+import { isDevInstance } from '../instance';
 
 const BUTTON_CODE: Record<MouseButton, string> = {
   left: '0xC0',
@@ -60,7 +61,9 @@ export class LinuxAdapter implements PlatformAdapter {
   }
 
   defaultHotkey(): string {
-    return 'Super+Space';
+    // Dev build uses a distinct chord so it doesn't fight the installed prod
+    // build over the same global shortcut on X11.
+    return isDevInstance() ? 'Ctrl+Shift+Alt+Space' : 'Super+Space';
   }
 
   shell = {

@@ -1,10 +1,12 @@
 import log from 'electron-log';
 import path from 'node:path';
 import os from 'node:os';
+import { instanceSuffix } from './instance';
 
+const dirName = `otto${instanceSuffix()}`;
 const configDir = process.env.XDG_CONFIG_HOME
-  ? path.join(process.env.XDG_CONFIG_HOME, 'otto')
-  : path.join(os.homedir(), '.config', 'otto');
+  ? path.join(process.env.XDG_CONFIG_HOME, dirName)
+  : path.join(os.homedir(), '.config', dirName);
 
 log.transports.file.resolvePathFn = () => path.join(configDir, 'logs', 'main.log');
 log.transports.file.maxSize = 5 * 1024 * 1024; // 5 MB rotate
