@@ -4,14 +4,31 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { nativeImage, screen } from 'electron';
+import { translateKeyCombo } from '../input/keymap';
+import { checkYdotoolReady } from '../input/setup-check';
 import type {
   CaptureOptions,
   CaptureResult,
+  CursorPosition,
   DisplayServer,
   MonitorInfo,
+  MouseButton,
   PlatformAdapter,
+  PlatformInput,
   ShellChild,
 } from './index';
+
+const BUTTON_CODE: Record<MouseButton, string> = {
+  left: '0xC0',
+  right: '0xC1',
+  middle: '0xC2',
+};
+
+const BUTTON_LOW: Record<MouseButton, string> = {
+  left: '0x40',
+  right: '0x41',
+  middle: '0x42',
+};
 
 export class LinuxAdapter implements PlatformAdapter {
   readonly name = 'linux';
@@ -91,6 +108,120 @@ export class LinuxAdapter implements PlatformAdapter {
       }
     },
   };
+
+  input: PlatformInput = {
+    cursorPosition: async (): Promise<CursorPosition> => {
+      const point = screen.getCursorScreenPoint();
+      const monitor = this.activeMonitor();
+      return { x: point.x - monitor.x, y: point.y - monitor.y };
+    },
+    move: async (x: number, y: number): Promise<void> => {
+      await this.ensureInputReady();
+      const { absX, absY } = this.absolute(x, y);
+      await this.runYdotool(['mousemove', '--absolute', String(absX), String(absY)]);
+    },
+    scroll: async (dx: number, dy: number, x?: number, y?: number): Promise<void> => {
+      await this.ensureInputReady();
+      if (x !== undefined && y !== undefined) {
+        const { absX, absY } = this.absolute(x, y);
+        await this.runYdotool(['mousemove', '--absolute', String(absX), String(absY)]);
+      }
+      if (dy !== 0) {
+        await this.runYdotool(['mousemove', '--wheel', '0', String(dy)]);
+      }
+      if (dx !== 0) {
+        await this.runYdotool(['mousemove', '--hwheel', String(dx), '0']);
+      }
+    },
+    click: async (x: number, y: number, button: MouseButton): Promise<void> => {
+      await this.ensureInputReady();
+      const { absX, absY } = this.absolute(x, y);
+      await this.runYdotool(['mousemove', '--absolute', String(absX), String(absY)]);
+      await this.runYdotool(['click', BUTTON_CODE[button]]);
+    },
+    doubleClick: async (x: number, y: number, button: MouseButton): Promise<void> => {
+      await this.ensureInputReady();
+      const { absX, absY } = this.absolute(x, y);
+      await this.runYdotool(['mousemove', '--absolute', String(absX), String(absY)]);
+      await this.runYdotool(['click', BUTTON_CODE[button]]);
+      await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      await this.runYdotool(['click', BUTTON_CODE[button]]);
+    },
+    drag: async (x1: number, y1: number, x2: number, y2: number, button: MouseButton): Promise<void> => {
+      await this.ensureInputReady();
+      const a = this.absolute(x1, y1);
+      const b = this.absolute(x2, y2);
+      await this.runYdotool(['mousemove', '--absolute', String(a.absX), String(a.absY)]);
+      await this.runYdotool(['mousedown', BUTTON_LOW[button]]);
+      await this.runYdotool(['mousemove', '--absolute', String(b.absX), String(b.absY)]);
+      await this.runYdotool(['mouseup', BUTTON_LOW[button]]);
+    },
+    type: async (text: string): Promise<void> => {
+      await this.ensureInputReady();
+      await this.runYdotoolWithStdin(['type', '--'], text);
+    },
+    key: async (combo: string): Promise<void> => {
+      await this.ensureInputReady();
+      const events = translateKeyCombo(combo);
+      const args = ['key', ...events.map((e) => `${e.code}:${e.state}`)];
+      await this.runYdotool(args);
+    },
+  };
+
+  private absolute(x: number, y: number): { absX: number; absY: number } {
+    const monitor = this.activeMonitor();
+    return { absX: monitor.x + x, absY: monitor.y + y };
+  }
+
+  private async ensureInputReady(): Promise<void> {
+    const r = await checkYdotoolReady();
+    if (!r.ok) {
+      throw new Error(`${r.reason}\n\n${r.hint}`);
+    }
+  }
+
+  private runYdotool(args: string[]): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const child = nodeSpawn('ydotool', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      let stderr = '';
+      child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8'); });
+      child.once('error', reject);
+      child.once('exit', (code) => {
+        if (code === 0) return resolve();
+        if (/permission denied|EACCES/i.test(stderr)) {
+          reject(new Error(
+            'Permission denied — add your user to the input group:\n' +
+            'sudo usermod -aG input $USER\n' +
+            '(then log out and back in)'
+          ));
+          return;
+        }
+        reject(new Error(`ydotool failed: ${stderr.trim() || `exit ${code}`}`));
+      });
+    });
+  }
+
+  private runYdotoolWithStdin(args: string[], stdinText: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const child = nodeSpawn('ydotool', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+      let stderr = '';
+      child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8'); });
+      child.once('error', reject);
+      child.once('exit', (code) => {
+        if (code === 0) return resolve();
+        if (/permission denied|EACCES/i.test(stderr)) {
+          reject(new Error(
+            'Permission denied — add your user to the input group:\n' +
+            'sudo usermod -aG input $USER\n' +
+            '(then log out and back in)'
+          ));
+          return;
+        }
+        reject(new Error(`ydotool failed: ${stderr.trim() || `exit ${code}`}`));
+      });
+      child.stdin.end(stdinText);
+    });
+  }
 
   private activeMonitor(): MonitorInfo {
     const point = screen.getCursorScreenPoint();
