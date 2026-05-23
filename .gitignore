@@ -3,7 +3,10 @@ node_modules
 .env.*
 .DS_Store
 dist
-build
+build/*
+!build/icon.png
+!build/icon.ico
+!build/icon.icns
 out
 *.log
 .superpowers
