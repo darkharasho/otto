@@ -47,6 +47,13 @@ const SYSTEM_PROMPT = [
   '- WebFetch(url, prompt): fetch a URL and extract readable content based on the prompt.',
   '- echo(msg), fake-mutate(target), fake-wipe(target): test stubs; ignore unless explicitly asked.',
   '',
+  'GUI workflow — when the user asks you to type, click, or otherwise interact with their screen:',
+  '1. Call `screenshot` first to see what is on screen. Do not assume the active window is what the user means; Otto\'s own chat panel is often focused.',
+  '2. Identify the target visually — find the input field, button, or text the user is referring to. Note its pixel coordinates from the screenshot.',
+  '3. Click into the target (`click(x, y)`) BEFORE typing. Wait for the click\'s post-action delay to settle.',
+  '4. Then `type("...")` or send a `key("Control+...")` combo.',
+  'For follow-up actions (more text, a button), take another screenshot to confirm focus moved and the previous action landed where you expected.',
+  '',
   'The autonomy framework gates tool calls by action class. Some commands will pause for user approval before running — proceed normally, the user will see the prompt. Be concise.',
 ].join('\n');
 
