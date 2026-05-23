@@ -1,3 +1,24 @@
+Version v0.2.0
+
+New features:
+- **Live activity overlay** — when Otto is autonomously controlling your computer with the main window hidden, a small frameless overlay appears in the bottom-right showing a live feed of Otto's reasoning and each tool call (clicks, typing, screenshots, shell commands). Click-through, theme-matched, and auto-hides when the main window comes back.
+- **Per-window screenshots** — Otto can now capture just a single window (resolved via kdotool) instead of the full multi-monitor desktop, making iteration on a known target much faster.
+- **Persistent knowledge file** — Otto now keeps a per-machine markdown file (`knowledge.md`) of durable facts and preferences it has learned (e.g., "browser of choice is Zen"). It's read into the system prompt at the start of every turn, so memory carries across sessions.
+
+Input + screen fixes:
+- **Switched from ydotool to xdotool** on Linux. KDE Plasma 6 Wayland filters synthetic keyboard events from uinput devices, so ydotool's keystrokes silently dropped. xdotool drives input through XWayland's XTEST extension, which works for any app running under XWayland (the vast majority). One-time KDE permission prompt on first use.
+- **Otto's own window is excluded from captures** so screenshots no longer leak the chat panel back to the model.
+
+Notification fix:
+- The turn-complete notification preview no longer shows Otto's opening "I'll help you…" monologue. The text accumulator now resets on each tool call, so the preview reflects the final summary.
+
+Dev / desktop polish:
+- Dev builds now have a distinct amber icon and a "DEV" pill, and use a separate userData directory so the dev build can't clobber the installed prod build's settings/sessions.
+- Dev and prod use separate global hotkey chords by default so they don't fight on X11.
+- Linux autostart now writes a proper XDG `.desktop` file.
+- External links in the chat open in your default browser instead of inside Otto.
+- New **Keyboard shortcut** settings page surfaces the recommended chord and links to your DE's keyboard settings.
+
 Version v0.1.3
 
 New settings:
