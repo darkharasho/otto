@@ -1,3 +1,8 @@
+Version v0.1.3
+
+New settings:
+- **Hide when clicked away** — new toggle under Window settings. Off by default (matches today's pinned behavior). When on, clicking outside Otto hides it like a popover.
+
 Version v0.1.2
 
 UI polish:
