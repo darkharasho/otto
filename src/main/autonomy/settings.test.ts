@@ -24,7 +24,12 @@ describe('Settings.load', () => {
     await s.load();
     expect(s.getMode()).toBe('balanced');
     const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
-    expect(written).toEqual({ version: 1, autonomy: { mode: 'balanced' } });
+    expect(written.version).toBe(2);
+    expect(written.autonomy).toEqual({ mode: 'balanced' });
+    expect(written.notifications).toEqual({ turnComplete: true, approval: true, sound: false });
+    expect(written.startAtLogin).toBe(false);
+    expect(written.windowPosition).toBe('bottom-center');
+    expect(written.autoDeleteDays).toBe(0);
   });
 
   it('returns existing mode from a v1 file', async () => {
@@ -63,7 +68,7 @@ describe('Settings.setMode', () => {
     const s = new Settings(settingsPath());
     await s.load();
     const events: string[] = [];
-    const unsub = s.onChange((mode) => events.push(mode));
+    const unsub = s.onChange((snap) => events.push(snap.autonomy.mode));
     await s.setMode('strict');
     expect(s.getMode()).toBe('strict');
     expect(events).toEqual(['strict']);

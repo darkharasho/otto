@@ -17,7 +17,7 @@ if (isToggleInvocation()) {
 }
 
 async function startElectron(): Promise<void> {
-  const { app, dialog } = await import('electron');
+  const { app, dialog, shell } = await import('electron');
   const path = await import('node:path');
   const { logger, ottoConfigDir } = await import('./logger');
   const { openDatabase } = await import('./db/db');
@@ -64,6 +64,29 @@ async function startElectron(): Promise<void> {
   const settings = new Settings(path.join(ottoConfigDir, 'settings.json'));
   await settings.load();
 
+  // Apply auto-deletion of old sessions on startup. Cheap to run; no need to
+  // schedule a recurring job — most users only launch Otto once per boot.
+  const autoDeleteDays = settings.getAutoDeleteDays();
+  if (autoDeleteDays > 0) {
+    const cutoff = Date.now() - autoDeleteDays * 86400000;
+    const removed = repo.deleteSessionsOlderThan(cutoff);
+    if (removed > 0) logger.info(`auto-deleted ${removed} session(s) older than ${autoDeleteDays}d`);
+  }
+
+  const applyStartAtLogin = (enabled: boolean) => {
+    try {
+      app.setLoginItemSettings({ openAtLogin: enabled, openAsHidden: true });
+    } catch (err) {
+      logger.warn(`setLoginItemSettings failed: ${err instanceof Error ? err.message : err}`);
+    }
+  };
+  applyStartAtLogin(settings.getStartAtLogin());
+
+  window.setPositionPref(settings.getWindowPosition());
+  settings.onChange((snap) => {
+    window.setPositionPref(snap.windowPosition);
+  });
+
   let currentMessageId: string | null = null;
 
   // Intercept every session event so the Notifier can decide whether to
@@ -71,6 +94,9 @@ async function startElectron(): Promise<void> {
   const notifier = new Notifier({
     isMainFocused: () => window.isVisible() && window.isFocused(),
     showMain: () => window.show(window.getMode()),
+    shouldNotifyTurnComplete: () => settings.getNotifications().turnComplete,
+    shouldNotifyApproval: () => settings.getNotifications().approval,
+    silent: () => !settings.getNotifications().sound,
   });
   const emitWithNotify: typeof emitSessionEvent = (event) => {
     notifier.handle(event);
@@ -103,7 +129,19 @@ async function startElectron(): Promise<void> {
   const preloadPath = path.join(app.getAppPath(), 'out', 'preload', 'index.js');
   window.create(preloadPath, rendererEntry());
 
-  registerIpcHandlers({ repo, sessions, window, broker, settings, registry });
+  registerIpcHandlers({
+    repo,
+    sessions,
+    window,
+    broker,
+    settings,
+    registry,
+    appVersion: app.getVersion(),
+    applyStartAtLogin,
+    openLogsDir: () => {
+      void shell.openPath(ottoConfigDir);
+    },
+  });
 
   const onToggle = () => {
     const mode = shouldResume(repo, sessions) ? 'panel' : 'bar';

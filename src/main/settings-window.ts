@@ -1,8 +1,8 @@
 import { BrowserWindow, screen } from 'electron';
 import { logger } from './logger';
 
-const WIDTH = 480;
-const HEIGHT = 440;
+const WIDTH = 520;
+const HEIGHT = 720;
 
 export class SettingsWindowManager {
   private window: BrowserWindow | null = null;

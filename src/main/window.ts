@@ -8,7 +8,10 @@ const BAR_WIDTH = 640;
 const BAR_HEIGHT = 72;
 const PANEL_MIN_HEIGHT = 320;
 const PANEL_BOTTOM_MARGIN = 48;
+const PANEL_TOP_MARGIN = 48;
 const PANEL_MAX_DISPLAY_RATIO = 0.7;
+
+export type WindowPositionPref = 'bottom-center' | 'top-center';
 
 const RESIZE_DURATION_MS = 180;
 
@@ -16,6 +19,11 @@ export class WindowManager {
   private window: BrowserWindow | null = null;
   private mode: WindowMode = 'bar';
   private resizeAnimId = 0;
+  private positionPref: WindowPositionPref = 'bottom-center';
+
+  setPositionPref(p: WindowPositionPref): void {
+    this.positionPref = p;
+  }
 
   create(preloadPath: string, rendererUrl: string): BrowserWindow {
     const win = new BrowserWindow({
@@ -155,8 +163,10 @@ export class WindowManager {
     height: number
   ): { x: number; y: number } {
     const x = Math.round(workArea.x + (workArea.width - width) / 2);
-    const y = workArea.y + workArea.height - height - PANEL_BOTTOM_MARGIN;
-    return { x, y };
+    if (this.positionPref === 'top-center') {
+      return { x, y: workArea.y + PANEL_TOP_MARGIN };
+    }
+    return { x, y: workArea.y + workArea.height - height - PANEL_BOTTOM_MARGIN };
   }
 }
 

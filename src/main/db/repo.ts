@@ -69,6 +69,32 @@ export class Repo {
     return row ? rowToMeta(row) : null;
   }
 
+  deleteSessionsOlderThan(cutoffMs: number): number {
+    // Messages cascade via ON DELETE CASCADE in the schema; if not, delete by
+    // session id list first. Keep it simple: just delete sessions.
+    const tx = this.db.transaction(() => {
+      const ids = (this.db
+        .prepare(`SELECT id FROM sessions WHERE last_active < ?`)
+        .all(cutoffMs) as { id: string }[]).map((r) => r.id);
+      if (ids.length === 0) return 0;
+      const placeholders = ids.map(() => '?').join(',');
+      this.db.prepare(`DELETE FROM messages WHERE session_id IN (${placeholders})`).run(...ids);
+      this.db.prepare(`DELETE FROM sessions WHERE id IN (${placeholders})`).run(...ids);
+      return ids.length;
+    });
+    return tx();
+  }
+
+  deleteAllSessions(): number {
+    const tx = this.db.transaction(() => {
+      const count = (this.db.prepare(`SELECT COUNT(*) as n FROM sessions`).get() as { n: number }).n;
+      this.db.prepare(`DELETE FROM messages`).run();
+      this.db.prepare(`DELETE FROM sessions`).run();
+      return count;
+    });
+    return tx();
+  }
+
   appendMessage(m: Message & { sessionId: string }): Message {
     const nextSeq = this.nextSeq(m.sessionId);
     const stored: Message = { ...m, seq: nextSeq };

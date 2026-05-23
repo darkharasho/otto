@@ -6,6 +6,9 @@ import { logger } from './logger';
 interface Deps {
   isMainFocused(): boolean;
   showMain(): void;
+  shouldNotifyTurnComplete(): boolean;
+  shouldNotifyApproval(): boolean;
+  silent(): boolean;
 }
 
 const TRUNCATE = 120;
@@ -50,8 +53,7 @@ export class Notifier {
         this.hadActivity.add(event.sessionId);
         return;
       case 'tool-call-pending': {
-        // Always notify on approval requests — if the user moved away from
-        // Otto they'd otherwise miss the prompt and the turn would block.
+        if (!this.deps.shouldNotifyApproval()) return;
         this.notifyApproval(event);
         return;
       }
@@ -69,7 +71,7 @@ export class Notifier {
         this.lastText.delete(event.sessionId);
         this.hadActivity.delete(event.sessionId);
         if (!had) return;
-        // Only ping when the user can't already see the result.
+        if (!this.deps.shouldNotifyTurnComplete()) return;
         if (this.deps.isMainFocused()) return;
         this.notifyTurnComplete(preview);
         return;
@@ -94,7 +96,7 @@ export class Notifier {
       const n = new Notification({
         title: args.title,
         body: args.body,
-        silent: false,
+        silent: this.deps.silent(),
         urgency: args.urgency ?? 'normal',
         icon: this.iconPath(),
       });

@@ -11,6 +11,7 @@ import type {
   SessionSendArgs,
   SessionCancelArgs,
   SessionLoadArgs,
+  SettingsView,
 } from '@shared/ipc-contract';
 import type { AutonomyMode, Message, SessionMeta } from '@shared/messages';
 import { emitAutonomyEvent } from './events';
@@ -23,6 +24,9 @@ export function registerIpcHandlers(deps: {
   broker: DecisionBroker;
   settings: Settings;
   registry: ProcessRegistry;
+  appVersion: string;
+  applyStartAtLogin(enabled: boolean): void;
+  openLogsDir(): void;
 }): void {
   const { repo, sessions, window, broker, settings, registry } = deps;
 
@@ -84,9 +88,57 @@ export function registerIpcHandlers(deps: {
     }
   );
 
-  settings.onChange((mode) => {
-    broker.setMode(mode);
-    emitAutonomyEvent({ type: 'mode-changed', mode });
+  ipcMain.handle('settings.get', async (): Promise<SettingsView> => {
+    const snap = settings.snapshot();
+    return { ...snap, version: deps.appVersion };
+  });
+
+  ipcMain.handle(
+    'settings.setNotifications',
+    async (
+      _e,
+      args: Partial<{ turnComplete: boolean; approval: boolean; sound: boolean }>
+    ): Promise<void> => {
+      await settings.setNotifications(args);
+    }
+  );
+
+  ipcMain.handle(
+    'settings.setStartAtLogin',
+    async (_e, args: { enabled: boolean }): Promise<void> => {
+      await settings.setStartAtLogin(args.enabled);
+      deps.applyStartAtLogin(args.enabled);
+    }
+  );
+
+  ipcMain.handle(
+    'settings.setWindowPosition',
+    async (_e, args: { position: 'bottom-center' | 'top-center' }): Promise<void> => {
+      await settings.setWindowPosition(args.position);
+      // Re-position the visible window immediately so the change is felt.
+      if (window.isVisible()) window.show(window.getMode());
+    }
+  );
+
+  ipcMain.handle(
+    'settings.setAutoDeleteDays',
+    async (_e, args: { days: number }): Promise<void> => {
+      await settings.setAutoDeleteDays(args.days);
+    }
+  );
+
+  ipcMain.handle('settings.openLogsDir', async (): Promise<void> => {
+    deps.openLogsDir();
+  });
+
+  ipcMain.handle('settings.resetAllSessions', async (): Promise<{ deleted: number }> => {
+    const deleted = repo.deleteAllSessions();
+    return { deleted };
+  });
+
+  settings.onChange((snap) => {
+    broker.setMode(snap.autonomy.mode);
+    emitAutonomyEvent({ type: 'mode-changed', mode: snap.autonomy.mode });
   });
 
   logger.info('ipc handlers registered');

@@ -48,7 +48,31 @@ export type IpcRequest =
     }
   | { channel: 'autonomy.getMode'; args: void; result: AutonomyMode }
   | { channel: 'autonomy.setMode'; args: { mode: AutonomyMode }; result: void }
+  | { channel: 'settings.get'; args: void; result: SettingsView }
+  | {
+      channel: 'settings.setNotifications';
+      args: Partial<{ turnComplete: boolean; approval: boolean; sound: boolean }>;
+      result: void;
+    }
+  | { channel: 'settings.setStartAtLogin'; args: { enabled: boolean }; result: void }
+  | {
+      channel: 'settings.setWindowPosition';
+      args: { position: 'bottom-center' | 'top-center' };
+      result: void;
+    }
+  | { channel: 'settings.setAutoDeleteDays'; args: { days: number }; result: void }
+  | { channel: 'settings.openLogsDir'; args: void; result: void }
+  | { channel: 'settings.resetAllSessions'; args: void; result: { deleted: number } }
   | { channel: 'shell.kill'; args: { handle: string }; result: { killed: boolean } };
+
+export interface SettingsView {
+  autonomy: { mode: AutonomyMode };
+  notifications: { turnComplete: boolean; approval: boolean; sound: boolean };
+  startAtLogin: boolean;
+  windowPosition: 'bottom-center' | 'top-center';
+  autoDeleteDays: number;
+  version: string;
+}
 
 export type IpcChannel = IpcRequest['channel'];
 
