@@ -3,7 +3,7 @@ import { promises as fsp } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { screen } from 'electron';
+import { nativeImage, screen } from 'electron';
 import type {
   CaptureOptions,
   CaptureResult,
@@ -62,23 +62,30 @@ export class LinuxAdapter implements PlatformAdapter {
         }
       }
 
+      // Always capture the full active monitor; spectacle's --region flag opens
+      // an interactive picker we don't want. Crop in-process via nativeImage
+      // when the caller requested a region.
       const tmp = path.join(tmpdir(), `otto-screenshot-${randomUUID()}.png`);
-      const args = opts.region
-        ? [
-            '-bn',
-            '--region',
-            `${monitor.x + opts.region.x},${monitor.y + opts.region.y},${opts.region.w},${opts.region.h}`,
-            '-o',
-            tmp,
-          ]
-        : ['-bnm', '-o', tmp];
-
-      await this.runSpectacle(args, 5_000);
+      await this.runSpectacle(['-bnm', '-o', tmp], 5_000);
 
       try {
-        const bytes = await fsp.readFile(tmp);
-        const { width, height } = this.readPngDims(bytes);
-        return { bytes, width, height, monitor };
+        const fullBytes = await fsp.readFile(tmp);
+        if (!opts.region) {
+          const { width, height } = this.readPngDims(fullBytes);
+          return { bytes: fullBytes, width, height, monitor };
+        }
+        const r = opts.region;
+        const scale = monitor.scale || 1;
+        const img = nativeImage.createFromBuffer(fullBytes);
+        const cropped = img.crop({
+          x: Math.round(r.x * scale),
+          y: Math.round(r.y * scale),
+          width: Math.round(r.w * scale),
+          height: Math.round(r.h * scale),
+        });
+        const croppedBytes = cropped.toPNG();
+        const { width, height } = cropped.getSize();
+        return { bytes: croppedBytes, width, height, monitor };
       } finally {
         await fsp.unlink(tmp).catch(() => {});
       }
