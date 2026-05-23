@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { exec, type InputAction } from './executor';
+import { exec } from './executor';
 import type { CursorPosition, PlatformAdapter, PlatformInput } from '../platform';
 
 function makeFakeInput(overrides: Partial<PlatformInput> = {}): PlatformInput {

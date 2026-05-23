@@ -11,7 +11,6 @@ let dir: string;
 let repo: Repo;
 let manager: SessionManager;
 let events: SessionEvent[];
-let sdkTurn: SdkTurn | null;
 let fakeSdk: SdkClient;
 
 beforeEach(() => {
@@ -19,7 +18,6 @@ beforeEach(() => {
   const db = openDatabase(path.join(dir, 'otto.db'));
   repo = new Repo(db);
   events = [];
-  sdkTurn = null;
   fakeSdk = {
     startSession: vi.fn(async () => ({ id: 'sdk-1' })),
     sendTurn: vi.fn((_sid, _text, signal) => {
@@ -33,7 +31,6 @@ beforeEach(() => {
         },
         signal,
       };
-      sdkTurn = t;
       return t;
     }),
   };
