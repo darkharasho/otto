@@ -358,7 +358,7 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
           options: {
             systemPrompt: SYSTEM_PROMPT,
             // Disable all built-in Claude Code tools; we only want our MCP tool.
-            tools: [],
+            tools: ['WebSearch', 'WebFetch'],
             allowedTools,
             mcpServers: { 'otto-tools': ottoMcp },
             abortController,
