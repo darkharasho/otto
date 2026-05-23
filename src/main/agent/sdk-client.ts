@@ -169,7 +169,7 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
     return tool(
       t.name,
       t.description,
-      shape as any,
+      shape as Parameters<typeof tool>[2],
       async (args: unknown, _extra: unknown) => {
         const callId =
           (typeof _extra === 'object' && _extra && 'toolUseId' in _extra
