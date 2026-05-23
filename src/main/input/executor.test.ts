@@ -115,7 +115,10 @@ describe('exec', () => {
       click: vi.fn(async () => { throw new Error('boom'); }),
     });
     const p = exec({ kind: 'click', x: 1, y: 2, button: 'left' }, makeAdapter(input), 100);
+    // Attach a catch handler *before* draining timers so vi.runAllTimersAsync
+    // doesn't surface the rejection as unhandled while it pumps microtasks.
+    const rejection = expect(p).rejects.toThrow('boom');
     await vi.runAllTimersAsync();
-    await expect(p).rejects.toThrow('boom');
+    await rejection;
   });
 });
