@@ -41,12 +41,16 @@ export function App() {
     });
   }, []);
 
-  // Re-trigger entrance animation each time the window is shown/focused.
+  // Re-trigger entrance animation each time the window is shown (hotkey,
+  // tray, toggle socket). Use visibilitychange — not focus — so clicking
+  // away to another app and back doesn't replay the animation.
   const [enterTick, setEnterTick] = useState(0);
   useEffect(() => {
-    const onFocus = () => setEnterTick((n) => n + 1);
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') setEnterTick((n) => n + 1);
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
   }, []);
 
 
