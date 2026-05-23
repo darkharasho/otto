@@ -41,21 +41,6 @@ export function App() {
     });
   }, []);
 
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      if (windowMode === 'panel') {
-        setWindowMode('bar');
-        void ipc.invoke('window.setMode', { mode: 'bar' });
-      } else {
-        // Bar mode → hide window entirely (Spotlight / Raycast behavior).
-        void ipc.invoke('window.hide', undefined);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [windowMode, setWindowMode]);
-
   // Re-trigger entrance animation each time the window is shown/focused.
   const [enterTick, setEnterTick] = useState(0);
   useEffect(() => {
@@ -107,18 +92,26 @@ export function App() {
     void ipc.invoke('session.cancel', { sessionId: activeSession.id });
   }, [activeSession?.id]);
 
-  // Esc while streaming → cancel the in-flight response. Runs before the
-  // panel/bar Esc handler so it doesn't also collapse the panel.
+  // One Esc handler with a priority order: cancel a streaming response, else
+  // collapse panel→bar, else hide. Splitting into two listeners caused a
+  // capture/bubble race that swallowed the cancel.
   useEffect(() => {
-    if (!streaming) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      e.stopPropagation();
-      handleStop();
+      if (streaming && activeSession?.id) {
+        handleStop();
+        return;
+      }
+      if (windowMode === 'panel') {
+        setWindowMode('bar');
+        void ipc.invoke('window.setMode', { mode: 'bar' });
+      } else {
+        void ipc.invoke('window.hide', undefined);
+      }
     };
-    window.addEventListener('keydown', handler, true);
-    return () => window.removeEventListener('keydown', handler, true);
-  }, [streaming, handleStop]);
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [windowMode, setWindowMode, streaming, activeSession?.id, handleStop]);
 
   if (windowMode === 'bar') {
     return (

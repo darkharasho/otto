@@ -58,6 +58,7 @@ export type SessionEvent =
   | { type: 'tool-call-start'; sessionId: string; messageId: string; callId: string; name: string; input: unknown }
   | { type: 'tool-call-result'; sessionId: string; messageId: string; callId: string; result: unknown; isError: boolean }
   | { type: 'message-end'; sessionId: string; messageId: string }
+  | { type: 'message-cancelled'; sessionId: string; messageId: string }
   | { type: 'error'; sessionId: string; error: StructuredError }
   | { type: 'done'; sessionId: string }
   | {

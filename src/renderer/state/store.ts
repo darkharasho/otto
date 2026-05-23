@@ -292,6 +292,11 @@ export const useOttoStore = create<OttoState>((set, get) => ({
       }
       case 'message-end':
         return;
+      case 'message-cancelled': {
+        const next = updateAssistant(session, event.messageId, (m) => ({ ...m, cancelled: true }));
+        set({ activeSession: { ...next, streaming: false } });
+        return;
+      }
       case 'error': {
         set({
           activeSession: { ...session, error: event.error, streaming: false },

@@ -140,6 +140,7 @@ export class SessionManager {
     } catch (err) {
       if (isAbort(err)) {
         assistant.cancelled = true;
+        this.emit({ type: 'message-cancelled', sessionId, messageId: assistant.id });
       } else {
         assistant.errored = true;
         const structured = toStructuredError(err);
@@ -150,6 +151,10 @@ export class SessionManager {
       this.aborts.delete(sessionId);
       this.repo.appendMessage(assistant);
       this.repo.updateSessionActivity(sessionId, Date.now(), assistant.errored ? 'idle' : 'active');
+      // Always tell the renderer the turn is over — without this, an aborted
+      // turn leaves the UI stuck in `streaming: true` because the SDK's
+      // generator finally-yielded `done` never reaches our outer consumer.
+      this.emit({ type: 'done', sessionId });
       void user;
     }
   }
