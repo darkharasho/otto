@@ -4,6 +4,7 @@ import { ipc } from './ipc';
 import { ModelSwitcher } from './components/ModelSwitcher';
 import { OttoMark } from './components/OttoMark';
 import { Section, Toggle, RadioGroup, NumberField } from './components/SettingsControls';
+import { UpdaterSection } from './components/UpdaterSection';
 import type { SettingsView } from '@shared/ipc-contract';
 import type { AutonomyMode } from '@shared/messages';
 
@@ -176,6 +177,8 @@ export function SettingsApp() {
               />
             </div>
           </Section>
+
+          <UpdaterSection appVersion={s.version} />
 
           <Section title="About">
             <div className="flex items-center justify-between text-xs text-muted py-1">
