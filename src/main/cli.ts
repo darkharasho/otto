@@ -26,12 +26,14 @@ export function socketPath(): string {
  * socket — handy for binding a separate DE shortcut to the dev build.
  */
 export function isToggleInvocation(): boolean {
-  const positional = process.argv.slice(2);
-  if (!positional.includes('toggle')) return false;
-  // Side effect: surface `--dev` to instance.ts via env so socketPath() picks
-  // the dev socket. We do this here because argv is the only signal a
-  // standalone `otto toggle` invocation has — it's not a child of vite.
-  if (positional.includes('--dev')) {
+  // In dev (`node out/main/index.js toggle`), argv is [node, scriptPath, ...]
+  // so user args start at index 2. In a packaged Electron app there is no
+  // script path — argv is [exePath, ...args] — so user args start at index 1.
+  // Scan everything after argv[0] and ignore Chromium/Electron flags
+  // (`--enable-features=...` etc.) that may be injected by the OS launcher.
+  const args = process.argv.slice(1).filter((a) => !a.startsWith('--') || a === '--dev');
+  if (!args.includes('toggle')) return false;
+  if (args.includes('--dev')) {
     process.env.OTTO_DEV = '1';
   }
   return true;

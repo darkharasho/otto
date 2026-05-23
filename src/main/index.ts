@@ -39,6 +39,17 @@ async function startElectron(): Promise<void> {
       });
     }
   }
+
+  // Prevent a second Otto from spawning if the user double-launches the
+  // AppImage / .desktop entry. Dev and prod use distinct app names (set
+  // above) so each gets its own lock — they don't collide. If the lock is
+  // already held, exit immediately; the first instance will surface itself
+  // via the 'second-instance' handler below.
+  if (!app.requestSingleInstanceLock()) {
+    logger.info('another Otto instance is already running; exiting');
+    app.exit(0);
+    return;
+  }
   const { openDatabase } = await import('./db/db');
   const { Repo } = await import('./db/repo');
   const { WindowManager, rendererEntry } = await import('./window');
@@ -230,6 +241,14 @@ async function startElectron(): Promise<void> {
 
   app.on('window-all-closed', () => {
     // keep running in background; quit via tray/menu
+  });
+
+  // Triggered when the user double-launches Otto (e.g. clicks the AppImage
+  // a second time). Treat the duplicate launch as a toggle so the user gets
+  // an immediate response, the same way the CLI's `otto toggle` would.
+  app.on('second-instance', (_e, argv) => {
+    logger.info(`second-instance launch — argv=${JSON.stringify(argv)}; toggling main window`);
+    onToggle();
   });
 
   app.on('before-quit', () => {
