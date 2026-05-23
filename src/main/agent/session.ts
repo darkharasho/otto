@@ -138,7 +138,12 @@ export class SessionManager {
         if (controller.signal.aborted) throw new AbortLikeError();
       }
     } catch (err) {
-      if (isAbort(err)) {
+      // If we requested the abort, any downstream failure (including the
+      // claude-code subprocess exiting non-zero because it was killed) is a
+      // cancellation, not a real error. Without this check the SDK's
+      // "Claude Code process exited with code 1" leaks through as an error
+      // card whenever the user hits Stop.
+      if (isAbort(err) || controller.signal.aborted) {
         assistant.cancelled = true;
         this.emit({ type: 'message-cancelled', sessionId, messageId: assistant.id });
       } else {
