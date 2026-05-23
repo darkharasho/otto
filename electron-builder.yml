@@ -50,3 +50,7 @@ mac:
 asarUnpack:
   - "**/node_modules/better-sqlite3/**"
   - "**/node_modules/sharp/**"
+  # The Claude Agent SDK spawns a child `node` process pointed at its bundled
+  # cli.js. asar paths aren't readable by that child process, so unpack the SDK
+  # (and its embedded wasm assets) onto the real filesystem.
+  - "**/node_modules/@anthropic-ai/claude-agent-sdk/**"

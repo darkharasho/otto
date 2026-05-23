@@ -11,6 +11,51 @@ import { capture } from '../screenshot/executor';
 import { downscaleIfNeeded } from '../screenshot/processor';
 import { save } from '../screenshot/store';
 import { tmpdir } from 'node:os';
+import { existsSync } from 'node:fs';
+import path from 'node:path';
+
+/**
+ * In packaged builds, the @anthropic-ai/claude-agent-sdk is asarUnpacked so its
+ * bundled cli.js can be read by a child process. We also can't rely on a `node`
+ * binary being on PATH inside an AppImage/dmg/nsis — instead we spawn Electron
+ * itself in node mode (ELECTRON_RUN_AS_NODE=1) and point it at the unpacked
+ * cli.js explicitly. In dev (or when the SDK is still in node_modules normally),
+ * we let the SDK auto-resolve its own paths and use the ambient `node`.
+ */
+type SdkSpawnOverrides = {
+  // The SDK types only allow "bun" | "deno" | "node" for `executable`, but at
+  // runtime it accepts any string and passes it straight to child_process.spawn.
+  // Cast through unknown so the Electron binary path is accepted.
+  executable: 'node';
+  executableArgs: string[];
+  pathToClaudeCodeExecutable: string;
+  env: NodeJS.ProcessEnv;
+};
+
+function getSdkSpawnOverrides(): SdkSpawnOverrides | undefined {
+  // Electron sets process.resourcesPath only when packaged. In dev,
+  // `process.execPath` is `node`, so leaving overrides off is correct.
+  const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
+  if (!resourcesPath) return undefined;
+  const unpacked = path.join(
+    resourcesPath,
+    'app.asar.unpacked',
+    'node_modules',
+    '@anthropic-ai',
+    'claude-agent-sdk',
+    'cli.js'
+  );
+  if (!existsSync(unpacked)) {
+    logger.warn(`Claude Agent SDK cli.js not found at expected unpacked path: ${unpacked}`);
+    return undefined;
+  }
+  return {
+    executable: process.execPath as unknown as 'node',
+    executableArgs: [],
+    pathToClaudeCodeExecutable: unpacked,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+  };
+}
 
 // The Agent SDK ships as ESM; loading it via `require()` from the bundled
 // CommonJS main process throws ERR_REQUIRE_ESM. Defer to a dynamic import so
@@ -446,6 +491,7 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
           getRegistry: deps.getRegistry,
           getConfigDir: deps.getConfigDir,
         });
+        const spawnOverrides = getSdkSpawnOverrides();
         const iter = sdk.query({
           prompt: text,
           options: {
@@ -459,6 +505,9 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
             // prior conversation. On the first turn this is undefined; we'll
             // capture the id from the init system message below.
             ...(resumeId ? { resume: resumeId } : {}),
+            // In packaged builds, override the SDK's spawn target so it uses
+            // Electron-as-Node and reads cli.js from the unpacked location.
+            ...(spawnOverrides ?? {}),
           },
         });
         try {
