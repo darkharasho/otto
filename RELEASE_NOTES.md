@@ -1,3 +1,10 @@
+Version v0.1.2
+
+UI polish:
+- Assistant messages now show an "Otto" heading with the brand mark, breaking up consecutive responses and giving the AI's voice an explicit identity.
+- Hotkey is now a strict show/hide toggle — each press inverts visibility regardless of focus state, fixing the "needed to press twice" feel.
+- The entrance animation no longer replays when Otto regains focus from a click-out; it only fires when the window is actually shown (hotkey, tray, toggle).
+
 Version v0.1.1
 
 Bug fixes:
