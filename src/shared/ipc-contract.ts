@@ -66,7 +66,14 @@ export type IpcRequest =
   | { channel: 'settings.resetAllSessions'; args: void; result: { deleted: number } }
   | { channel: 'shell.kill'; args: { handle: string }; result: { killed: boolean } }
   | { channel: 'shortcut.info'; args: void; result: ShortcutInfoView }
-  | { channel: 'shortcut.openKeyboardSettings'; args: void; result: { launched: boolean } };
+  | { channel: 'shortcut.openKeyboardSettings'; args: void; result: { launched: boolean } }
+  | { channel: 'app.info'; args: void; result: AppInfo };
+
+export interface AppInfo {
+  isDev: boolean;
+  displayName: string;
+  version: string;
+}
 
 export interface ShortcutInfoView {
   desktopEnv: 'kde' | 'gnome' | 'xfce' | 'cinnamon' | 'mate' | 'hyprland' | 'sway' | 'other' | 'unknown';

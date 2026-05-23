@@ -1,7 +1,7 @@
 import { Tray, Menu, nativeImage, app, type NativeImage } from 'electron';
 import path from 'node:path';
 import { logger } from './logger';
-import { instanceDisplayName } from './instance';
+import { instanceDisplayName, isDevInstance } from './instance';
 
 export interface TrayActions {
   onShow(): void;
@@ -65,6 +65,7 @@ export class TrayManager {
     // Same path resolves in dev (run from repo root) and in packaged build
     // (app.getAppPath() points at app.asar root which has public/tray bundled
     // per electron-builder.yml).
-    return path.join(app.getAppPath(), 'public', 'tray', 'tray-icon.png');
+    const file = isDevInstance() ? 'tray-icon-dev.png' : 'tray-icon.png';
+    return path.join(app.getAppPath(), 'public', 'tray', file);
   }
 }

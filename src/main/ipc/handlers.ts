@@ -13,12 +13,13 @@ import type {
   SessionLoadArgs,
   SettingsView,
   ShortcutInfoView,
+  AppInfo,
 } from '@shared/ipc-contract';
 import type { AutonomyMode, Message, SessionMeta } from '@shared/messages';
 import { emitAutonomyEvent } from './events';
 import { logger } from '../logger';
 import { gatherShortcutInfo, openKeyboardSettings } from '../shortcut';
-import { instanceDisplayName } from '../instance';
+import { instanceDisplayName, isDevInstance } from '../instance';
 import type { HotkeyManager } from '../hotkey';
 
 export function registerIpcHandlers(deps: {
@@ -167,6 +168,12 @@ export function registerIpcHandlers(deps: {
   }
 
   ipcMain.handle('shortcut.info', async (): Promise<ShortcutInfoView> => shortcutInfo());
+
+  ipcMain.handle('app.info', async (): Promise<AppInfo> => ({
+    isDev: isDevInstance(),
+    displayName: instanceDisplayName(),
+    version: deps.appVersion,
+  }));
 
   ipcMain.handle(
     'shortcut.openKeyboardSettings',

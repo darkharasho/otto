@@ -30,6 +30,14 @@ async function startElectron(): Promise<void> {
     app.setName(instanceDisplayName());
     app.setPath('userData', path.join(app.getPath('appData'), instanceDisplayName()));
     logger.info(`running as ${instanceDisplayName()} — userData=${app.getPath('userData')}, configDir=${ottoConfigDir}`);
+    // macOS dock icon comes from the bundled .icns in prod; in dev, override
+    // it with the amber variant so Otto Dev is recognizable in the dock too.
+    if (process.platform === 'darwin' && app.dock) {
+      app.whenReady().then(() => {
+        const devIcon = path.join(app.getAppPath(), 'build', 'icon-dev.png');
+        try { app.dock?.setIcon(devIcon); } catch { /* non-fatal */ }
+      });
+    }
   }
   const { openDatabase } = await import('./db/db');
   const { Repo } = await import('./db/repo');

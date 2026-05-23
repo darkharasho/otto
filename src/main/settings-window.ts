@@ -1,5 +1,7 @@
-import { BrowserWindow, screen } from 'electron';
+import { BrowserWindow, app, screen } from 'electron';
+import path from 'node:path';
 import { logger } from './logger';
+import { isDevInstance } from './instance';
 
 const WIDTH = 520;
 const HEIGHT = 720;
@@ -48,6 +50,12 @@ export class SettingsWindowManager {
       skipTaskbar: false,
       show: false,
       title: 'Otto Settings',
+      icon: path.join(
+        app.getAppPath(),
+        'public',
+        'tray',
+        isDevInstance() ? 'tray-icon-dev@3x.png' : 'tray-icon@3x.png'
+      ),
       backgroundColor: '#00000000',
       webPreferences: {
         preload: this.preloadPath,

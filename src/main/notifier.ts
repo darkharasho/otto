@@ -2,6 +2,7 @@ import { Notification, app } from 'electron';
 import path from 'node:path';
 import type { SessionEvent } from '@shared/ipc-contract';
 import { logger } from './logger';
+import { isDevInstance } from './instance';
 
 interface Deps {
   isMainFocused(): boolean;
@@ -140,6 +141,7 @@ export class Notifier {
   }
 
   private iconPath(): string {
-    return path.join(app.getAppPath(), 'public', 'tray', 'tray-icon@2x.png');
+    const file = isDevInstance() ? 'tray-icon-dev@2x.png' : 'tray-icon@2x.png';
+    return path.join(app.getAppPath(), 'public', 'tray', file);
   }
 }

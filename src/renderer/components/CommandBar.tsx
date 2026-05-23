@@ -1,5 +1,6 @@
 import { useRef, useState, type FormEvent, useEffect } from 'react';
 import { OttoMark } from './OttoMark';
+import { ipc } from '../ipc';
 
 interface Props {
   onSubmit(text: string): void;
@@ -18,6 +19,12 @@ export function CommandBar({
 }: Props) {
   const [value, setValue] = useState('');
   const [sendTick, setSendTick] = useState(0);
+  const [isDev, setIsDev] = useState(false);
+  useEffect(() => {
+    // Guarded so tests that don't mount the preload bridge don't blow up.
+    if (typeof window === 'undefined' || !window.otto) return;
+    void ipc.invoke('app.info', undefined).then((info) => setIsDev(info.isDev)).catch(() => {});
+  }, []);
   const inputRef = useRef<HTMLInputElement>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -70,6 +77,14 @@ export function CommandBar({
         {welcome && !busy && value.length === 0 && <span aria-hidden className="otto-halo" />}
         <OttoMark className="relative w-5 h-5" />
       </span>
+      {isDev && (
+        <span
+          title="Development build"
+          className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-amber-500/20 text-amber-400 border border-amber-500/40"
+        >
+          dev
+        </span>
+      )}
       <input
         ref={inputRef}
         type="text"
