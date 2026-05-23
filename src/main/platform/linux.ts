@@ -1,11 +1,9 @@
 import { spawn as nodeSpawn } from 'node:child_process';
 import { promises as fsp } from 'node:fs';
-import os, { tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { nativeImage, screen } from 'electron';
-import { translateKeyCombo } from '../input/keymap';
-import { checkYdotoolReady } from '../input/setup-check';
 import { checkBinary } from '../system/binary-check';
 import type {
   CaptureOptions,
@@ -32,10 +30,26 @@ const BUTTON_LOW: Record<MouseButton, string> = {
   middle: '0x42',
 };
 
-function ydotoolSocketPath(): string {
-  const runtimeDir =
-    process.env.XDG_RUNTIME_DIR ?? path.join('/run/user', String(os.userInfo().uid));
-  return path.join(runtimeDir, '.ydotool_socket');
+/** xdotool button numbers: 1=left, 2=middle, 3=right. */
+const XBTN: Record<MouseButton, string> = {
+  left: '1',
+  middle: '2',
+  right: '3',
+};
+
+/** Translate Otto's xdotool-style combo to xdotool's lowercase-modifier form. */
+function toXdotoolCombo(combo: string): string {
+  return combo
+    .split('+')
+    .map((tok) => {
+      const lower = tok.toLowerCase();
+      if (lower === 'control' || lower === 'ctrl') return 'ctrl';
+      if (lower === 'alt') return 'alt';
+      if (lower === 'shift') return 'shift';
+      if (lower === 'super' || lower === 'meta') return 'super';
+      return tok;
+    })
+    .join('+');
 }
 
 function virtualDesktopBounds(monitors: MonitorInfo[]): { x: number; y: number; w: number; h: number } {
@@ -146,79 +160,51 @@ export class LinuxAdapter implements PlatformAdapter {
       return { x: point.x, y: point.y };
     },
     move: async (x: number, y: number): Promise<void> => {
-      await this.ensureInputReady();
-      await this.moveCursorTo(x, y);
+      await this.ensureXdotool();
+      await this.runXdotool(['mousemove', String(x), String(y)]);
     },
     scroll: async (dx: number, dy: number, x?: number, y?: number): Promise<void> => {
-      await this.ensureInputReady();
-      if (x !== undefined && y !== undefined) await this.moveCursorTo(x, y);
-      if (dy !== 0) {
-        await this.runYdotool(['mousemove', '--wheel', '0', String(dy)]);
+      await this.ensureXdotool();
+      if (x !== undefined && y !== undefined) {
+        await this.runXdotool(['mousemove', String(x), String(y)]);
       }
-      if (dx !== 0) {
-        await this.runYdotool(['mousemove', '--hwheel', String(dx), '0']);
+      const vTicks = Math.abs(dy);
+      const vBtn = dy < 0 ? '4' : '5'; // 4 = up, 5 = down
+      for (let i = 0; i < vTicks; i += 1) {
+        await this.runXdotool(['click', vBtn]);
+      }
+      const hTicks = Math.abs(dx);
+      const hBtn = dx < 0 ? '6' : '7'; // 6 = left, 7 = right
+      for (let i = 0; i < hTicks; i += 1) {
+        await this.runXdotool(['click', hBtn]);
       }
     },
     click: async (x: number, y: number, button: MouseButton): Promise<void> => {
-      await this.ensureInputReady();
-      await this.moveCursorTo(x, y);
-      await this.runYdotool(['click', BUTTON_CODE[button]]);
+      await this.ensureXdotool();
+      await this.runXdotool(['mousemove', String(x), String(y)]);
+      await this.runXdotool(['click', XBTN[button]]);
     },
     doubleClick: async (x: number, y: number, button: MouseButton): Promise<void> => {
-      await this.ensureInputReady();
-      await this.moveCursorTo(x, y);
-      await this.runYdotool(['click', BUTTON_CODE[button]]);
-      await new Promise<void>((resolve) => setTimeout(resolve, 50));
-      await this.runYdotool(['click', BUTTON_CODE[button]]);
+      await this.ensureXdotool();
+      await this.runXdotool(['mousemove', String(x), String(y)]);
+      await this.runXdotool(['click', '--repeat', '2', '--delay', '50', XBTN[button]]);
     },
     drag: async (x1: number, y1: number, x2: number, y2: number, button: MouseButton): Promise<void> => {
-      await this.ensureInputReady();
-      await this.moveCursorTo(x1, y1);
-      await this.runYdotool(['mousedown', BUTTON_LOW[button]]);
-      await this.moveCursorTo(x2, y2);
-      await this.runYdotool(['mouseup', BUTTON_LOW[button]]);
+      await this.ensureXdotool();
+      await this.runXdotool(['mousemove', String(x1), String(y1)]);
+      await this.runXdotool(['mousedown', XBTN[button]]);
+      await this.runXdotool(['mousemove', String(x2), String(y2)]);
+      await this.runXdotool(['mouseup', XBTN[button]]);
     },
     type: async (text: string): Promise<void> => {
-      await this.ensureInputReady();
-      await this.runYdotoolWithStdin(['type', '--'], text);
+      await this.ensureXdotool();
+      await this.runXdotool(['type', '--delay', '20', '--', text]);
     },
     key: async (combo: string): Promise<void> => {
-      await this.ensureInputReady();
-      const events = translateKeyCombo(combo);
-      const args = ['key', ...events.map((e) => `${e.code}:${e.state}`)];
-      await this.runYdotool(args);
+      await this.ensureXdotool();
+      await this.runXdotool(['key', toXdotoolCombo(combo)]);
     },
   };
-
-  /**
-   * Move the cursor to a virtual-desktop pixel coordinate.
-   *
-   * On Wayland, no userland tool can directly warp the absolute cursor
-   * position — KWin's scripting interface (used by kdotool) only exposes
-   * window manipulation, and ydotool's `--absolute` is clamped by the
-   * compositor. We send small relative steps via ydotool from a best-known
-   * starting point so pointer-acceleration doesn't accumulate into a wild
-   * overshoot.
-   *
-   * `screen.getCursorScreenPoint()` may report stale coords when Otto is
-   * not focused, but the small step size limits the worst-case error.
-   */
-  private async moveCursorTo(targetX: number, targetY: number): Promise<void> {
-    const current = screen.getCursorScreenPoint();
-    let dx = targetX - current.x;
-    let dy = targetY - current.y;
-    const MAX_STEP_PX = 40;
-    while (dx !== 0 || dy !== 0) {
-      const stepX = Math.max(-MAX_STEP_PX, Math.min(MAX_STEP_PX, dx));
-      const stepY = Math.max(-MAX_STEP_PX, Math.min(MAX_STEP_PX, dy));
-      await this.runYdotool(['mousemove', '--', String(stepX), String(stepY)]);
-      dx -= stepX;
-      dy -= stepY;
-      if (dx !== 0 || dy !== 0) {
-        await new Promise<void>((resolve) => setTimeout(resolve, 5));
-      }
-    }
-  }
 
   private allMonitors(): MonitorInfo[] {
     return screen.getAllDisplays().map((d) => ({
@@ -231,59 +217,30 @@ export class LinuxAdapter implements PlatformAdapter {
     }));
   }
 
-  private async ensureInputReady(): Promise<void> {
-    const r = await checkYdotoolReady();
-    if (!r.ok) {
-      throw new Error(`${r.reason}\n\n${r.hint}`);
-    }
-  }
-
-  private runYdotool(args: string[]): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const child = nodeSpawn('ydotool', args, {
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env, YDOTOOL_SOCKET: ydotoolSocketPath() },
-      });
-      let stderr = '';
-      child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8'); });
-      child.once('error', reject);
-      child.once('exit', (code) => {
-        if (code === 0) return resolve();
-        if (/permission denied|EACCES/i.test(stderr)) {
-          reject(new Error(
-            'Permission denied — add your user to the input group:\n' +
-            'sudo usermod -aG input $USER\n' +
-            '(then log out and back in)'
-          ));
-          return;
-        }
-        reject(new Error(`ydotool failed: ${stderr.trim() || `exit ${code}`}`));
-      });
+  private async ensureXdotool(): Promise<void> {
+    const r = await checkBinary({
+      name: 'xdotool',
+      purpose: 'GUI input injection (works for XWayland windows on KDE Wayland)',
+      hints: {
+        fedora: 'sudo dnf install xdotool',
+        debian: 'sudo apt install xdotool',
+        arch: 'sudo pacman -S xdotool',
+        fallback: 'install xdotool from your package manager',
+      },
     });
+    if (!r.ok) throw new Error(`${r.reason}\n\n${r.hint}`);
   }
 
-  private runYdotoolWithStdin(args: string[], stdinText: string): Promise<void> {
+  private runXdotool(args: string[]): Promise<void> {
     return new Promise((resolve, reject) => {
-      const child = nodeSpawn('ydotool', args, {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: { ...process.env, YDOTOOL_SOCKET: ydotoolSocketPath() },
-      });
+      const child = nodeSpawn('xdotool', args, { stdio: ['ignore', 'pipe', 'pipe'] });
       let stderr = '';
       child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8'); });
       child.once('error', reject);
       child.once('exit', (code) => {
         if (code === 0) return resolve();
-        if (/permission denied|EACCES/i.test(stderr)) {
-          reject(new Error(
-            'Permission denied — add your user to the input group:\n' +
-            'sudo usermod -aG input $USER\n' +
-            '(then log out and back in)'
-          ));
-          return;
-        }
-        reject(new Error(`ydotool failed: ${stderr.trim() || `exit ${code}`}`));
+        reject(new Error(`xdotool failed: ${stderr.trim() || `exit ${code}`}`));
       });
-      child.stdin.end(stdinText);
     });
   }
 
