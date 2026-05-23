@@ -34,6 +34,8 @@ const SYSTEM_PROMPT = [
   '- shell_wait(handle, timeout_ms?): block until a spawned process exits.',
   '- shell_kill(handle): send SIGTERM to a spawned process.',
   '- screenshot(region?): capture the user\'s active monitor as a PNG. Image is attached so you can see it.',
+  '- WebSearch(query): search the web; returns titles, urls, and snippets you can cite.',
+  '- WebFetch(url, prompt): fetch a URL and extract readable content based on the prompt.',
   '- echo(msg), fake-mutate(target), fake-wipe(target): test stubs; ignore unless explicitly asked.',
   '',
   'The autonomy framework gates tool calls by action class. Some commands will pause for user approval before running — proceed normally, the user will see the prompt. Be concise.',
@@ -312,7 +314,11 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
     ...buildShellTools(deps.getRegistry),
     buildScreenshotTool(),
   ];
-  const allowedTools = allToolsForAllow.map((t) => `mcp__otto-tools__${t.name}`);
+  const allowedTools = [
+    ...allToolsForAllow.map((t) => `mcp__otto-tools__${t.name}`),
+    'WebSearch',
+    'WebFetch',
+  ];
 
   return {
     async startSession({ resume }) {
