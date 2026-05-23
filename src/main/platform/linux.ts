@@ -36,6 +36,18 @@ function ydotoolSocketPath(): string {
   return path.join(runtimeDir, '.ydotool_socket');
 }
 
+function virtualDesktopBounds(monitors: MonitorInfo[]): { x: number; y: number; w: number; h: number } {
+  if (monitors.length === 0) return { x: 0, y: 0, w: 0, h: 0 };
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const m of monitors) {
+    minX = Math.min(minX, m.x);
+    minY = Math.min(minY, m.y);
+    maxX = Math.max(maxX, m.x + m.w);
+    maxY = Math.max(maxY, m.y + m.h);
+  }
+  return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
 export class LinuxAdapter implements PlatformAdapter {
   readonly name = 'linux';
 
@@ -75,40 +87,49 @@ export class LinuxAdapter implements PlatformAdapter {
 
   screenshot = {
     capture: async (opts: CaptureOptions): Promise<CaptureResult> => {
-      const monitor = this.activeMonitor();
+      const monitors = this.allMonitors();
+      const bounds = virtualDesktopBounds(monitors);
       if (opts.region) {
         const r = opts.region;
-        if (r.x < 0 || r.y < 0 || r.x + r.w > monitor.w || r.y + r.h > monitor.h) {
+        const inside =
+          r.x >= bounds.x &&
+          r.y >= bounds.y &&
+          r.x + r.w <= bounds.x + bounds.w &&
+          r.y + r.h <= bounds.y + bounds.h;
+        if (!inside) {
           throw new Error(
-            `region {x:${r.x},y:${r.y},w:${r.w},h:${r.h}} exceeds monitor bounds {0,0,${monitor.w},${monitor.h}}`
+            `region {x:${r.x},y:${r.y},w:${r.w},h:${r.h}} exceeds virtual desktop bounds ` +
+              `{x:${bounds.x},y:${bounds.y},w:${bounds.w},h:${bounds.h}}`
           );
         }
       }
 
-      // Always capture the full active monitor; spectacle's --region flag opens
-      // an interactive picker we don't want. Crop in-process via nativeImage
-      // when the caller requested a region.
+      // Capture the full virtual desktop (all monitors). Coordinates everywhere
+      // (region, click, move) are virtual-desktop absolute. Crop in-process
+      // via nativeImage when the caller requested a region.
       const tmp = path.join(tmpdir(), `otto-screenshot-${randomUUID()}.png`);
-      await this.runSpectacle(['-bnm', '-o', tmp], 5_000);
+      await this.runSpectacle(['-bnf', '-o', tmp], 5_000);
 
       try {
         const fullBytes = await fsp.readFile(tmp);
         if (!opts.region) {
           const { width, height } = this.readPngDims(fullBytes);
-          return { bytes: fullBytes, width, height, monitor };
+          return { bytes: fullBytes, width, height, monitors };
         }
         const r = opts.region;
-        const scale = monitor.scale || 1;
+        // Region is given in virtual-desktop coords. Translate to image coords
+        // by subtracting the virtual-desktop origin; honor primary scale.
+        const scale = monitors[0]?.scale || 1;
         const img = nativeImage.createFromBuffer(fullBytes);
         const cropped = img.crop({
-          x: Math.round(r.x * scale),
-          y: Math.round(r.y * scale),
+          x: Math.round((r.x - bounds.x) * scale),
+          y: Math.round((r.y - bounds.y) * scale),
           width: Math.round(r.w * scale),
           height: Math.round(r.h * scale),
         });
         const croppedBytes = cropped.toPNG();
         const { width, height } = cropped.getSize();
-        return { bytes: croppedBytes, width, height, monitor };
+        return { bytes: croppedBytes, width, height, monitors };
       } finally {
         await fsp.unlink(tmp).catch(() => {});
       }
@@ -118,19 +139,16 @@ export class LinuxAdapter implements PlatformAdapter {
   input: PlatformInput = {
     cursorPosition: async (): Promise<CursorPosition> => {
       const point = screen.getCursorScreenPoint();
-      const monitor = this.activeMonitor();
-      return { x: point.x - monitor.x, y: point.y - monitor.y };
+      return { x: point.x, y: point.y };
     },
     move: async (x: number, y: number): Promise<void> => {
       await this.ensureInputReady();
-      const { absX, absY } = this.absolute(x, y);
-      await this.runYdotool(['mousemove', '--absolute', String(absX), String(absY)]);
+      await this.runYdotool(['mousemove', '--absolute', String(x), String(y)]);
     },
     scroll: async (dx: number, dy: number, x?: number, y?: number): Promise<void> => {
       await this.ensureInputReady();
       if (x !== undefined && y !== undefined) {
-        const { absX, absY } = this.absolute(x, y);
-        await this.runYdotool(['mousemove', '--absolute', String(absX), String(absY)]);
+        await this.runYdotool(['mousemove', '--absolute', String(x), String(y)]);
       }
       if (dy !== 0) {
         await this.runYdotool(['mousemove', '--wheel', '0', String(dy)]);
@@ -141,25 +159,21 @@ export class LinuxAdapter implements PlatformAdapter {
     },
     click: async (x: number, y: number, button: MouseButton): Promise<void> => {
       await this.ensureInputReady();
-      const { absX, absY } = this.absolute(x, y);
-      await this.runYdotool(['mousemove', '--absolute', String(absX), String(absY)]);
+      await this.runYdotool(['mousemove', '--absolute', String(x), String(y)]);
       await this.runYdotool(['click', BUTTON_CODE[button]]);
     },
     doubleClick: async (x: number, y: number, button: MouseButton): Promise<void> => {
       await this.ensureInputReady();
-      const { absX, absY } = this.absolute(x, y);
-      await this.runYdotool(['mousemove', '--absolute', String(absX), String(absY)]);
+      await this.runYdotool(['mousemove', '--absolute', String(x), String(y)]);
       await this.runYdotool(['click', BUTTON_CODE[button]]);
       await new Promise<void>((resolve) => setTimeout(resolve, 50));
       await this.runYdotool(['click', BUTTON_CODE[button]]);
     },
     drag: async (x1: number, y1: number, x2: number, y2: number, button: MouseButton): Promise<void> => {
       await this.ensureInputReady();
-      const a = this.absolute(x1, y1);
-      const b = this.absolute(x2, y2);
-      await this.runYdotool(['mousemove', '--absolute', String(a.absX), String(a.absY)]);
+      await this.runYdotool(['mousemove', '--absolute', String(x1), String(y1)]);
       await this.runYdotool(['mousedown', BUTTON_LOW[button]]);
-      await this.runYdotool(['mousemove', '--absolute', String(b.absX), String(b.absY)]);
+      await this.runYdotool(['mousemove', '--absolute', String(x2), String(y2)]);
       await this.runYdotool(['mouseup', BUTTON_LOW[button]]);
     },
     type: async (text: string): Promise<void> => {
@@ -174,9 +188,15 @@ export class LinuxAdapter implements PlatformAdapter {
     },
   };
 
-  private absolute(x: number, y: number): { absX: number; absY: number } {
-    const monitor = this.activeMonitor();
-    return { absX: monitor.x + x, absY: monitor.y + y };
+  private allMonitors(): MonitorInfo[] {
+    return screen.getAllDisplays().map((d) => ({
+      id: String(d.id),
+      x: d.bounds.x,
+      y: d.bounds.y,
+      w: d.bounds.width,
+      h: d.bounds.height,
+      scale: d.scaleFactor,
+    }));
   }
 
   private async ensureInputReady(): Promise<void> {
@@ -235,18 +255,6 @@ export class LinuxAdapter implements PlatformAdapter {
     });
   }
 
-  private activeMonitor(): MonitorInfo {
-    const point = screen.getCursorScreenPoint();
-    const display = screen.getDisplayNearestPoint(point);
-    return {
-      id: String(display.id),
-      x: display.bounds.x,
-      y: display.bounds.y,
-      w: display.bounds.width,
-      h: display.bounds.height,
-      scale: display.scaleFactor,
-    };
-  }
 
   private runSpectacle(args: string[], timeoutMs: number): Promise<void> {
     return new Promise((resolve, reject) => {

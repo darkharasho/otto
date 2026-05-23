@@ -34,7 +34,7 @@ describe('ToolCallCard: screenshot rendering', () => {
           path: '/tmp/otto-screenshots/sess/abc.png',
           width: 1920,
           height: 1080,
-          monitor: { id: '1', x: 0, y: 0, w: 1920, h: 1080, scale: 1 },
+          monitors: [{ id: '1', x: 0, y: 0, w: 1920, h: 1080, scale: 1 }],
         }}
         isError={false}
       />

@@ -34,8 +34,8 @@ const SYSTEM_PROMPT = [
   '- shell_read(handle, since?): read buffered output for a spawned process.',
   '- shell_wait(handle, timeout_ms?): block until a spawned process exits.',
   '- shell_kill(handle): send SIGTERM to a spawned process.',
-  '- screenshot(region?): capture the user\'s active monitor as a PNG. Image is attached so you can see it.',
-  '- get_cursor_position(): return the cursor position {x, y} in active-monitor pixels.',
+  '- screenshot(region?): capture the FULL virtual desktop (all monitors stitched) as a PNG. Result includes a `monitors` array with each display\'s {x, y, w, h} so you know where they sit in the coordinate space. Image is attached so you can see it.',
+  '- get_cursor_position(): return the cursor position {x, y} in virtual-desktop pixels.',
   '- move(x, y): move the cursor to the given monitor-relative position.',
   '- scroll(dx, dy, x?, y?): scroll by (dx, dy); optional (x, y) moves cursor first.',
   '- click(x, y, button?, delay_ms?): left/right/middle click at the position.',
@@ -222,7 +222,7 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
             path: savedPath,
             width: captured.width,
             height: captured.height,
-            monitor: captured.monitor,
+            monitors: captured.monitors,
           };
           return {
             content: [
@@ -357,7 +357,7 @@ function createFakeSdkClient(deps?: {
                 path: savedPath,
                 width: captured.width,
                 height: captured.height,
-                monitor: captured.monitor,
+                monitors: captured.monitors,
               };
               void downscaled;
               yield { type: 'tool-call-start', callId: 'c-ss', name: 'screenshot', input: {} };

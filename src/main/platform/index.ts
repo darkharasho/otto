@@ -27,7 +27,8 @@ export interface CaptureResult {
   bytes: Buffer;
   width: number;
   height: number;
-  monitor: MonitorInfo;
+  /** All monitors with their virtual-desktop bounds. Coordinates in input tool args are virtual-desktop absolute. */
+  monitors: MonitorInfo[];
 }
 
 export type MouseButton = 'left' | 'right' | 'middle';

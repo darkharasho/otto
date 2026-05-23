@@ -155,7 +155,7 @@ export function buildScreenshotTool(): OttoTool {
   return {
     name: 'screenshot',
     description:
-      'Capture the active monitor (or an optional region of it) as a PNG. Returns { path, width, height, monitor }. The captured image is attached so the model can see it.',
+      'Capture the entire virtual desktop (all monitors stitched) as a PNG. Returns { path, width, height, monitors: [{id,x,y,w,h,scale}] } so you know where each display lives. Optional `region` crops in virtual-desktop coords. The captured image is attached so the model can see it.',
     actionClass: 'read',
     schema: z.object({
       region: z
@@ -199,14 +199,14 @@ export function buildInputTools(): OttoTool[] {
   return [
     {
       name: 'get_cursor_position',
-      description: 'Return the current cursor position in active-monitor pixels: { x, y }.',
+      description: 'Return the current cursor position in virtual-desktop pixels (origin at the top-left of the leftmost display): { x, y }.',
       actionClass: 'read',
       schema: cursorPositionSchema,
       async run(_input) { throw new Error(`get_cursor_position ${INPUT_HANDLER_THROW}`); },
     },
     {
       name: 'move',
-      description: 'Move the cursor to (x, y) in active-monitor pixels.',
+      description: 'Move the cursor to (x, y) in virtual-desktop pixels (origin at the top-left of the leftmost display).',
       actionClass: 'reversible',
       schema: moveSchema,
       async run(_input) { throw new Error(`move ${INPUT_HANDLER_THROW}`); },
@@ -220,14 +220,14 @@ export function buildInputTools(): OttoTool[] {
     },
     {
       name: 'click',
-      description: 'Click at (x, y) in active-monitor pixels. button: left|right|middle. Optional delay_ms.',
+      description: 'Click at (x, y) in virtual-desktop pixels (origin at the top-left of the leftmost display). button: left|right|middle. Optional delay_ms.',
       actionClass: 'destructive',
       schema: clickSchema,
       async run(_input) { throw new Error(`click ${INPUT_HANDLER_THROW}`); },
     },
     {
       name: 'double_click',
-      description: 'Double-click at (x, y) in active-monitor pixels.',
+      description: 'Double-click at (x, y) in virtual-desktop pixels (origin at the top-left of the leftmost display).',
       actionClass: 'destructive',
       schema: doubleClickSchema,
       async run(_input) { throw new Error(`double_click ${INPUT_HANDLER_THROW}`); },
