@@ -5,11 +5,13 @@ import { ToolCallCard } from './ToolCallCard';
 import { ApprovalCard } from './ApprovalCard';
 import { ProcessCard } from './ProcessCard';
 import { rehypeEmojiIcons } from './rehype-emoji-icons';
-import { EMOJI_TO_ICON, twemojiUrl } from './emoji-icons';
+import { EMOJI_TO_ICON, openmojiUrl } from './emoji-icons';
 
 const markdownComponents: Components = {
   // The rehype plugin emits <span class="otto-emoji" data-emoji="…" />; we
-  // render Lucide icons for mapped emojis and Twemoji SVGs for the rest.
+  // render Lucide for mapped emojis and OpenMoji Black (line-style mono SVG)
+  // for everything else. OpenMoji is drawn black, so we invert it to read on
+  // the dark surface and dim it slightly so it doesn't out-shout the text.
   span(props) {
     const { className, children, node: _n, ...rest } = props as typeof props & {
       'data-emoji'?: string;
@@ -29,10 +31,10 @@ const markdownComponents: Components = {
         }
         return (
           <img
-            src={twemojiUrl(emoji)}
+            src={openmojiUrl(emoji)}
             alt={emoji}
             draggable={false}
-            className="inline-block align-[-0.15em] mx-[0.1em] w-[1.1em] h-[1.1em] select-none"
+            className="otto-openmoji inline-block align-[-0.18em] mx-[0.1em] w-[1.15em] h-[1.15em] select-none"
           />
         );
       }

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import { rehypeEmojiIcons } from './rehype-emoji-icons';
-import { EMOJI_TO_ICON, twemojiUrl, twemojiCodepoint } from './emoji-icons';
+import { EMOJI_TO_ICON, openmojiUrl, openmojiCodepoint } from './emoji-icons';
 
 const components: Components = {
   span(props) {
@@ -15,7 +15,7 @@ const components: Components = {
       if (emoji) {
         const Icon = EMOJI_TO_ICON[emoji];
         if (Icon) return <Icon data-testid={`icon-${emoji}`} />;
-        return <img data-testid={`twemoji-${emoji}`} src={twemojiUrl(emoji)} alt={emoji} />;
+        return <img data-testid={`openmoji-${emoji}`} src={openmojiUrl(emoji)} alt={emoji} />;
       }
     }
     return (
@@ -47,12 +47,12 @@ describe('rehypeEmojiIcons', () => {
     expect(container.textContent).toContain('careful, this is');
   });
 
-  it('falls back to Twemoji for unmapped emoji', () => {
+  it('falls back to OpenMoji Black for unmapped emoji', () => {
     const { getByTestId } = renderMd('cool 🥥');
-    const img = getByTestId('twemoji-🥥') as HTMLImageElement;
+    const img = getByTestId('openmoji-🥥') as HTMLImageElement;
     expect(img).toBeInTheDocument();
-    expect(img.src).toContain('twemoji');
-    expect(img.src).toContain(twemojiCodepoint('🥥'));
+    expect(img.src).toContain('openmoji');
+    expect(img.src).toContain(openmojiCodepoint('🥥'));
   });
 
   it('works inside inline markdown like bold', () => {
@@ -66,22 +66,17 @@ describe('rehypeEmojiIcons', () => {
   });
 });
 
-describe('twemojiCodepoint', () => {
-  it('encodes single-codepoint emoji', () => {
-    expect(twemojiCodepoint('🥥')).toBe('1f965');
+describe('openmojiCodepoint', () => {
+  it('encodes single-codepoint emoji in uppercase hex', () => {
+    expect(openmojiCodepoint('🥥')).toBe('1F965');
   });
 
-  it('drops FE0F in multi-codepoint sequences', () => {
-    expect(twemojiCodepoint('⚠️')).toBe('26a0');
-  });
-
-  it('keeps single-codepoint FE0F-only graphemes', () => {
-    // bare ❤ without VS-16
-    expect(twemojiCodepoint('❤')).toBe('2764');
+  it('preserves FE0F in multi-codepoint sequences (OpenMoji convention)', () => {
+    expect(openmojiCodepoint('⚠️')).toBe('26A0-FE0F');
   });
 
   it('joins ZWJ sequences with dashes', () => {
     // 👨‍💻 = U+1F468 ZWJ U+1F4BB
-    expect(twemojiCodepoint('👨‍💻')).toBe('1f468-200d-1f4bb');
+    expect(openmojiCodepoint('👨‍💻')).toBe('1F468-200D-1F4BB');
   });
 });

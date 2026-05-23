@@ -111,9 +111,10 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
-// Emoji string → Lucide icon. Keys are the literal grapheme (including any
-// variation selector U+FE0F). Curated for what assistant messages typically
-// reach for; unmapped emojis fall through to their normal rendering.
+// Emoji → Lucide icon. Curated for what assistant messages typically reach
+// for; everything not in here falls through to OpenMoji Black (a free,
+// comprehensive monochrome line-art SVG set) so coverage stays at 100% with
+// a consistent line-icon aesthetic.
 export const EMOJI_TO_ICON: Record<string, LucideIcon> = {
   // status / outcomes
   '✅': CheckCircle2,
@@ -389,23 +390,20 @@ export function makeEmojiRegex(): RegExp {
   return emojiRegex();
 }
 
-// Convert an emoji string to the Twemoji codepoint filename convention
-// (lowercase hex codepoints joined by "-"; the variation selector U+FE0F is
-// dropped unless the sequence consists *only* of FE0F-paired pictographs).
-export function twemojiCodepoint(emoji: string): string {
+// OpenMoji file convention: uppercase hex codepoints joined by "-", and FE0F
+// variation selectors *are* preserved (unlike Twemoji).
+export function openmojiCodepoint(emoji: string): string {
   const codepoints: string[] = [];
   for (const ch of emoji) {
     const cp = ch.codePointAt(0);
     if (cp === undefined) continue;
-    codepoints.push(cp.toString(16));
+    codepoints.push(cp.toString(16).toUpperCase());
   }
-  // Twemoji drops FE0F when a sequence has more than one codepoint
-  const filtered = codepoints.length > 1 ? codepoints.filter((c) => c !== 'fe0f') : codepoints;
-  return filtered.join('-');
+  return codepoints.join('-');
 }
 
-// Public CDN for Twemoji SVGs. Network-only — there is no bundled fallback,
-// so offline users see the system glyph instead of a flat SVG (which is fine).
-export function twemojiUrl(emoji: string): string {
-  return `https://cdn.jsdelivr.net/gh/jdecked/twemoji@latest/assets/svg/${twemojiCodepoint(emoji)}.svg`;
+// Black/monochrome OpenMoji SVGs via jsdelivr. Network-only — offline users
+// fall back to the system glyph, which is acceptable.
+export function openmojiUrl(emoji: string): string {
+  return `https://cdn.jsdelivr.net/npm/openmoji@latest/black/svg/${openmojiCodepoint(emoji)}.svg`;
 }
