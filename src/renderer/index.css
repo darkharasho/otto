@@ -19,6 +19,45 @@ body { background: transparent; }
   animation: otto-enter 140ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+@keyframes otto-msg-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.otto-msg-enter {
+  animation: otto-msg-enter 160ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes otto-caret-blink {
+  0%, 60%  { opacity: 1; }
+  61%, 100%{ opacity: 0; }
+}
+.otto-caret {
+  display: inline-block;
+  width: 0.5ch;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: -0.15em;
+  background: currentColor;
+  border-radius: 1px;
+  animation: otto-caret-blink 1s steps(1) infinite;
+}
+
+@keyframes otto-spin {
+  to { transform: rotate(360deg); }
+}
+.otto-spin { animation: otto-spin 1s linear infinite; }
+
+@keyframes otto-pop {
+  0%   { opacity: 0; transform: scale(0.6); }
+  50%  { opacity: 1; transform: scale(1.15); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.otto-pop { animation: otto-pop 320ms cubic-bezier(0.16, 1, 0.3, 1); }
+
+.otto-pill-enter {
+  animation: otto-msg-enter 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 /* Minimal scrollbars (WebKit + Firefox). */
 * {
   scrollbar-width: thin;

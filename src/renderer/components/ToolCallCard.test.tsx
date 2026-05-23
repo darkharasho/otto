@@ -4,12 +4,14 @@ import userEvent from '@testing-library/user-event';
 import { ToolCallCard } from './ToolCallCard';
 
 describe('ToolCallCard', () => {
-  it('shows tool name, status running when no result, and toggles details', async () => {
+  it('shows tool name, status running when no result, and toggles details open', async () => {
     render(<ToolCallCard name="echo" input={{ msg: 'hi' }} result={undefined} isError={false} />);
     expect(screen.getByText('echo')).toBeInTheDocument();
     expect(screen.getByText(/running/i)).toBeInTheDocument();
-    expect(screen.queryByTestId('toolcall-details')).not.toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: /echo/i }));
+    const toggle = screen.getByRole('button', { name: /echo/i });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByTestId('toolcall-details')).toBeInTheDocument();
   });
 
