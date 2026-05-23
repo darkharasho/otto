@@ -50,6 +50,10 @@ export function registerIpcHandlers(deps: {
     window.setMode(args.mode);
   });
 
+  ipcMain.handle('window.hide', async (): Promise<void> => {
+    window.hide();
+  });
+
   ipcMain.handle(
     'autonomy.decide',
     async (

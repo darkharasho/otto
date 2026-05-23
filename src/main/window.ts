@@ -5,7 +5,7 @@ import { logger } from './logger';
 export type WindowMode = 'bar' | 'panel';
 
 const BAR_WIDTH = 640;
-const BAR_HEIGHT = 56;
+const BAR_HEIGHT = 72;
 const PANEL_MIN_HEIGHT = 320;
 const PANEL_TOP_MARGIN = 64;
 const PANEL_MAX_DISPLAY_RATIO = 0.7;
@@ -61,8 +61,18 @@ export class WindowManager {
 
   toggle(mode: WindowMode = 'bar'): void {
     if (!this.window) return;
-    if (this.window.isVisible()) this.hide();
-    else this.show(mode);
+    // Visible but unfocused (e.g. user clicked away) → re-focus instead of
+    // hiding. Otherwise the user has to hit the hotkey twice to bring it back.
+    if (this.window.isVisible()) {
+      if (!this.window.isFocused()) {
+        this.repositionTopCenter();
+        this.window.focus();
+        return;
+      }
+      this.hide();
+    } else {
+      this.show(mode);
+    }
   }
 
   setMode(mode: WindowMode): void {

@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useState } from 'react';
 import { ipc } from './ipc';
 import { useOttoStore } from './state/store';
 import { CommandBar } from './components/CommandBar';
@@ -48,11 +48,22 @@ export function App() {
       if (windowMode === 'panel') {
         setWindowMode('bar');
         void ipc.invoke('window.setMode', { mode: 'bar' });
+      } else {
+        // Bar mode → hide window entirely (Spotlight / Raycast behavior).
+        void ipc.invoke('window.hide', undefined);
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [windowMode, setWindowMode]);
+
+  // Re-trigger entrance animation each time the window is shown/focused.
+  const [enterTick, setEnterTick] = useState(0);
+  useEffect(() => {
+    const onFocus = () => setEnterTick((n) => n + 1);
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
 
   const handleSubmit = useCallback(
     async (text: string) => {
@@ -90,14 +101,14 @@ export function App() {
 
   if (windowMode === 'bar') {
     return (
-      <div className="w-screen h-screen p-1">
-        <CommandBar onSubmit={handleSubmit} />
+      <div key={`bar-${enterTick}`} className="w-screen h-screen p-1 otto-enter">
+        <CommandBar onSubmit={handleSubmit} busy={activeSession?.streaming ?? false} />
       </div>
     );
   }
 
   return (
-    <div className="w-screen h-screen p-1">
+    <div key={`panel-${enterTick}`} className="w-screen h-screen p-1 otto-enter">
       <Panel
         header={
           <SessionSwitcher

@@ -39,6 +39,7 @@ export type IpcRequest =
   | { channel: 'session.list'; args: void; result: SessionMeta[] }
   | { channel: 'session.load'; args: SessionLoadArgs; result: Message[] }
   | { channel: 'window.setMode'; args: { mode: 'bar' | 'panel' }; result: void }
+  | { channel: 'window.hide'; args: void; result: void }
   | {
       channel: 'autonomy.decide';
       args: { decisionId: string; decision: 'approve' | 'approve-session' | 'deny' };
