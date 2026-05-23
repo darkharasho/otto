@@ -88,7 +88,7 @@ export function ModelSwitcher({ value, onChange, disabled = false }: Props) {
       {open && (
         <div
           role="listbox"
-          className="otto-dropdown-enter absolute left-0 bottom-full mb-1.5 w-64 rounded-xl border border-border bg-surface shadow-2xl z-10 p-1"
+          className="otto-dropdown-enter absolute left-0 top-full mt-1.5 w-64 rounded-xl border border-border bg-surface shadow-2xl z-10 p-1"
         >
           {MODELS.map((m) => {
             const active = m.id === value;
