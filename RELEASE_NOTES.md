@@ -1,3 +1,8 @@
+Version v0.2.4
+
+Bug fixes:
+- **Reopening Otto after a finished turn no longer briefly replays the "working" state.** Chromium throttles renderers in hidden windows, so session events queued up and flushed on show — replaying the streaming state for a beat before settling on the final response. The main window now keeps its renderer ticking at full speed even while hidden.
+
 Version v0.2.3
 
 New:
