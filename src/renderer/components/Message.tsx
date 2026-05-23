@@ -1,14 +1,50 @@
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Message as MessageType, ContentBlock } from '@shared/messages';
 import { ToolCallCard } from './ToolCallCard';
 import { ApprovalCard } from './ApprovalCard';
 import { ProcessCard } from './ProcessCard';
+import { rehypeEmojiIcons } from './rehype-emoji-icons';
+import { EMOJI_TO_ICON } from './emoji-icons';
+
+const markdownComponents: Components = {
+  // The rehype plugin emits <span class="otto-icon" data-emoji="…" />; map
+  // those back to Lucide components. All other <span>s render normally.
+  span(props) {
+    const { className, children, node: _n, ...rest } = props as typeof props & {
+      'data-emoji'?: string;
+    };
+    const classes = Array.isArray(className) ? className.join(' ') : className ?? '';
+    if (classes.includes('otto-icon')) {
+      const emoji = (props as { 'data-emoji'?: string })['data-emoji'];
+      const Icon = emoji ? EMOJI_TO_ICON[emoji] : undefined;
+      if (Icon) {
+        return (
+          <Icon
+            className="inline-block align-[-0.15em] mx-[0.1em] w-[1em] h-[1em] text-accent"
+            aria-label={emoji}
+          />
+        );
+      }
+    }
+    return (
+      <span className={classes} {...rest}>
+        {children}
+      </span>
+    );
+  },
+};
 
 function MarkdownBlock({ text, caret }: { text: string; caret?: boolean }) {
   return (
     <div className="md text-sm leading-relaxed">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        rehypePlugins={[rehypeEmojiIcons]}
+        components={markdownComponents}
+      >
+        {text}
+      </ReactMarkdown>
       {caret && <span className="otto-caret -ml-1 text-accent" aria-hidden />}
     </div>
   );
