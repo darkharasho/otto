@@ -8,6 +8,7 @@ import { classify, denyReason } from '../shell/command-class';
 import { exec } from '../shell/executor';
 import { getPlatformAdapter } from '../platform';
 import { capture } from '../screenshot/executor';
+import { withSelfHidden } from '../screenshot/self-mask';
 import { downscaleIfNeeded } from '../screenshot/processor';
 import { save } from '../screenshot/store';
 import { tmpdir } from 'node:os';
@@ -271,7 +272,7 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
 
         if (t.name === 'screenshot') {
           const sArgs = args as { region?: { x: number; y: number; w: number; h: number } };
-          const captured = await capture(sArgs, getPlatformAdapter());
+          const captured = await withSelfHidden(() => capture(sArgs, getPlatformAdapter()));
           const downscaled = await downscaleIfNeeded(captured.bytes, 4096);
           const savedPath = await save(captured.bytes, ctx.sessionId, ctx.getConfigDir());
           const meta = {
@@ -402,7 +403,7 @@ function createFakeSdkClient(deps?: {
           });
           if (outcome === 'allow') {
             try {
-              const captured = await capture({}, getPlatformAdapter());
+              const captured = await withSelfHidden(() => capture({}, getPlatformAdapter()));
               const downscaled = await downscaleIfNeeded(captured.bytes, 4096);
               const savedPath = await save(
                 captured.bytes,
