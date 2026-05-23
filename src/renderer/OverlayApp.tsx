@@ -136,9 +136,9 @@ export function OverlayApp() {
   }, [steps]);
 
   return (
-    <div className="h-screen w-screen p-1 flex items-end justify-end pointer-events-none">
-      <div className="w-full rounded-2xl bg-surface/85 backdrop-blur-xl border border-border shadow-2xl overflow-hidden font-sans">
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-border/60 bg-bg/40">
+    <div className="h-screen w-screen p-1 pointer-events-none">
+      <div className="h-full w-full flex flex-col rounded-2xl bg-surface/85 backdrop-blur-xl border border-border shadow-2xl overflow-hidden font-sans">
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-border/60 bg-bg/40 shrink-0">
           <span className="relative flex items-center justify-center w-4 h-4">
             <span aria-hidden className="absolute inset-0 rounded-full bg-accent/30 otto-pulse" />
             <OttoMark className="relative w-4 h-4 text-accent" />
@@ -150,7 +150,7 @@ export function OverlayApp() {
             <span className="otto-typing-dot" style={{ animationDelay: '240ms' }} />
           </span>
         </div>
-        <div ref={scrollRef} className="px-3 py-2 max-h-[200px] overflow-hidden">
+        <div ref={scrollRef} className="px-3 py-2 flex-1 min-h-0 overflow-hidden">
           {steps.length === 0 ? (
             <div className="text-muted text-[12px] italic py-1">thinking…</div>
           ) : (
