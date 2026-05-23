@@ -37,6 +37,7 @@ async function startElectron(): Promise<void> {
   const { Settings } = await import('./autonomy/settings');
   const { DecisionBroker } = await import('./autonomy/decision-broker');
   const { ProcessRegistry } = await import('./shell/process-registry');
+  const { applyLinuxAutostart } = await import('./autostart-linux');
 
   const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
 
@@ -74,13 +75,18 @@ async function startElectron(): Promise<void> {
     if (removed > 0) logger.info(`auto-deleted ${removed} session(s) older than ${autoDeleteDays}d`);
   }
 
-  // app.setLoginItemSettings is sync. On Linux it can be quirky depending on
-  // the desktop environment; never let it tank app startup or block an IPC
-  // handler by scheduling it off the current tick and swallowing errors.
+  // app.setLoginItemSettings is a no-op on Linux, so we write an XDG autostart
+  // .desktop file there instead. Either path is scheduled off the current tick
+  // and swallows errors so a quirky desktop environment can't tank startup or
+  // block an IPC handler.
   const applyStartAtLogin = (enabled: boolean) => {
     setImmediate(() => {
       try {
-        app.setLoginItemSettings({ openAtLogin: enabled, openAsHidden: true });
+        if (process.platform === 'linux') {
+          applyLinuxAutostart(enabled);
+        } else {
+          app.setLoginItemSettings({ openAtLogin: enabled, openAsHidden: true });
+        }
       } catch (err) {
         logger.warn(`setLoginItemSettings failed: ${err instanceof Error ? err.message : err}`);
       }
