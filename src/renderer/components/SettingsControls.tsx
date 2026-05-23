@@ -47,16 +47,21 @@ export function Toggle({
         disabled={disabled}
         onClick={() => !disabled && onChange(!checked)}
         className={[
-          'mt-0.5 relative w-8 h-[18px] rounded-full border transition-colors flex-shrink-0',
+          // Track. box-content + explicit padding so the knob's geometry
+          // doesn't depend on border arithmetic — the inset 2px on every
+          // side is the "gutter" the 14px knob slides within.
+          'group/toggle mt-0.5 box-content relative w-[28px] h-[14px] p-[2px] rounded-full',
+          'border transition-colors flex-shrink-0',
           checked
             ? 'bg-accent border-accent'
             : 'bg-bg/60 border-border hover:border-accent/60',
         ].join(' ')}
       >
         <span
+          aria-hidden
           className={[
-            'absolute top-[1px] w-[14px] h-[14px] rounded-full bg-white transition-transform duration-150',
-            checked ? 'translate-x-[15px]' : 'translate-x-[1px]',
+            'block w-[14px] h-[14px] rounded-full bg-white shadow-sm transition-transform duration-150 ease-out',
+            checked ? 'translate-x-[14px]' : 'translate-x-0',
           ].join(' ')}
         />
       </button>
