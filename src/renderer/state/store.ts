@@ -16,6 +16,7 @@ interface OttoState {
   activeSession: ActiveSessionState | null;
   sessions: SessionMeta[];
   mode: AutonomyMode;
+  model: string;
 
   setWindowMode(mode: WindowMode): void;
   beginSession(id: string): void;
@@ -24,7 +25,20 @@ interface OttoState {
   applyEvent(event: SessionEvent): void;
   setSessions(list: SessionMeta[]): void;
   setMode(mode: AutonomyMode): void;
+  setModel(model: string): void;
   reset(): void;
+}
+
+const MODEL_STORAGE_KEY = 'otto.model';
+const DEFAULT_MODEL = 'claude-sonnet-4-6';
+
+function loadStoredModel(): string {
+  if (typeof window === 'undefined') return DEFAULT_MODEL;
+  try {
+    return window.localStorage.getItem(MODEL_STORAGE_KEY) ?? DEFAULT_MODEL;
+  } catch {
+    return DEFAULT_MODEL;
+  }
 }
 
 const initial = {
@@ -32,6 +46,7 @@ const initial = {
   activeSession: null as ActiveSessionState | null,
   sessions: [] as SessionMeta[],
   mode: 'balanced' as AutonomyMode,
+  model: loadStoredModel(),
 };
 
 export const useOttoStore = create<OttoState>((set, get) => ({
@@ -284,6 +299,16 @@ export const useOttoStore = create<OttoState>((set, get) => ({
 
   setMode(mode) {
     set({ mode });
+  },
+
+  setModel(model) {
+    set({ model });
+    try {
+      window.localStorage.setItem(MODEL_STORAGE_KEY, model);
+    } catch {
+      // localStorage may be unavailable (e.g. sandboxed test env) — choice
+      // just won't persist across launches, which is fine.
+    }
   },
 
   reset() {

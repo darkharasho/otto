@@ -8,13 +8,13 @@ import { SessionSwitcher } from './components/SessionSwitcher';
 import { StatusFooter } from './components/StatusFooter';
 import { ErrorCard } from './components/ErrorCard';
 
-const MODEL = 'claude-sonnet-4-6';
-
 export function App() {
   const windowMode = useOttoStore((s) => s.windowMode);
   const activeSession = useOttoStore((s) => s.activeSession);
   const sessions = useOttoStore((s) => s.sessions);
   const mode = useOttoStore((s) => s.mode);
+  const model = useOttoStore((s) => s.model);
+  const setModel = useOttoStore((s) => s.setModel);
   const setWindowMode = useOttoStore((s) => s.setWindowMode);
   const beginSession = useOttoStore((s) => s.beginSession);
   const loadSession = useOttoStore((s) => s.loadSession);
@@ -65,13 +65,15 @@ export function App() {
     return () => window.removeEventListener('focus', onFocus);
   }, []);
 
+  const sessionHasTraffic = (activeSession?.messages.length ?? 0) > 0;
+
   const handleSubmit = useCallback(
     async (text: string) => {
       setWindowMode('panel');
       void ipc.invoke('window.setMode', { mode: 'panel' });
       let sessionId = activeSession?.id;
       if (!sessionId) {
-        const { sessionId: newId } = await ipc.invoke('session.start', {});
+        const { sessionId: newId } = await ipc.invoke('session.start', { model });
         sessionId = newId;
         beginSession(newId);
       }
@@ -93,11 +95,11 @@ export function App() {
   );
 
   const handleNewSession = useCallback(async () => {
-    const { sessionId } = await ipc.invoke('session.start', {});
+    const { sessionId } = await ipc.invoke('session.start', { model });
     beginSession(sessionId);
     setWindowMode('panel');
     void ipc.invoke('window.setMode', { mode: 'panel' });
-  }, [beginSession, setWindowMode]);
+  }, [beginSession, setWindowMode, model]);
 
   const streaming = activeSession?.streaming ?? false;
   const isFreshSession = !activeSession || activeSession.messages.length === 0;
@@ -130,9 +132,11 @@ export function App() {
           <div className="flex flex-col gap-2">
             <CommandBar onSubmit={handleSubmit} busy={streaming} welcome={isFreshSession} />
             <StatusFooter
-              model={MODEL}
+              model={model}
               sessionId={activeSession?.id ?? null}
               mode={mode}
+              onModelChange={setModel}
+              modelLocked={sessionHasTraffic}
             />
           </div>
         }

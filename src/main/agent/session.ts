@@ -45,13 +45,14 @@ export class SessionManager {
     return this.activeSessionId;
   }
 
-  async start(args: { resume?: string }): Promise<{ sessionId: string }> {
-    const sdkSession = await this.sdk.startSession({ resume: args.resume, model: this.defaultModel });
+  async start(args: { resume?: string; model?: string }): Promise<{ sessionId: string }> {
+    const model = args.model ?? this.defaultModel;
+    const sdkSession = await this.sdk.startSession({ resume: args.resume, model });
     const now = Date.now();
     if (!this.repo.getSession(sdkSession.id)) {
       this.repo.createSession({
         id: sdkSession.id,
-        model: this.defaultModel,
+        model,
         createdAt: now,
         lastActive: now,
       });

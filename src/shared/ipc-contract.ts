@@ -14,6 +14,7 @@ export interface StructuredError {
 
 export interface SessionStartArgs {
   resume?: string;
+  model?: string;
 }
 export interface SessionStartResult {
   sessionId: string;
