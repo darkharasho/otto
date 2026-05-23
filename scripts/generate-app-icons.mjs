@@ -39,7 +39,12 @@ async function main() {
   if (!icns) throw new Error('createICNS failed');
   await writeFile(join(outDir, 'icon.icns'), icns);
 
-  console.log('Wrote build/icon.{png,ico,icns}');
+  // README header: 256x256 PNG under public/img/.
+  const readmeOutDir = join(repoRoot, 'public', 'img');
+  await mkdir(readmeOutDir, { recursive: true });
+  await sharp(master).resize(256, 256).png().toFile(join(readmeOutDir, 'otto-logo.png'));
+
+  console.log('Wrote build/icon.{png,ico,icns} and public/img/otto-logo.png');
 }
 
 main().catch((err) => {
