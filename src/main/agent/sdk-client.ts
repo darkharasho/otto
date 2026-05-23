@@ -145,11 +145,8 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
             content: [
               {
                 type: 'image' as const,
-                source: {
-                  type: 'base64' as const,
-                  media_type: 'image/png' as const,
-                  data: downscaled.bytes.toString('base64'),
-                },
+                data: downscaled.bytes.toString('base64'),
+                mimeType: 'image/png',
               },
               { type: 'text' as const, text: JSON.stringify(meta) },
             ],
