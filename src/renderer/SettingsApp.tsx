@@ -12,10 +12,22 @@ export function SettingsApp() {
   const model = useOttoStore((s) => s.model);
   const setModel = useOttoStore((s) => s.setModel);
   const [s, setS] = useState<SettingsView | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    void ipc.invoke('settings.get', undefined).then(setS);
+    ipc.invoke('settings.get', undefined).then(setS).catch((e) => {
+      setErr(e instanceof Error ? `${e.name}: ${e.message}` : String(e));
+    });
   }, []);
+
+  if (err) {
+    return (
+      <div className="w-screen h-screen flex items-center justify-center text-red-400 text-xs p-4 text-center">
+        Settings failed to load:<br />
+        <code className="mt-2 whitespace-pre-wrap">{err}</code>
+      </div>
+    );
+  }
 
   if (!s) {
     return (
