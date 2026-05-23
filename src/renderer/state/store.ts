@@ -49,6 +49,18 @@ const initial = {
   model: loadStoredModel(),
 };
 
+// Cross-window sync: localStorage is shared across BrowserWindows of the
+// same origin, and Chromium fires the `storage` event in other windows when
+// one window writes. So changing the model in the Settings window updates
+// the main window's store without any IPC plumbing.
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key === MODEL_STORAGE_KEY && e.newValue) {
+      useOttoStore.setState({ model: e.newValue });
+    }
+  });
+}
+
 export const useOttoStore = create<OttoState>((set, get) => ({
   ...initial,
 

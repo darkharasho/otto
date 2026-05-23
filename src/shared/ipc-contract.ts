@@ -105,8 +105,6 @@ export const SESSION_EVENT_CHANNEL = 'session.event';
 
 export const AUTONOMY_EVENT_CHANNEL = 'autonomy.event';
 
-export const UI_EVENT_CHANNEL = 'ui:open-settings';
-
 export type AutonomyEvent =
   | { type: 'mode-changed'; mode: AutonomyMode };
 
@@ -117,7 +115,6 @@ export interface OttoBridge {
   ): Promise<Extract<IpcRequest, { channel: C }>['result']>;
   onSessionEvent(handler: (event: SessionEvent) => void): () => void;
   onAutonomyEvent(handler: (event: AutonomyEvent) => void): () => void;
-  onOpenSettings(handler: () => void): () => void;
 }
 
 declare global {

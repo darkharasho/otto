@@ -7,7 +7,6 @@ import { MessageList } from './components/MessageList';
 import { SessionSwitcher } from './components/SessionSwitcher';
 import { StatusFooter } from './components/StatusFooter';
 import { ErrorCard } from './components/ErrorCard';
-import { SettingsModal } from './components/SettingsModal';
 
 export function App() {
   const windowMode = useOttoStore((s) => s.windowMode);
@@ -15,7 +14,6 @@ export function App() {
   const sessions = useOttoStore((s) => s.sessions);
   const mode = useOttoStore((s) => s.mode);
   const model = useOttoStore((s) => s.model);
-  const setModel = useOttoStore((s) => s.setModel);
   const setWindowMode = useOttoStore((s) => s.setWindowMode);
   const beginSession = useOttoStore((s) => s.beginSession);
   const loadSession = useOttoStore((s) => s.loadSession);
@@ -66,18 +64,6 @@ export function App() {
     return () => window.removeEventListener('focus', onFocus);
   }, []);
 
-  const sessionHasTraffic = (activeSession?.messages.length ?? 0) > 0;
-
-  // Tray right-click → "Settings…" opens the modal. The bar is too short to
-  // host a dialog, so force panel mode whenever settings opens.
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  useEffect(() => {
-    return ipc.onOpenSettings(() => {
-      setSettingsOpen(true);
-      setWindowMode('panel');
-      void ipc.invoke('window.setMode', { mode: 'panel' });
-    });
-  }, [setWindowMode]);
 
   const handleSubmit = useCallback(
     async (text: string) => {
@@ -162,14 +148,6 @@ export function App() {
           </div>
         )}
       </Panel>
-      <SettingsModal
-        open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        model={model}
-        onModelChange={setModel}
-        modelLocked={sessionHasTraffic}
-        modelLockedReason="Active session is using its original model — start a new session to switch."
-      />
     </div>
   );
 }

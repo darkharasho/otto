@@ -4,7 +4,17 @@ import '@fontsource/plus-jakarta-sans/600.css';
 import '@fontsource/plus-jakarta-sans/700.css';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
+import { SettingsApp } from './SettingsApp';
 import './index.css';
 
+const isSettings = window.location.hash === '#settings';
+
+if (isSettings) {
+  // Esc closes the settings window — matches its native dialog feel.
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') window.close();
+  });
+}
+
 const root = createRoot(document.getElementById('root')!);
-root.render(<App />);
+root.render(isSettings ? <SettingsApp /> : <App />);

@@ -17,7 +17,7 @@ if (isToggleInvocation()) {
 }
 
 async function startElectron(): Promise<void> {
-  const { app, dialog, BrowserWindow } = await import('electron');
+  const { app, dialog } = await import('electron');
   const path = await import('node:path');
   const { logger, ottoConfigDir } = await import('./logger');
   const { openDatabase } = await import('./db/db');
@@ -31,6 +31,7 @@ async function startElectron(): Promise<void> {
   const { emitSessionEvent } = await import('./ipc/events');
   const { ToggleServer } = await import('./toggle-server');
   const { TrayManager } = await import('./tray');
+  const { SettingsWindowManager } = await import('./settings-window');
   const { Settings } = await import('./autonomy/settings');
   const { DecisionBroker } = await import('./autonomy/decision-broker');
   const { ProcessRegistry } = await import('./shell/process-registry');
@@ -120,20 +121,14 @@ async function startElectron(): Promise<void> {
     logger.warn(`toggle server failed to start: ${err instanceof Error ? err.message : err}`);
   }
 
+  const settingsWindow = new SettingsWindowManager(preloadPath, rendererEntry());
+
   const tray = new TrayManager({
     onShow: () => {
       const mode = shouldResume(repo, sessions) ? 'panel' : 'bar';
-      if (window.isVisible()) window.show(mode);
-      else window.show(mode);
-    },
-    onOpenSettings: () => {
-      const mode = shouldResume(repo, sessions) ? 'panel' : 'bar';
       window.show(mode);
-      const wins = BrowserWindow.getAllWindows();
-      for (const w of wins) {
-        if (!w.isDestroyed()) w.webContents.send('ui:open-settings');
-      }
     },
+    onOpenSettings: () => settingsWindow.show(),
     onQuit: () => app.quit(),
   });
   tray.start();
@@ -147,6 +142,7 @@ async function startElectron(): Promise<void> {
     void toggleServer.stop();
     void registry.killAll();
     tray.destroy();
+    settingsWindow.destroy();
     db.close();
   });
 

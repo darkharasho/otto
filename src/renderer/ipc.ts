@@ -12,7 +12,4 @@ export const ipc: OttoBridge = {
   onAutonomyEvent(handler: (e: AutonomyEvent) => void): () => void {
     return window.otto.onAutonomyEvent(handler);
   },
-  onOpenSettings(handler: () => void): () => void {
-    return window.otto.onOpenSettings(handler);
-  },
 };

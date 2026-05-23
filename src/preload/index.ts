@@ -2,7 +2,6 @@ import { contextBridge, ipcRenderer } from 'electron';
 import {
   AUTONOMY_EVENT_CHANNEL,
   SESSION_EVENT_CHANNEL,
-  UI_EVENT_CHANNEL,
   type AutonomyEvent,
   type IpcChannel,
   type IpcRequest,
@@ -27,11 +26,6 @@ const bridge: OttoBridge = {
     const listener = (_e: Electron.IpcRendererEvent, payload: AutonomyEvent) => handler(payload);
     ipcRenderer.on(AUTONOMY_EVENT_CHANNEL, listener);
     return () => ipcRenderer.removeListener(AUTONOMY_EVENT_CHANNEL, listener);
-  },
-  onOpenSettings(handler) {
-    const listener = () => handler();
-    ipcRenderer.on(UI_EVENT_CHANNEL, listener);
-    return () => ipcRenderer.removeListener(UI_EVENT_CHANNEL, listener);
   },
 };
 
