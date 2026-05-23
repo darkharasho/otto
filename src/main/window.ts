@@ -59,6 +59,12 @@ export class WindowManager {
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,
+        // Chromium throttles renderers in hidden windows, so session events
+        // queue up and only flush when the window is shown again — which
+        // briefly replays the streaming state before settling on `done`.
+        // Keep the renderer ticking at full speed so its store stays in sync
+        // even while hidden.
+        backgroundThrottling: false,
       },
     });
     win.setAlwaysOnTop(true, 'floating');
