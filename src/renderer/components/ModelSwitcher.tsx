@@ -34,12 +34,46 @@ interface Props {
   disabled?: boolean;
 }
 
+function FamilyPill({ family }: { family: ModelOption['family'] }) {
+  const cls =
+    family === 'opus'
+      ? 'bg-accent/20 text-accent'
+      : family === 'sonnet'
+        ? 'bg-text/10 text-text'
+        : 'bg-bg/80 text-muted';
+  return (
+    <span className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded ${cls}`}>
+      {family}
+    </span>
+  );
+}
+
+function ModelGlyph({ family }: { family: ModelOption['family'] }) {
+  // Three concentric dots: one (haiku), two (sonnet), three (opus) — visual
+  // weight maps to capability.
+  const filled = family === 'opus' ? 3 : family === 'sonnet' ? 2 : 1;
+  return (
+    <span className="flex items-center justify-center w-9 h-9 rounded-lg bg-accent/10 text-accent">
+      <span className="flex gap-[3px]" aria-hidden>
+        {[0, 1, 2].map((i) => (
+          <span
+            key={i}
+            className={[
+              'w-1.5 h-1.5 rounded-full transition-opacity',
+              i < filled ? 'bg-accent opacity-100' : 'bg-accent opacity-25',
+            ].join(' ')}
+          />
+        ))}
+      </span>
+    </span>
+  );
+}
+
 export function ModelSwitcher({ value, onChange, disabled = false }: Props) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   const current = MODELS.find((m) => m.id === value);
-  const displayLabel = current?.label ?? value;
 
   useEffect(() => {
     if (!open) return;
@@ -66,19 +100,30 @@ export function ModelSwitcher({ value, onChange, disabled = false }: Props) {
         aria-expanded={open}
         aria-haspopup="listbox"
         className={[
-          'flex items-center gap-1.5 px-1.5 py-0.5 rounded border text-[10px] transition-colors',
-          'bg-bg/60 border-border hover:border-accent/60 hover:text-text',
+          'group w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border transition-colors text-left',
+          'bg-bg/40 border-border hover:border-accent/60 focus:border-accent/70 focus:outline-none',
+          open ? 'border-accent/70' : '',
           disabled ? 'opacity-60 cursor-not-allowed' : '',
         ].join(' ')}
-        title="Model for new sessions"
       >
-        <span className="font-medium">{displayLabel}</span>
+        {current ? <ModelGlyph family={current.family} /> : null}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-text truncate">
+              {current?.label ?? value}
+            </span>
+            {current && <FamilyPill family={current.family} />}
+          </div>
+          {current && (
+            <div className="text-[11px] text-muted mt-0.5 truncate">{current.tagline}</div>
+          )}
+        </div>
         <svg
           viewBox="0 0 24 24"
-          className={`w-2.5 h-2.5 transition-transform duration-150 ${open ? 'rotate-180' : ''}`}
+          className={`w-4 h-4 text-muted transition-transform duration-150 flex-shrink-0 ${open ? 'rotate-180' : ''}`}
           fill="none"
           stroke="currentColor"
-          strokeWidth="2.5"
+          strokeWidth="2.25"
           strokeLinecap="round"
           strokeLinejoin="round"
         >
@@ -88,7 +133,7 @@ export function ModelSwitcher({ value, onChange, disabled = false }: Props) {
       {open && (
         <div
           role="listbox"
-          className="otto-dropdown-enter absolute left-0 top-full mt-1.5 w-64 rounded-xl border border-border bg-surface shadow-2xl z-10 p-1"
+          className="otto-dropdown-enter absolute left-0 right-0 top-full mt-2 rounded-xl border border-border bg-surface shadow-2xl z-10 p-1.5"
         >
           {MODELS.map((m) => {
             const active = m.id === value;
@@ -103,29 +148,34 @@ export function ModelSwitcher({ value, onChange, disabled = false }: Props) {
                   setOpen(false);
                 }}
                 className={[
-                  'relative w-full text-left pl-3 pr-2.5 py-2 rounded-lg transition-colors',
+                  'relative w-full flex items-center gap-3 text-left px-2.5 py-2.5 rounded-lg transition-colors',
                   active ? 'bg-accent/10 text-text' : 'text-text hover:bg-bg/60',
                 ].join(' ')}
               >
                 {active && (
-                  <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-accent" />
+                  <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-accent" />
                 )}
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">{m.label}</span>
-                  <span
-                    className={[
-                      'text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded',
-                      m.family === 'opus' && 'bg-accent/20 text-accent',
-                      m.family === 'sonnet' && 'bg-text/10 text-text',
-                      m.family === 'haiku' && 'bg-bg/80 text-muted',
-                    ]
-                      .filter(Boolean)
-                      .join(' ')}
-                  >
-                    {m.family}
-                  </span>
+                <ModelGlyph family={m.family} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold">{m.label}</span>
+                    <FamilyPill family={m.family} />
+                  </div>
+                  <div className="text-[11px] text-muted mt-0.5">{m.tagline}</div>
                 </div>
-                <div className="text-[11px] text-muted mt-0.5">{m.tagline}</div>
+                {active && (
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="w-4 h-4 text-accent flex-shrink-0"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M5 12l5 5L20 7" />
+                  </svg>
+                )}
               </button>
             );
           })}
