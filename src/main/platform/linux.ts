@@ -193,36 +193,17 @@ export class LinuxAdapter implements PlatformAdapter {
   /**
    * Move the cursor to a virtual-desktop pixel coordinate.
    *
-   * Strategy:
-   * 1. Prefer `kdotool` (KWin scripting) — `kdotool mousemove -- X Y` warps
-   *    to absolute pixel coords on Wayland reliably.
-   * 2. Fallback: ydotool relative motion in small steps. Wayland's security
-   *    forbids external absolute warping, and `screen.getCursorScreenPoint()`
-   *    may report stale coords when Otto is not focused, so each step is
-   *    capped at MAX_STEP_PX with a small delay so pointer-accel doesn't
-   *    accumulate.
+   * On Wayland, no userland tool can directly warp the absolute cursor
+   * position — KWin's scripting interface (used by kdotool) only exposes
+   * window manipulation, and ydotool's `--absolute` is clamped by the
+   * compositor. We send small relative steps via ydotool from a best-known
+   * starting point so pointer-acceleration doesn't accumulate into a wild
+   * overshoot.
+   *
+   * `screen.getCursorScreenPoint()` may report stale coords when Otto is
+   * not focused, but the small step size limits the worst-case error.
    */
   private async moveCursorTo(targetX: number, targetY: number): Promise<void> {
-    const kdo = await checkBinary({
-      name: 'kdotool',
-      purpose: 'absolute cursor positioning on Wayland',
-      hints: {
-        fedora:
-          'sudo dnf copr enable jinliu/kdotool && sudo dnf install kdotool ' +
-          '(Bazzite: download the prebuilt from https://github.com/jinliu/kdotool/releases ' +
-          'into ~/.local/bin to avoid rpm-ostree)',
-        debian: 'install from https://github.com/jinliu/kdotool/releases',
-        arch: 'paru -S kdotool',
-        fallback: 'install kdotool from https://github.com/jinliu/kdotool/releases',
-      },
-    });
-
-    if (kdo.ok) {
-      await this.runKdotool(['mousemove', '--', String(targetX), String(targetY)]);
-      return;
-    }
-
-    // Fallback: stepped relative motion via ydotool.
     const current = screen.getCursorScreenPoint();
     let dx = targetX - current.x;
     let dy = targetY - current.y;
@@ -237,21 +218,6 @@ export class LinuxAdapter implements PlatformAdapter {
         await new Promise<void>((resolve) => setTimeout(resolve, 5));
       }
     }
-  }
-
-  private runKdotool(args: string[]): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const child = nodeSpawn('kdotool', args, { stdio: ['ignore', 'pipe', 'pipe'] });
-      let stderr = '';
-      child.stderr.on('data', (chunk: Buffer) => {
-        stderr += chunk.toString('utf8');
-      });
-      child.once('error', reject);
-      child.once('exit', (code) => {
-        if (code === 0) return resolve();
-        reject(new Error(`kdotool failed: ${stderr.trim() || `exit ${code}`}`));
-      });
-    });
   }
 
   private allMonitors(): MonitorInfo[] {
