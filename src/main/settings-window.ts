@@ -2,6 +2,7 @@ import { BrowserWindow, app, screen } from 'electron';
 import path from 'node:path';
 import { logger } from './logger';
 import { isDevInstance } from './instance';
+import { routeExternalLinksToBrowser } from './window';
 
 const WIDTH = 520;
 const HEIGHT = 720;
@@ -72,6 +73,8 @@ export class SettingsWindowManager {
     } else {
       win.loadFile(this.rendererUrl, { hash: 'settings' });
     }
+
+    routeExternalLinksToBrowser(win, this.rendererUrl);
 
     win.on('closed', () => {
       this.window = null;

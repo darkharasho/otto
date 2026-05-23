@@ -1,4 +1,4 @@
-import { BrowserWindow, screen, app } from 'electron';
+import { BrowserWindow, screen, app, shell } from 'electron';
 import path from 'node:path';
 import { logger } from './logger';
 
@@ -58,6 +58,8 @@ export class WindowManager {
     } else {
       win.loadFile(rendererUrl);
     }
+
+    routeExternalLinksToBrowser(win, rendererUrl);
 
     // Click-outside-to-hide, gated by the user's hideOnBlur preference.
     win.on('blur', () => {
@@ -175,6 +177,36 @@ export class WindowManager {
     }
     return { x, y: workArea.y + workArea.height - height - PANEL_BOTTOM_MARGIN };
   }
+}
+
+export function routeExternalLinksToBrowser(win: BrowserWindow, rendererUrl: string): void {
+  const isInternal = (url: string): boolean => {
+    if (rendererUrl.startsWith('http')) {
+      try {
+        const base = new URL(rendererUrl);
+        const target = new URL(url);
+        return target.origin === base.origin;
+      } catch {
+        return false;
+      }
+    }
+    return url.startsWith('file://');
+  };
+
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url) || /^mailto:/i.test(url)) {
+      void shell.openExternal(url);
+    }
+    return { action: 'deny' };
+  });
+
+  win.webContents.on('will-navigate', (event, url) => {
+    if (isInternal(url)) return;
+    event.preventDefault();
+    if (/^https?:\/\//i.test(url) || /^mailto:/i.test(url)) {
+      void shell.openExternal(url);
+    }
+  });
 }
 
 export function rendererEntry(): string {
