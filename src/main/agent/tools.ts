@@ -151,11 +151,24 @@ export function buildShellTools(getRegistry: () => ProcessRegistry): OttoTool[] 
 
 export const stubTools: OttoTool[] = [echoTool, fakeMutateTool, fakeWipeTool];
 
+export function buildKnowledgeTool(): OttoTool {
+  return {
+    name: 'knowledge_append',
+    description:
+      'Append a durable fact or preference to Otto\'s knowledge file (a per-machine markdown file Otto reads at the start of every turn). Use for things worth remembering across sessions: user preferences (e.g., "browser of choice is Zen"), machine quirks (e.g., "spectacle needs -bnf on multi-monitor"), or stable identifiers. Do NOT use for ephemeral task state. One short line per call.',
+    actionClass: 'reversible',
+    schema: z.object({ note: z.string().min(1) }),
+    async run(_input) {
+      throw new Error('knowledge_append must be invoked via the SDK handler');
+    },
+  };
+}
+
 export function buildScreenshotTool(): OttoTool {
   return {
     name: 'screenshot',
     description:
-      'Capture the entire virtual desktop (all monitors stitched) as a PNG. Returns { path, width, height, monitors: [{id,x,y,w,h,scale}] } so you know where each display lives. Optional `region` crops in virtual-desktop coords. The captured image is attached so the model can see it.',
+      'Capture the entire virtual desktop (all monitors stitched) as a PNG. Returns { path, width, height, monitors: [{id,x,y,w,h,scale}] } so you know where each display lives. Optional `region` crops in virtual-desktop coords. Optional `window` (name pattern, e.g. "Firefox") resolves the matching window via kdotool and crops to its bounds — much faster than a full-desktop capture once a target is known. Pass only one of `region`/`window`. The captured image is attached so the model can see it.',
     actionClass: 'read',
     schema: z.object({
       region: z
@@ -166,6 +179,7 @@ export function buildScreenshotTool(): OttoTool {
           h: z.number().int().positive(),
         })
         .optional(),
+      window: z.string().min(1).optional(),
     }),
     async run(_input) {
       throw new Error('screenshot must be invoked via the SDK handler');

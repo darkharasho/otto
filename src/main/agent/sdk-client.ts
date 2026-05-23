@@ -1,5 +1,6 @@
 import type { SdkClient, SdkStreamEvent, SdkTurn } from './session';
-import { buildInputTools, buildScreenshotTool, buildShellTools, stubTools, type OttoTool } from './tools';
+import { buildInputTools, buildKnowledgeTool, buildScreenshotTool, buildShellTools, stubTools, type OttoTool } from './tools';
+import { appendKnowledge, readKnowledge } from '../knowledge/store';
 import { exec as execInput, type InputAction } from '../input/executor';
 import type { DecisionBroker } from '../autonomy/decision-broker';
 import type { ProcessRegistry } from '../shell/process-registry';
@@ -80,7 +81,7 @@ const SYSTEM_PROMPT = [
   '- shell_read(handle, since?): read buffered output for a spawned process.',
   '- shell_wait(handle, timeout_ms?): block until a spawned process exits.',
   '- shell_kill(handle): send SIGTERM to a spawned process.',
-  '- screenshot(region?): capture the FULL virtual desktop (all monitors stitched) as a PNG. Result includes a `monitors` array with each display\'s {x, y, w, h} so you know where they sit in the coordinate space. Image is attached so you can see it.',
+  '- screenshot(region?, window?): capture the virtual desktop as a PNG. Default is the full desktop (all monitors stitched); `region` crops by virtual-desktop coords; `window` (name pattern like "Firefox") crops to that window\'s bounds via kdotool — strongly preferred for iteration once a target window is identified, since it\'s much smaller and faster than a full capture. Result includes a `monitors` array with each display\'s {x, y, w, h}. Image is attached so you can see it.',
   '- get_cursor_position(): return the cursor position {x, y} in virtual-desktop pixels.',
   '- move(x, y): move the cursor to the given monitor-relative position.',
   '- scroll(dx, dy, x?, y?): scroll by (dx, dy); optional (x, y) moves cursor first.',
@@ -91,6 +92,7 @@ const SYSTEM_PROMPT = [
   '- key(combo, delay_ms?): send a key combo (xdotool-style: "Control+S", "F5", "Return").',
   '- WebSearch(query): search the web; returns titles, urls, and snippets you can cite.',
   '- WebFetch(url, prompt): fetch a URL and extract readable content based on the prompt.',
+  '- knowledge_append(note): save a durable fact/preference to Otto\'s per-machine knowledge file. Current contents are injected into your prompt every turn (see "Known about this machine and user" below, if present). Use sparingly — only things worth remembering next session.',
   '- echo(msg), fake-mutate(target), fake-wipe(target): test stubs; ignore unless explicitly asked.',
   '',
   'GUI workflow — when the user asks you to type, click, or otherwise interact with their screen:',
@@ -214,6 +216,7 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
     ...buildShellTools(ctx.getRegistry),
     buildScreenshotTool(),
     ...buildInputTools(),
+    buildKnowledgeTool(),
   ];
   const sdkTools = allTools.map((t) => {
     const shape = (t.schema as unknown as { shape?: Record<string, unknown> }).shape;
@@ -278,8 +281,14 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
           };
         }
 
+        if (t.name === 'knowledge_append') {
+          const { note } = args as { note: string };
+          await appendKnowledge(ctx.getConfigDir(), note);
+          return { content: [{ type: 'text' as const, text: 'noted' }] };
+        }
+
         if (t.name === 'screenshot') {
-          const sArgs = args as { region?: { x: number; y: number; w: number; h: number } };
+          const sArgs = args as { region?: { x: number; y: number; w: number; h: number }; window?: string };
           const captured = await withSelfHidden(() => capture(sArgs, getPlatformAdapter()));
           const downscaled = await downscaleIfNeeded(captured.bytes, 4096);
           const savedPath = await save(captured.bytes, ctx.sessionId, ctx.getConfigDir());
@@ -460,6 +469,7 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
     ...buildShellTools(deps.getRegistry),
     buildScreenshotTool(),
     ...buildInputTools(),
+    buildKnowledgeTool(),
   ];
   const allowedTools = [
     ...allToolsForAllow.map((t) => `mcp__otto-tools__${t.name}`),
@@ -501,10 +511,14 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
           getConfigDir: deps.getConfigDir,
         });
         const spawnOverrides = getSdkSpawnOverrides();
+        const knowledge = await readKnowledge(deps.getConfigDir()).catch(() => '');
+        const systemPrompt = knowledge.trim().length > 0
+          ? `${SYSTEM_PROMPT}\n\n---\nKnown about this machine and user (from knowledge_append in prior sessions):\n${knowledge.trim()}`
+          : SYSTEM_PROMPT;
         const iter = sdk.query({
           prompt: text,
           options: {
-            systemPrompt: SYSTEM_PROMPT,
+            systemPrompt,
             // Disable all built-in Claude Code tools; we only want our MCP tool.
             tools: ['WebSearch', 'WebFetch'],
             allowedTools,

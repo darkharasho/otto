@@ -107,8 +107,22 @@ export class LinuxAdapter implements PlatformAdapter {
     capture: async (opts: CaptureOptions): Promise<CaptureResult> => {
       const monitors = this.allMonitors();
       const bounds = virtualDesktopBounds(monitors);
-      if (opts.region) {
-        const r = opts.region;
+      if (opts.region && opts.window) {
+        throw new Error('screenshot: pass either `region` or `window`, not both');
+      }
+      let region = opts.region;
+      if (opts.window) {
+        const geo = await this.resolveWindowGeometry(opts.window);
+        // Clamp to virtual-desktop bounds so we don't ask Electron to crop
+        // off-canvas (e.g., a window partially offscreen).
+        const x = Math.max(geo.x, bounds.x);
+        const y = Math.max(geo.y, bounds.y);
+        const w = Math.max(1, Math.min(geo.x + geo.w, bounds.x + bounds.w) - x);
+        const h = Math.max(1, Math.min(geo.y + geo.h, bounds.y + bounds.h) - y);
+        region = { x, y, w, h };
+      }
+      if (region) {
+        const r = region;
         const inside =
           r.x >= bounds.x &&
           r.y >= bounds.y &&
@@ -130,11 +144,11 @@ export class LinuxAdapter implements PlatformAdapter {
 
       try {
         const fullBytes = await fsp.readFile(tmp);
-        if (!opts.region) {
+        if (!region) {
           const { width, height } = this.readPngDims(fullBytes);
           return { bytes: fullBytes, width, height, monitors };
         }
-        const r = opts.region;
+        const r = region;
         // Region is given in virtual-desktop coords. Translate to image coords
         // by subtracting the virtual-desktop origin; honor primary scale.
         const scale = monitors[0]?.scale || 1;
@@ -215,6 +229,52 @@ export class LinuxAdapter implements PlatformAdapter {
       h: d.bounds.height,
       scale: d.scaleFactor,
     }));
+  }
+
+  private async resolveWindowGeometry(name: string): Promise<{ x: number; y: number; w: number; h: number }> {
+    await this.ensureKdotool();
+    const ids = (await this.runKdotool(['search', '--name', name])).split('\n').map((s) => s.trim()).filter(Boolean);
+    const firstId = ids[0];
+    if (!firstId) throw new Error(`no window matches name "${name}"`);
+    const out = await this.runKdotool(['getwindowgeometry', firstId]);
+    // kdotool prints lines like:
+    //   Window <id>
+    //     Position: X,Y (screen: N)
+    //     Geometry: WxH
+    const pos = /Position:\s*(-?\d+)\s*,\s*(-?\d+)/.exec(out);
+    const geo = /Geometry:\s*(\d+)\s*x\s*(\d+)/.exec(out);
+    const px = pos?.[1], py = pos?.[2], gw = geo?.[1], gh = geo?.[2];
+    if (!px || !py || !gw || !gh) throw new Error(`could not parse kdotool getwindowgeometry output:\n${out}`);
+    return { x: parseInt(px, 10), y: parseInt(py, 10), w: parseInt(gw, 10), h: parseInt(gh, 10) };
+  }
+
+  private async ensureKdotool(): Promise<void> {
+    const r = await checkBinary({
+      name: 'kdotool',
+      purpose: 'KDE window query/geometry (xdotool-style API backed by KWin scripts)',
+      hints: {
+        fedora: 'cargo install kdotool  # or download from https://github.com/jinliu/kdotool',
+        debian: 'cargo install kdotool  # or download from https://github.com/jinliu/kdotool',
+        arch: 'paru -S kdotool',
+        fallback: 'install kdotool from https://github.com/jinliu/kdotool',
+      },
+    });
+    if (!r.ok) throw new Error(`${r.reason}\n\n${r.hint}`);
+  }
+
+  private runKdotool(args: string[]): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const child = nodeSpawn('kdotool', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk: Buffer) => { stdout += chunk.toString('utf8'); });
+      child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8'); });
+      child.once('error', reject);
+      child.once('exit', (code) => {
+        if (code === 0) return resolve(stdout);
+        reject(new Error(`kdotool failed: ${stderr.trim() || `exit ${code}`}`));
+      });
+    });
   }
 
   private async ensureXdotool(): Promise<void> {

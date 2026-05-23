@@ -21,6 +21,8 @@ export interface MonitorInfo {
 
 export interface CaptureOptions {
   region?: { x: number; y: number; w: number; h: number };
+  /** Capture only the window matching this name pattern. Resolved per-platform (kdotool on KDE). Mutually exclusive with `region`. */
+  window?: string;
 }
 
 export interface CaptureResult {
