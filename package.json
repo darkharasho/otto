@@ -28,6 +28,7 @@
     "@fontsource/plus-jakarta-sans": "^5.2.8",
     "better-sqlite3": "^12.10.0",
     "electron-log": "^5.2.0",
+    "electron-updater": "^6.8.3",
     "emoji-regex": "^10.6.0",
     "lucide-react": "^1.16.0",
     "react": "^18.3.1",
