@@ -120,8 +120,14 @@ function renderBlocks(content: ContentBlock[], streamingTarget: boolean) {
     const caretHere = streamingTarget && textBufferStartIdx <= lastTextIndex;
     elements.push(<MarkdownBlock key="t-tail" text={textBuffer} caret={caretHere} />);
   } else if (streamingTarget && lastTextIndex === -1) {
-    // streaming has started but no text yet — show caret alone
-    elements.push(<MarkdownBlock key="t-empty" text="" caret />);
+    // streaming has started but no text yet — show typing dots
+    elements.push(
+      <div key="t-empty" className="text-accent otto-typing" aria-label="Otto is typing">
+        <span />
+        <span />
+        <span />
+      </div>
+    );
   }
   return <>{elements}</>;
 }

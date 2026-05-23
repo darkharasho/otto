@@ -9,11 +9,23 @@ interface Props {
 
 export function CommandBar({ onSubmit, autoFocus = true, busy = false }: Props) {
   const [value, setValue] = useState('');
+  const [sendTick, setSendTick] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     if (autoFocus && !busy) inputRef.current?.focus();
   }, [autoFocus, busy]);
+
+  // Replay the send-bounce animation by toggling the class on each submit.
+  useEffect(() => {
+    if (sendTick === 0 || !formRef.current) return;
+    const el = formRef.current;
+    el.classList.remove('otto-send-bounce');
+    // force reflow so the next add restarts the animation
+    void el.offsetWidth;
+    el.classList.add('otto-send-bounce');
+  }, [sendTick]);
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -22,6 +34,7 @@ export function CommandBar({ onSubmit, autoFocus = true, busy = false }: Props) 
     if (!trimmed) return;
     onSubmit(trimmed);
     setValue('');
+    setSendTick((n) => n + 1);
   }
 
   const placeholder = busy ? 'Otto is working…' : 'Ask Otto to do something…';
@@ -29,6 +42,7 @@ export function CommandBar({ onSubmit, autoFocus = true, busy = false }: Props) 
 
   return (
     <form
+      ref={formRef}
       onSubmit={handleSubmit}
       aria-busy={busy}
       className={[
