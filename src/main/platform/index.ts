@@ -30,6 +30,19 @@ export interface CaptureResult {
   monitor: MonitorInfo;
 }
 
+export type MouseButton = 'left' | 'right' | 'middle';
+export interface CursorPosition { x: number; y: number; }
+export interface PlatformInput {
+  cursorPosition(): Promise<CursorPosition>;
+  move(x: number, y: number): Promise<void>;
+  scroll(dx: number, dy: number, x?: number, y?: number): Promise<void>;
+  click(x: number, y: number, button: MouseButton): Promise<void>;
+  doubleClick(x: number, y: number, button: MouseButton): Promise<void>;
+  drag(x1: number, y1: number, x2: number, y2: number, button: MouseButton): Promise<void>;
+  type(text: string): Promise<void>;
+  key(combo: string): Promise<void>;
+}
+
 export interface PlatformAdapter {
   readonly name: 'linux' | 'darwin' | 'win32';
   detectDisplayServer(): DisplayServer;
@@ -41,6 +54,7 @@ export interface PlatformAdapter {
   screenshot: {
     capture(opts: CaptureOptions): Promise<CaptureResult>;
   };
+  input: PlatformInput;
 }
 
 export function getPlatformAdapter(): PlatformAdapter {
