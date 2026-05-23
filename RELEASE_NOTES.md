@@ -1,3 +1,8 @@
+Version v0.2.2
+
+Bug fixes:
+- **Live activity overlay header no longer clips off the top.** The overlay's outer flexbox was bottom-aligned, so when the step list grew taller than the window the whole card slid upward and the "Otto is working" header was pushed offscreen. The card now fills the window from top to bottom.
+
 Version v0.2.1
 
 Bug fixes:
