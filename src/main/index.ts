@@ -149,7 +149,7 @@ async function startElectron(): Promise<void> {
     },
   });
 
-  setupUpdaterIpc(() => BrowserWindow.getAllWindows());
+  setupUpdaterIpc(() => BrowserWindow.getAllWindows(), notifier);
 
   const onToggle = () => {
     const mode = shouldResume(repo, sessions) ? 'panel' : 'bar';

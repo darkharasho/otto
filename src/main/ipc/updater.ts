@@ -5,7 +5,15 @@ import { createUpdater, type UpdaterApi, type UpdaterState } from '../updater';
 
 let api: UpdaterApi | null = null;
 
-export function setupUpdaterIpc(getWindows: () => BrowserWindow[]): UpdaterApi | null {
+interface UpdateNotifier {
+  notifyUpdateAvailable(version: string, onClick: () => void): void;
+  notifyUpdateReady(version: string, onClick: () => void): void;
+}
+
+export function setupUpdaterIpc(
+  getWindows: () => BrowserWindow[],
+  notifier: UpdateNotifier | null = null,
+): UpdaterApi | null {
   // No-op in dev — electron-updater can't resolve a feed without a packaged build.
   if (!app.isPackaged) {
     ipcMain.handle('updater:status', () => ({ kind: 'idle' } satisfies UpdaterState));
@@ -24,6 +32,12 @@ export function setupUpdaterIpc(getWindows: () => BrowserWindow[]): UpdaterApi |
     onStateChange: (state) => {
       for (const w of getWindows()) {
         if (!w.isDestroyed()) w.webContents.send('updater:state', state);
+      }
+      if (notifier && state.kind === 'available') {
+        notifier.notifyUpdateAvailable(state.version, () => { void api!.download(); });
+      }
+      if (notifier && state.kind === 'downloaded') {
+        notifier.notifyUpdateReady(state.version, () => api!.install());
       }
     },
   });
