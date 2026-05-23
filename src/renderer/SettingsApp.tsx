@@ -147,6 +147,15 @@ export function SettingsApp() {
                 { value: 'top-center', label: 'Top center', description: 'Grows downward as the panel opens.' },
               ]}
             />
+            <Toggle
+              checked={s.hideOnBlur}
+              onChange={(v) => {
+                patch('hideOnBlur', v);
+                void ipc.invoke('settings.setHideOnBlur', { enabled: v });
+              }}
+              label="Hide when clicked away"
+              description="When on, clicking outside Otto hides it (like a popover). When off, Otto stays open until you dismiss it with the hotkey."
+            />
           </Section>
 
           <Section title="System">

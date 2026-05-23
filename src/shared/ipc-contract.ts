@@ -61,6 +61,7 @@ export type IpcRequest =
       result: void;
     }
   | { channel: 'settings.setAutoDeleteDays'; args: { days: number }; result: void }
+  | { channel: 'settings.setHideOnBlur'; args: { enabled: boolean }; result: void }
   | { channel: 'settings.openLogsDir'; args: void; result: void }
   | { channel: 'settings.resetAllSessions'; args: void; result: { deleted: number } }
   | { channel: 'shell.kill'; args: { handle: string }; result: { killed: boolean } };
@@ -71,6 +72,7 @@ export interface SettingsView {
   startAtLogin: boolean;
   windowPosition: 'bottom-center' | 'top-center';
   autoDeleteDays: number;
+  hideOnBlur: boolean;
   version: string;
 }
 

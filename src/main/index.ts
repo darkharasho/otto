@@ -89,8 +89,10 @@ async function startElectron(): Promise<void> {
   applyStartAtLogin(settings.getStartAtLogin());
 
   window.setPositionPref(settings.getWindowPosition());
+  window.setHideOnBlur(settings.getHideOnBlur());
   settings.onChange((snap) => {
     window.setPositionPref(snap.windowPosition);
+    window.setHideOnBlur(snap.hideOnBlur);
   });
 
   let currentMessageId: string | null = null;

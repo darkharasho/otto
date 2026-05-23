@@ -127,6 +127,13 @@ export function registerIpcHandlers(deps: {
     }
   );
 
+  ipcMain.handle(
+    'settings.setHideOnBlur',
+    async (_e, args: { enabled: boolean }): Promise<void> => {
+      await settings.setHideOnBlur(args.enabled);
+    }
+  );
+
   ipcMain.handle('settings.openLogsDir', async (): Promise<void> => {
     deps.openLogsDir();
   });

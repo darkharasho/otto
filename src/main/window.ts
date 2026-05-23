@@ -20,9 +20,14 @@ export class WindowManager {
   private mode: WindowMode = 'bar';
   private resizeAnimId = 0;
   private positionPref: WindowPositionPref = 'bottom-center';
+  private hideOnBlur = false;
 
   setPositionPref(p: WindowPositionPref): void {
     this.positionPref = p;
+  }
+
+  setHideOnBlur(enabled: boolean): void {
+    this.hideOnBlur = enabled;
   }
 
   create(preloadPath: string, rendererUrl: string): BrowserWindow {
@@ -53,6 +58,11 @@ export class WindowManager {
     } else {
       win.loadFile(rendererUrl);
     }
+
+    // Click-outside-to-hide, gated by the user's hideOnBlur preference.
+    win.on('blur', () => {
+      if (this.hideOnBlur && this.window?.isVisible()) this.hide();
+    });
 
     this.window = win;
     return win;

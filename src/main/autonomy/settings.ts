@@ -21,6 +21,7 @@ export interface SettingsSnapshot {
   startAtLogin: boolean;
   windowPosition: WindowPosition;
   autoDeleteDays: number;
+  hideOnBlur: boolean;
 }
 
 interface SettingsFileV1 {
@@ -40,6 +41,7 @@ const DEFAULTS: SettingsSnapshot = {
   startAtLogin: false,
   windowPosition: 'bottom-center',
   autoDeleteDays: 0,
+  hideOnBlur: false,
 };
 
 type Listener = (snapshot: SettingsSnapshot) => void;
@@ -89,6 +91,9 @@ export class Settings {
   getAutoDeleteDays(): number {
     return this.state.autoDeleteDays;
   }
+  getHideOnBlur(): boolean {
+    return this.state.hideOnBlur;
+  }
   snapshot(): SettingsSnapshot {
     return {
       autonomy: { ...this.state.autonomy },
@@ -96,6 +101,7 @@ export class Settings {
       startAtLogin: this.state.startAtLogin,
       windowPosition: this.state.windowPosition,
       autoDeleteDays: this.state.autoDeleteDays,
+      hideOnBlur: this.state.hideOnBlur,
     };
   }
 
@@ -124,6 +130,11 @@ export class Settings {
   async setAutoDeleteDays(days: number): Promise<void> {
     if (!Number.isFinite(days) || days < 0) throw new Error(`invalid autoDeleteDays: ${days}`);
     this.state.autoDeleteDays = Math.floor(days);
+    await this.persist();
+  }
+
+  async setHideOnBlur(enabled: boolean): Promise<void> {
+    this.state.hideOnBlur = !!enabled;
     await this.persist();
   }
 
@@ -169,6 +180,7 @@ export class Settings {
           Number.isFinite(o.autoDeleteDays) && o.autoDeleteDays >= 0
             ? Math.floor(o.autoDeleteDays)
             : DEFAULTS.autoDeleteDays,
+        hideOnBlur: typeof o.hideOnBlur === 'boolean' ? o.hideOnBlur : DEFAULTS.hideOnBlur,
       };
       return 'ok';
     }
