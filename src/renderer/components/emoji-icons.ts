@@ -282,22 +282,37 @@ export function makeEmojiRegex(): RegExp {
   return emojiRegex();
 }
 
-// OpenMoji file convention: uppercase hex codepoints joined by "-". The
-// FE0F variation selector is dropped — e.g. 🖌️ is U+1F58C U+FE0F but the
-// OpenMoji file is `1F58C.svg`, not `1F58C-FE0F.svg`. ZWJ joiners (200D)
-// stay so sequences like 👨‍💻 (1F468-200D-1F4BB) still resolve.
-export function openmojiCodepoint(emoji: string): string {
-  const codepoints: string[] = [];
-  for (const ch of emoji) {
-    const cp = ch.codePointAt(0);
-    if (cp === undefined) continue;
-    codepoints.push(cp.toString(16).toUpperCase());
+// Microsoft's Fluent UI Emoji "High Contrast" set is a coherent monochrome
+// line-style emoji collection — comprehensive enough to cover ~all common
+// emojis with the same visual language. Served via Iconify's CDN.
+//
+// Icon names follow the Unicode CLDR slug with underscores → hyphens (e.g.
+// 😂 "face_with_tears_of_joy" → fluent-emoji-high-contrast/face-with-tears-of-joy).
+import emojiData from 'unicode-emoji-json/data-by-emoji.json';
+
+const SKIN_TONE_RANGE = /[\u{1F3FB}-\u{1F3FF}]/gu;
+
+interface EmojiEntry {
+  name: string;
+  slug: string;
+}
+const EMOJI_DATA = emojiData as Record<string, EmojiEntry>;
+
+export function fluentEmojiSlug(emoji: string): string | null {
+  const entry = EMOJI_DATA[emoji];
+  if (entry) return entry.slug.replace(/_/g, '-');
+  // Try again with skin-tone modifiers stripped — those graphemes are not
+  // separate entries; the base emoji is what's keyed in the data.
+  const stripped = emoji.replace(SKIN_TONE_RANGE, '');
+  if (stripped !== emoji) {
+    const baseEntry = EMOJI_DATA[stripped];
+    if (baseEntry) return baseEntry.slug.replace(/_/g, '-');
   }
-  return codepoints.filter((c) => c !== 'FE0F').join('-');
+  return null;
 }
 
-// Black/monochrome OpenMoji SVGs via jsdelivr. Network-only — offline users
-// fall back to the system glyph, which is acceptable.
-export function openmojiUrl(emoji: string): string {
-  return `https://cdn.jsdelivr.net/npm/openmoji@latest/black/svg/${openmojiCodepoint(emoji)}.svg`;
+export function fluentEmojiUrl(emoji: string): string | null {
+  const slug = fluentEmojiSlug(emoji);
+  if (!slug) return null;
+  return `https://api.iconify.design/fluent-emoji-high-contrast/${slug}.svg`;
 }

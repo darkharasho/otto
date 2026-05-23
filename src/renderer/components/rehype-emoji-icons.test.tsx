@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import { rehypeEmojiIcons } from './rehype-emoji-icons';
-import { EMOJI_TO_ICON, openmojiUrl, openmojiCodepoint } from './emoji-icons';
+import { EMOJI_TO_ICON, fluentEmojiSlug, fluentEmojiUrl } from './emoji-icons';
 
 const components: Components = {
   span(props) {
@@ -15,7 +15,9 @@ const components: Components = {
       if (emoji) {
         const Icon = EMOJI_TO_ICON[emoji];
         if (Icon) return <Icon data-testid={`icon-${emoji}`} />;
-        return <img data-testid={`openmoji-${emoji}`} src={openmojiUrl(emoji)} alt={emoji} />;
+        const url = fluentEmojiUrl(emoji);
+        if (url) return <span data-testid={`fluent-${emoji}`} data-src={url} />;
+        return null;
       }
     }
     return (
@@ -47,12 +49,11 @@ describe('rehypeEmojiIcons', () => {
     expect(container.textContent).toContain('careful, this is');
   });
 
-  it('falls back to OpenMoji Black for unmapped emoji', () => {
-    const { getByTestId } = renderMd('cool 🥥');
-    const img = getByTestId('openmoji-🥥') as HTMLImageElement;
-    expect(img).toBeInTheDocument();
-    expect(img.src).toContain('openmoji');
-    expect(img.src).toContain(openmojiCodepoint('🥥'));
+  it('falls back to Fluent High Contrast for unmapped emoji', () => {
+    const { getByTestId } = renderMd('😂 nice');
+    const el = getByTestId('fluent-😂');
+    expect(el).toBeInTheDocument();
+    expect(el.dataset.src).toContain('fluent-emoji-high-contrast/face-with-tears-of-joy');
   });
 
   it('works inside inline markdown like bold', () => {
@@ -66,19 +67,18 @@ describe('rehypeEmojiIcons', () => {
   });
 });
 
-describe('openmojiCodepoint', () => {
-  it('encodes single-codepoint emoji in uppercase hex', () => {
-    expect(openmojiCodepoint('🥥')).toBe('1F965');
+describe('fluentEmojiSlug', () => {
+  it('converts the unicode-emoji-json slug to kebab case', () => {
+    expect(fluentEmojiSlug('😂')).toBe('face-with-tears-of-joy');
+    expect(fluentEmojiSlug('🥰')).toBe('smiling-face-with-hearts');
+    expect(fluentEmojiSlug('🖌️')).toBe('paintbrush');
   });
 
-  it('drops FE0F so single-base sequences match OpenMoji filenames', () => {
-    expect(openmojiCodepoint('⚠️')).toBe('26A0');
-    // 🖌️ (U+1F58C U+FE0F) → 1F58C.svg, not 1F58C-FE0F.svg
-    expect(openmojiCodepoint('🖌️')).toBe('1F58C');
+  it('falls back to the base emoji when a skin-tone modifier is present', () => {
+    expect(fluentEmojiSlug('👍🏽')).toBe('thumbs-up');
   });
 
-  it('joins ZWJ sequences with dashes', () => {
-    // 👨‍💻 = U+1F468 ZWJ U+1F4BB
-    expect(openmojiCodepoint('👨‍💻')).toBe('1F468-200D-1F4BB');
+  it('returns null when the emoji is unknown', () => {
+    expect(fluentEmojiSlug('💩💩totally-not-an-emoji')).toBeNull();
   });
 });

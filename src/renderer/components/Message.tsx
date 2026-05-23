@@ -5,7 +5,7 @@ import { ToolCallCard } from './ToolCallCard';
 import { ApprovalCard } from './ApprovalCard';
 import { ProcessCard } from './ProcessCard';
 import { rehypeEmojiIcons } from './rehype-emoji-icons';
-import { EMOJI_TO_ICON, openmojiUrl } from './emoji-icons';
+import { EMOJI_TO_ICON, fluentEmojiUrl } from './emoji-icons';
 
 const markdownComponents: Components = {
   // The rehype plugin emits <span class="otto-emoji" data-emoji="…" />; we
@@ -30,19 +30,24 @@ const markdownComponents: Components = {
             />
           );
         }
-        const url = openmojiUrl(emoji);
-        return (
-          <span
-            role="img"
-            aria-label={emoji}
-            title={emoji}
-            className="otto-openmoji text-accent"
-            style={{
-              WebkitMaskImage: `url(${url})`,
-              maskImage: `url(${url})`,
-            }}
-          />
-        );
+        const url = fluentEmojiUrl(emoji);
+        if (url) {
+          return (
+            <span
+              role="img"
+              aria-label={emoji}
+              title={emoji}
+              className="otto-emoji-mask text-accent"
+              style={{
+                WebkitMaskImage: `url(${url})`,
+                maskImage: `url(${url})`,
+              }}
+            />
+          );
+        }
+        // No icon for this emoji — render nothing visible rather than break
+        // the line-icon aesthetic with a colorful native glyph.
+        return null;
       }
     }
     return (

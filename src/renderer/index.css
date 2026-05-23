@@ -95,10 +95,11 @@ button {
   animation: otto-msg-enter 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* OpenMoji Black SVGs are loaded as a CSS mask so we can paint them with
-   the parent's currentColor (accent). Same tinting as Lucide icons, so the
-   two sources read as one coherent set. */
-.otto-openmoji {
+/* Fallback emoji icons (Fluent UI Emoji High Contrast via Iconify) are
+   loaded as a CSS mask so we can paint them with the parent's currentColor
+   (accent). Same tinting as Lucide icons, so the two sources read as one
+   coherent set. */
+.otto-emoji-mask {
   display: inline-block;
   width: 1.1em;
   height: 1.1em;
