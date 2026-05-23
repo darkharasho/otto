@@ -7,7 +7,7 @@ export type WindowMode = 'bar' | 'panel';
 const BAR_WIDTH = 640;
 const BAR_HEIGHT = 72;
 const PANEL_MIN_HEIGHT = 320;
-const PANEL_TOP_MARGIN = 64;
+const PANEL_BOTTOM_MARGIN = 48;
 const PANEL_MAX_DISPLAY_RATIO = 0.7;
 
 const RESIZE_DURATION_MS = 180;
@@ -53,7 +53,7 @@ export class WindowManager {
   show(mode: WindowMode = 'bar'): void {
     if (!this.window) return;
     this.applyMode(mode);
-    this.repositionTopCenter();
+    this.repositionBottomCenter();
     this.window.show();
     this.window.focus();
   }
@@ -68,7 +68,7 @@ export class WindowManager {
     // hiding. Otherwise the user has to hit the hotkey twice to bring it back.
     if (this.window.isVisible()) {
       if (!this.window.isFocused()) {
-        this.repositionTopCenter();
+        this.repositionBottomCenter();
         this.window.focus();
         return;
       }
@@ -103,7 +103,7 @@ export class WindowManager {
     const maxPanelHeight = Math.floor(display.workArea.height * PANEL_MAX_DISPLAY_RATIO);
     const height =
       mode === 'bar' ? BAR_HEIGHT : Math.max(PANEL_MIN_HEIGHT, Math.min(maxPanelHeight, 520));
-    const { x, y } = this.topCenter(display.workArea, BAR_WIDTH);
+    const { x, y } = this.bottomCenter(display.workArea, BAR_WIDTH, height);
     const target = { x, y, width: BAR_WIDTH, height };
     if (this.window.isVisible() && wasMode !== mode) {
       this.animateBoundsTo(target, RESIZE_DURATION_MS);
@@ -137,17 +137,21 @@ export class WindowManager {
     step();
   }
 
-  private repositionTopCenter(): void {
+  private repositionBottomCenter(): void {
     if (!this.window) return;
     const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     const bounds = this.window.getBounds();
-    const { x, y } = this.topCenter(display.workArea, bounds.width);
+    const { x, y } = this.bottomCenter(display.workArea, bounds.width, bounds.height);
     this.window.setBounds({ ...bounds, x, y });
   }
 
-  private topCenter(workArea: Electron.Rectangle, width: number): { x: number; y: number } {
+  private bottomCenter(
+    workArea: Electron.Rectangle,
+    width: number,
+    height: number
+  ): { x: number; y: number } {
     const x = Math.round(workArea.x + (workArea.width - width) / 2);
-    const y = workArea.y + PANEL_TOP_MARGIN;
+    const y = workArea.y + workArea.height - height - PANEL_BOTTOM_MARGIN;
     return { x, y };
   }
 }
