@@ -1,5 +1,6 @@
 import type { SdkClient, SdkStreamEvent, SdkTurn } from './session';
-import { buildScreenshotTool, buildShellTools, stubTools, type OttoTool } from './tools';
+import { buildInputTools, buildScreenshotTool, buildShellTools, stubTools, type OttoTool } from './tools';
+import { exec as execInput, type InputAction } from '../input/executor';
 import type { DecisionBroker } from '../autonomy/decision-broker';
 import type { ProcessRegistry } from '../shell/process-registry';
 import { logger } from '../logger';
@@ -34,6 +35,14 @@ const SYSTEM_PROMPT = [
   '- shell_wait(handle, timeout_ms?): block until a spawned process exits.',
   '- shell_kill(handle): send SIGTERM to a spawned process.',
   '- screenshot(region?): capture the user\'s active monitor as a PNG. Image is attached so you can see it.',
+  '- get_cursor_position(): return the cursor position {x, y} in active-monitor pixels.',
+  '- move(x, y): move the cursor to the given monitor-relative position.',
+  '- scroll(dx, dy, x?, y?): scroll by (dx, dy); optional (x, y) moves cursor first.',
+  '- click(x, y, button?, delay_ms?): left/right/middle click at the position.',
+  '- double_click(x, y, button?): double-click at the position.',
+  '- drag(x1, y1, x2, y2, button?): drag from start to end.',
+  '- type(text, delay_ms?): type literal text into the focused window.',
+  '- key(combo, delay_ms?): send a key combo (xdotool-style: "Control+S", "F5", "Return").',
   '- WebSearch(query): search the web; returns titles, urls, and snippets you can cite.',
   '- WebFetch(url, prompt): fetch a URL and extract readable content based on the prompt.',
   '- echo(msg), fake-mutate(target), fake-wipe(target): test stubs; ignore unless explicitly asked.',
@@ -76,12 +85,63 @@ interface ToolCtx {
  * `AnyZodRawShape`-based generics. The values are correct at runtime; this is
  * purely a TypeScript variance gap.
  */
+const INPUT_TOOL_NAMES = new Set([
+  'get_cursor_position', 'move', 'scroll', 'click', 'double_click',
+  'drag', 'type', 'key',
+]);
+
+function toInputAction(name: string, args: unknown): InputAction {
+  const a = args as Record<string, unknown>;
+  switch (name) {
+    case 'get_cursor_position':
+      return { kind: 'cursorPosition' };
+    case 'move':
+      return { kind: 'move', x: a.x as number, y: a.y as number };
+    case 'scroll':
+      return {
+        kind: 'scroll',
+        dx: a.dx as number,
+        dy: a.dy as number,
+        x: a.x as number | undefined,
+        y: a.y as number | undefined,
+      };
+    case 'click':
+      return {
+        kind: 'click',
+        x: a.x as number,
+        y: a.y as number,
+        button: (a.button as 'left' | 'right' | 'middle') ?? 'left',
+      };
+    case 'double_click':
+      return {
+        kind: 'doubleClick',
+        x: a.x as number,
+        y: a.y as number,
+        button: (a.button as 'left' | 'right' | 'middle') ?? 'left',
+      };
+    case 'drag':
+      return {
+        kind: 'drag',
+        x1: a.x1 as number, y1: a.y1 as number,
+        x2: a.x2 as number, y2: a.y2 as number,
+        button: (a.button as 'left' | 'right' | 'middle') ?? 'left',
+      };
+    case 'type':
+      return { kind: 'type', text: a.text as string };
+    case 'key':
+      return { kind: 'key', combo: a.combo as string };
+    default:
+      throw new Error(`unknown input tool: ${name}`);
+  }
+}
+
 function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
   const { createSdkMcpServer, tool } = sdk;
   const allTools: OttoTool[] = [
     ...stubTools,
     ...buildShellTools(ctx.getRegistry),
     buildScreenshotTool(),
+    ...buildInputTools(),
   ];
   const sdkTools = allTools.map((t) => {
     const shape = (t.schema as unknown as { shape?: Record<string, unknown> }).shape;
@@ -128,6 +188,20 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
           return {
             content: [
               { type: 'text' as const, text: JSON.stringify({ handle: p.handle, pid: p.pid }) },
+            ],
+          };
+        }
+
+        if (INPUT_TOOL_NAMES.has(t.name)) {
+          const action = toInputAction(t.name, args);
+          const delayMs = (args as { delay_ms?: number }).delay_ms ?? 100;
+          const result = await execInput(action, getPlatformAdapter(), delayMs);
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: result === undefined ? 'ok' : JSON.stringify(result),
+              },
             ],
           };
         }
@@ -313,6 +387,7 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
     ...stubTools,
     ...buildShellTools(deps.getRegistry),
     buildScreenshotTool(),
+    ...buildInputTools(),
   ];
   const allowedTools = [
     ...allToolsForAllow.map((t) => `mcp__otto-tools__${t.name}`),
