@@ -3,20 +3,25 @@ import type { Message } from '@shared/messages';
 import { MessageView } from './Message';
 
 interface Props {
+  sessionId: string | null;
   messages: Message[];
   streaming: boolean;
 }
 
 const STICK_THRESHOLD_PX = 80;
 
-export function MessageList({ messages, streaming }: Props) {
+// Per-session scroll memory survives session switches within the lifetime of
+// the renderer (good enough — full reloads start fresh).
+const scrollMemory = new Map<string, number>();
+
+export function MessageList({ sessionId, messages, streaming }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stuckRef = useRef(true);
   const [stuck, setStuck] = useState(true);
   const lastSeenLenRef = useRef(messages.length);
   const [unread, setUnread] = useState(0);
+  const currentSessionRef = useRef<string | null>(sessionId);
 
-  // id of the last assistant message — caret target during streaming
   const streamingMessageId = (() => {
     if (!streaming) return null;
     for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -42,20 +47,45 @@ export function MessageList({ messages, streaming }: Props) {
     setUnread(0);
   }
 
+  // Restore remembered scroll position when session changes (or jump to bottom
+  // for a brand-new session). Runs before paint to avoid a visible jump.
+  useLayoutEffect(() => {
+    const el = containerRef.current;
+    if (!el || sessionId === currentSessionRef.current) return;
+    // Persist the outgoing session's position before swapping.
+    const prev = currentSessionRef.current;
+    if (prev) scrollMemory.set(prev, el.scrollTop);
+    currentSessionRef.current = sessionId;
+    const remembered = sessionId ? scrollMemory.get(sessionId) : undefined;
+    if (remembered !== undefined) {
+      el.scrollTop = remembered;
+    } else {
+      el.scrollTop = el.scrollHeight;
+    }
+    lastSeenLenRef.current = messages.length;
+    checkStuck();
+  }, [sessionId, messages.length]);
+
   // Auto-stick: only follow content when the user is already at the bottom.
   useLayoutEffect(() => {
+    if (sessionId !== currentSessionRef.current) return;
     if (stuckRef.current) {
       scrollToBottom(messages.length > lastSeenLenRef.current ? 'smooth' : 'auto');
     } else if (messages.length > lastSeenLenRef.current) {
       setUnread((n) => n + (messages.length - lastSeenLenRef.current));
     }
     lastSeenLenRef.current = messages.length;
-  }, [messages, streaming]);
+  }, [messages, streaming, sessionId]);
 
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const onScroll = () => checkStuck();
+    const onScroll = () => {
+      checkStuck();
+      if (currentSessionRef.current) {
+        scrollMemory.set(currentSessionRef.current, el.scrollTop);
+      }
+    };
     el.addEventListener('scroll', onScroll, { passive: true });
     checkStuck();
     return () => el.removeEventListener('scroll', onScroll);

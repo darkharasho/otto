@@ -5,9 +5,10 @@ interface Props {
   onSubmit(text: string): void;
   autoFocus?: boolean;
   busy?: boolean;
+  welcome?: boolean;
 }
 
-export function CommandBar({ onSubmit, autoFocus = true, busy = false }: Props) {
+export function CommandBar({ onSubmit, autoFocus = true, busy = false, welcome = false }: Props) {
   const [value, setValue] = useState('');
   const [sendTick, setSendTick] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -55,11 +56,12 @@ export function CommandBar({ onSubmit, autoFocus = true, busy = false }: Props) 
     >
       <span
         className={[
-          'flex items-center justify-center w-5 h-5 shrink-0',
-          busy ? 'text-accent animate-pulse' : 'text-muted',
+          'relative flex items-center justify-center w-5 h-5 shrink-0',
+          busy ? 'text-accent animate-pulse' : welcome ? 'text-accent' : 'text-muted',
         ].join(' ')}
       >
-        <OttoMark className="w-5 h-5" />
+        {welcome && !busy && value.length === 0 && <span aria-hidden className="otto-halo" />}
+        <OttoMark className="relative w-5 h-5" />
       </span>
       <input
         ref={inputRef}

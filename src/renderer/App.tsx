@@ -99,10 +99,17 @@ export function App() {
     void ipc.invoke('window.setMode', { mode: 'panel' });
   }, [beginSession, setWindowMode]);
 
+  const streaming = activeSession?.streaming ?? false;
+  const isFreshSession = !activeSession || activeSession.messages.length === 0;
+
   if (windowMode === 'bar') {
     return (
       <div key={`bar-${enterTick}`} className="w-screen h-screen p-1 otto-enter">
-        <CommandBar onSubmit={handleSubmit} busy={activeSession?.streaming ?? false} />
+        <CommandBar
+          onSubmit={handleSubmit}
+          busy={streaming}
+          welcome={isFreshSession}
+        />
       </div>
     );
   }
@@ -110,6 +117,7 @@ export function App() {
   return (
     <div key={`panel-${enterTick}`} className="w-screen h-screen p-1 otto-enter">
       <Panel
+        busy={streaming}
         header={
           <SessionSwitcher
             sessions={sessions}
@@ -120,19 +128,20 @@ export function App() {
         }
         footer={
           <div className="flex flex-col gap-2">
-            <CommandBar onSubmit={handleSubmit} busy={activeSession?.streaming ?? false} />
+            <CommandBar onSubmit={handleSubmit} busy={streaming} welcome={isFreshSession} />
             <StatusFooter
               model={MODEL}
               sessionId={activeSession?.id ?? null}
-              streaming={activeSession?.streaming ?? false}
+              streaming={streaming}
               mode={mode}
             />
           </div>
         }
       >
         <MessageList
+          sessionId={activeSession?.id ?? null}
           messages={activeSession?.messages ?? []}
-          streaming={activeSession?.streaming ?? false}
+          streaming={streaming}
         />
         {activeSession?.error && (
           <div className="px-4">

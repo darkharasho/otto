@@ -111,6 +111,31 @@ button {
 }
 .otto-send-bounce { animation: otto-send-bounce 180ms ease-out; }
 
+@keyframes otto-halo-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes otto-halo-breathe {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 0.9; }
+}
+.otto-halo {
+  position: absolute;
+  inset: -50%;
+  border-radius: 9999px;
+  background: conic-gradient(
+    from 0deg,
+    rgba(124, 125, 255, 0.0) 0%,
+    rgba(124, 125, 255, 0.55) 25%,
+    rgba(168, 130, 255, 0.5) 50%,
+    rgba(124, 125, 255, 0.55) 75%,
+    rgba(124, 125, 255, 0.0) 100%
+  );
+  filter: blur(8px);
+  animation:
+    otto-halo-spin 7s linear infinite,
+    otto-halo-breathe 3.5s ease-in-out infinite;
+}
+
 /* Minimal scrollbars (WebKit + Firefox). */
 * {
   scrollbar-width: thin;
