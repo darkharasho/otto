@@ -90,6 +90,10 @@ export class WindowManager {
     return this.window?.isVisible() ?? false;
   }
 
+  isFocused(): boolean {
+    return this.window?.isFocused() ?? false;
+  }
+
   destroy(): void {
     this.window?.destroy();
     this.window = null;

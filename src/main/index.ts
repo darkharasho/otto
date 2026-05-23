@@ -32,6 +32,7 @@ async function startElectron(): Promise<void> {
   const { ToggleServer } = await import('./toggle-server');
   const { TrayManager } = await import('./tray');
   const { SettingsWindowManager } = await import('./settings-window');
+  const { Notifier } = await import('./notifier');
   const { Settings } = await import('./autonomy/settings');
   const { DecisionBroker } = await import('./autonomy/decision-broker');
   const { ProcessRegistry } = await import('./shell/process-registry');
@@ -64,10 +65,22 @@ async function startElectron(): Promise<void> {
   await settings.load();
 
   let currentMessageId: string | null = null;
-  const broker = new DecisionBroker(settings.getMode(), emitSessionEvent);
+
+  // Intercept every session event so the Notifier can decide whether to
+  // surface an OS notification (turn-complete / approval).
+  const notifier = new Notifier({
+    isMainFocused: () => window.isVisible() && window.isFocused(),
+    showMain: () => window.show(window.getMode()),
+  });
+  const emitWithNotify: typeof emitSessionEvent = (event) => {
+    notifier.handle(event);
+    emitSessionEvent(event);
+  };
+
+  const broker = new DecisionBroker(settings.getMode(), emitWithNotify);
 
   const registry = new ProcessRegistry(
-    emitSessionEvent,
+    emitWithNotify,
     (command, cwd) => platform.shell.spawnShell(command, cwd)
   );
 
@@ -81,7 +94,7 @@ async function startElectron(): Promise<void> {
     repo,
     sdk,
     'claude-sonnet-4-6',
-    emitSessionEvent,
+    emitWithNotify,
     (id) => {
       currentMessageId = id;
     }
