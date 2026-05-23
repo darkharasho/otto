@@ -29,12 +29,17 @@ const markdownComponents: Components = {
             />
           );
         }
+        const url = openmojiUrl(emoji);
         return (
-          <img
-            src={openmojiUrl(emoji)}
-            alt={emoji}
-            draggable={false}
-            className="otto-openmoji inline-block align-[-0.18em] mx-[0.1em] w-[1.15em] h-[1.15em] select-none"
+          <span
+            role="img"
+            aria-label={emoji}
+            title={emoji}
+            className="otto-openmoji text-accent"
+            style={{
+              WebkitMaskImage: `url(${url})`,
+              maskImage: `url(${url})`,
+            }}
           />
         );
       }
