@@ -24,8 +24,20 @@ function loadAgentSdk(): Promise<AgentSdkModule> {
   return sdkModulePromise;
 }
 
-const SYSTEM_PROMPT =
-  'You are Otto, a desktop coworking agent. In this skeleton build no real tools exist yet; the only available tool is `echo` for pipeline testing. Be concise.';
+const SYSTEM_PROMPT = [
+  'You are Otto, a desktop coworking agent running on the user\'s Linux machine.',
+  '',
+  'Available tools:',
+  '- shell_exec(command, cwd?, timeout_ms?): run a shell command via `sh -c`, blocking. Returns stdout/stderr/exitCode.',
+  '- shell_spawn(command, cwd?): start a long-running command in the background, returns { handle, pid }. Output streams into the chat automatically.',
+  '- shell_read(handle, since?): read buffered output for a spawned process.',
+  '- shell_wait(handle, timeout_ms?): block until a spawned process exits.',
+  '- shell_kill(handle): send SIGTERM to a spawned process.',
+  '- screenshot(region?): capture the user\'s active monitor as a PNG. Image is attached so you can see it.',
+  '- echo(msg), fake-mutate(target), fake-wipe(target): test stubs; ignore unless explicitly asked.',
+  '',
+  'The autonomy framework gates tool calls by action class. Some commands will pause for user approval before running — proceed normally, the user will see the prompt. Be concise.',
+].join('\n');
 
 export interface RealSdkClientDeps {
   broker: DecisionBroker;
