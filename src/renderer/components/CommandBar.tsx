@@ -3,12 +3,19 @@ import { OttoMark } from './OttoMark';
 
 interface Props {
   onSubmit(text: string): void;
+  onStop?(): void;
   autoFocus?: boolean;
   busy?: boolean;
   welcome?: boolean;
 }
 
-export function CommandBar({ onSubmit, autoFocus = true, busy = false, welcome = false }: Props) {
+export function CommandBar({
+  onSubmit,
+  onStop,
+  autoFocus = true,
+  busy = false,
+  welcome = false,
+}: Props) {
   const [value, setValue] = useState('');
   const [sendTick, setSendTick] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -78,14 +85,19 @@ export function CommandBar({ onSubmit, autoFocus = true, busy = false, welcome =
       />
       <div className="flex items-center justify-end h-6 shrink-0">
         {busy ? (
-          <span className="flex items-center gap-2 text-xs text-accent font-medium">
-            <span className="flex gap-1" aria-hidden>
-              <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce [animation-delay:-0.3s]" />
-              <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce [animation-delay:-0.15s]" />
-              <span className="w-1.5 h-1.5 rounded-full bg-accent animate-bounce" />
+          <button
+            type="button"
+            onClick={onStop}
+            disabled={!onStop}
+            aria-label="Stop response"
+            title="Stop response (Esc)"
+            className="group flex items-center gap-2 text-xs text-accent font-medium hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <span className="flex items-center justify-center w-6 h-6 rounded-md bg-accent/15 group-hover:bg-accent text-accent group-hover:text-white transition-colors">
+              <span className="w-2.5 h-2.5 rounded-[2px] bg-current" aria-hidden />
             </span>
-            <span>thinking</span>
-          </span>
+            <span className="group-hover:text-text">stop</span>
+          </button>
         ) : canSend ? (
           <button
             type="submit"

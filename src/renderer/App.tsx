@@ -102,11 +102,30 @@ export function App() {
   const streaming = activeSession?.streaming ?? false;
   const isFreshSession = !activeSession || activeSession.messages.length === 0;
 
+  const handleStop = useCallback(() => {
+    if (!activeSession?.id) return;
+    void ipc.invoke('session.cancel', { sessionId: activeSession.id });
+  }, [activeSession?.id]);
+
+  // Esc while streaming → cancel the in-flight response. Runs before the
+  // panel/bar Esc handler so it doesn't also collapse the panel.
+  useEffect(() => {
+    if (!streaming) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopPropagation();
+      handleStop();
+    };
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [streaming, handleStop]);
+
   if (windowMode === 'bar') {
     return (
       <div key={`bar-${enterTick}`} className="w-screen h-screen p-1 otto-enter">
         <CommandBar
           onSubmit={handleSubmit}
+          onStop={handleStop}
           busy={streaming}
           welcome={isFreshSession}
         />
@@ -128,7 +147,12 @@ export function App() {
         }
         footer={
           <div className="flex flex-col gap-2">
-            <CommandBar onSubmit={handleSubmit} busy={streaming} welcome={isFreshSession} />
+            <CommandBar
+              onSubmit={handleSubmit}
+              onStop={handleStop}
+              busy={streaming}
+              welcome={isFreshSession}
+            />
             <StatusFooter
               model={model}
               sessionId={activeSession?.id ?? null}
