@@ -152,6 +152,12 @@ async function startElectron(): Promise<void> {
     notifier.handle(event);
     overlay.handleSessionEvent(event);
     emitSessionEvent(event);
+    // Badge the tray when a turn finishes while Otto is hidden — gives the
+    // user an at-a-glance indicator that something's waiting without opening
+    // the window. Cleared as soon as the main window becomes visible.
+    if (event.type === 'done' && !window.isVisible()) {
+      tray.setBadged(true);
+    }
   };
 
   const broker = new DecisionBroker(settings.getMode(), emitWithNotify);
@@ -180,7 +186,12 @@ async function startElectron(): Promise<void> {
   const preloadPath = path.join(app.getAppPath(), 'out', 'preload', 'index.js');
   window.create(preloadPath, rendererEntry());
   overlay.start();
-  window.onVisibilityChange((visible) => overlay.setMainVisible(visible));
+  window.onVisibilityChange((visible) => {
+    overlay.setMainVisible(visible);
+    // Showing the main window counts as the user acknowledging any pending
+    // turn-complete notification — clear the tray badge.
+    if (visible) tray.setBadged(false);
+  });
 
   const onToggle = () => {
     const mode = shouldResume(repo, sessions) ? 'panel' : 'bar';

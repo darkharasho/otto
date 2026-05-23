@@ -11,8 +11,21 @@ export interface TrayActions {
 
 export class TrayManager {
   private tray: Tray | null = null;
+  private badged = false;
 
   constructor(private readonly actions: TrayActions) {}
+
+  setBadged(badged: boolean): void {
+    if (this.badged === badged) return;
+    this.badged = badged;
+    if (!this.tray) return;
+    try {
+      const img = nativeImage.createFromPath(this.iconPath());
+      if (!img.isEmpty()) this.tray.setImage(img);
+    } catch (err) {
+      logger.warn(`tray setImage failed: ${err instanceof Error ? err.message : err}`);
+    }
+  }
 
   start(): void {
     let icon: NativeImage;
@@ -65,7 +78,8 @@ export class TrayManager {
     // Same path resolves in dev (run from repo root) and in packaged build
     // (app.getAppPath() points at app.asar root which has public/tray bundled
     // per electron-builder.yml).
-    const file = isDevInstance() ? 'tray-icon-dev.png' : 'tray-icon.png';
+    const base = isDevInstance() ? 'tray-icon-dev' : 'tray-icon';
+    const file = this.badged ? `${base}-badge.png` : `${base}.png`;
     return path.join(app.getAppPath(), 'public', 'tray', file);
   }
 }
