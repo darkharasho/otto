@@ -1,3 +1,9 @@
+Version v0.2.1
+
+Bug fixes:
+- **`otto toggle` no longer spawns duplicate processes from packaged builds.** In packaged Electron, `process.argv` has no script path, so the `toggle` positional arg was being dropped and Otto fell through to launching a new instance for every keypress.
+- **Single-instance lock**: double-clicking the AppImage / .desktop entry now focuses the existing Otto via a toggle instead of spawning a second copy. Dev and prod instances stay independent.
+
 Version v0.2.0
 
 New features:
