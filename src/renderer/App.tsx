@@ -52,19 +52,28 @@ export function App() {
 
   const handleSubmit = useCallback(
     async (text: string) => {
-      setWindowMode('panel');
-      void ipc.invoke('window.setMode', { mode: 'panel' });
-      let sessionId = activeSession?.id;
-      if (!sessionId) {
-        const { sessionId: newId } = await ipc.invoke('session.start', { model });
-        sessionId = newId;
-        beginSession(newId);
+      try {
+        setWindowMode('panel');
+        void ipc.invoke('window.setMode', { mode: 'panel' });
+        let sessionId = activeSession?.id;
+        if (!sessionId) {
+          // eslint-disable-next-line no-console
+          console.debug('[otto] session.start', { model });
+          const { sessionId: newId } = await ipc.invoke('session.start', { model });
+          sessionId = newId;
+          beginSession(newId);
+        }
+        appendUserMessage(crypto.randomUUID(), text);
+        // eslint-disable-next-line no-console
+        console.debug('[otto] session.send', { sessionId, len: text.length });
+        await ipc.invoke('session.send', { sessionId, text });
+        void ipc.invoke('session.list', undefined).then(setSessions);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[otto] handleSubmit failed', err);
       }
-      appendUserMessage(crypto.randomUUID(), text);
-      await ipc.invoke('session.send', { sessionId, text });
-      void ipc.invoke('session.list', undefined).then(setSessions);
     },
-    [activeSession, beginSession, appendUserMessage, setWindowMode, setSessions]
+    [activeSession, beginSession, appendUserMessage, setWindowMode, setSessions, model]
   );
 
   const handleSelectSession = useCallback(

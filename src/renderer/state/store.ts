@@ -55,9 +55,12 @@ const initial = {
 // the main window's store without any IPC plumbing.
 if (typeof window !== 'undefined') {
   window.addEventListener('storage', (e) => {
-    if (e.key === MODEL_STORAGE_KEY && e.newValue) {
-      useOttoStore.setState({ model: e.newValue });
-    }
+    if (e.key !== MODEL_STORAGE_KEY) return;
+    const next = e.newValue;
+    if (!next) return;
+    // Skip no-op writes so we don't churn renders for the same value.
+    if (useOttoStore.getState().model === next) return;
+    useOttoStore.setState({ model: next });
   });
 }
 

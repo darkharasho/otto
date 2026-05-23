@@ -73,12 +73,17 @@ async function startElectron(): Promise<void> {
     if (removed > 0) logger.info(`auto-deleted ${removed} session(s) older than ${autoDeleteDays}d`);
   }
 
+  // app.setLoginItemSettings is sync. On Linux it can be quirky depending on
+  // the desktop environment; never let it tank app startup or block an IPC
+  // handler by scheduling it off the current tick and swallowing errors.
   const applyStartAtLogin = (enabled: boolean) => {
-    try {
-      app.setLoginItemSettings({ openAtLogin: enabled, openAsHidden: true });
-    } catch (err) {
-      logger.warn(`setLoginItemSettings failed: ${err instanceof Error ? err.message : err}`);
-    }
+    setImmediate(() => {
+      try {
+        app.setLoginItemSettings({ openAtLogin: enabled, openAsHidden: true });
+      } catch (err) {
+        logger.warn(`setLoginItemSettings failed: ${err instanceof Error ? err.message : err}`);
+      }
+    });
   };
   applyStartAtLogin(settings.getStartAtLogin());
 
