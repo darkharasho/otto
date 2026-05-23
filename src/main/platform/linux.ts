@@ -144,15 +144,11 @@ export class LinuxAdapter implements PlatformAdapter {
     },
     move: async (x: number, y: number): Promise<void> => {
       await this.ensureInputReady();
-      const e = this.toEvdev(x, y);
-      await this.runYdotool(['mousemove', '--absolute', String(e.x), String(e.y)]);
+      await this.moveCursorTo(x, y);
     },
     scroll: async (dx: number, dy: number, x?: number, y?: number): Promise<void> => {
       await this.ensureInputReady();
-      if (x !== undefined && y !== undefined) {
-        const e = this.toEvdev(x, y);
-        await this.runYdotool(['mousemove', '--absolute', String(e.x), String(e.y)]);
-      }
+      if (x !== undefined && y !== undefined) await this.moveCursorTo(x, y);
       if (dy !== 0) {
         await this.runYdotool(['mousemove', '--wheel', '0', String(dy)]);
       }
@@ -162,25 +158,21 @@ export class LinuxAdapter implements PlatformAdapter {
     },
     click: async (x: number, y: number, button: MouseButton): Promise<void> => {
       await this.ensureInputReady();
-      const e = this.toEvdev(x, y);
-      await this.runYdotool(['mousemove', '--absolute', String(e.x), String(e.y)]);
+      await this.moveCursorTo(x, y);
       await this.runYdotool(['click', BUTTON_CODE[button]]);
     },
     doubleClick: async (x: number, y: number, button: MouseButton): Promise<void> => {
       await this.ensureInputReady();
-      const e = this.toEvdev(x, y);
-      await this.runYdotool(['mousemove', '--absolute', String(e.x), String(e.y)]);
+      await this.moveCursorTo(x, y);
       await this.runYdotool(['click', BUTTON_CODE[button]]);
       await new Promise<void>((resolve) => setTimeout(resolve, 50));
       await this.runYdotool(['click', BUTTON_CODE[button]]);
     },
     drag: async (x1: number, y1: number, x2: number, y2: number, button: MouseButton): Promise<void> => {
       await this.ensureInputReady();
-      const a = this.toEvdev(x1, y1);
-      const b = this.toEvdev(x2, y2);
-      await this.runYdotool(['mousemove', '--absolute', String(a.x), String(a.y)]);
+      await this.moveCursorTo(x1, y1);
       await this.runYdotool(['mousedown', BUTTON_LOW[button]]);
-      await this.runYdotool(['mousemove', '--absolute', String(b.x), String(b.y)]);
+      await this.moveCursorTo(x2, y2);
       await this.runYdotool(['mouseup', BUTTON_LOW[button]]);
     },
     type: async (text: string): Promise<void> => {
@@ -196,16 +188,23 @@ export class LinuxAdapter implements PlatformAdapter {
   };
 
   /**
-   * Convert pixel coordinates (virtual-desktop absolute) to ydotool's evdev
-   * normalized range (0..32767). ydotool's `mousemove --absolute` does NOT
-   * accept pixels — values are scaled across the full virtual desktop.
+   * Move the cursor to a virtual-desktop pixel coordinate.
+   *
+   * ydotool's `mousemove --absolute` is fundamentally broken on Wayland —
+   * Wayland's security model forbids external apps from warping the cursor
+   * by absolute position, so the daemon's absolute events get clamped or
+   * ignored. Relative motion via the same uinput device IS honored.
+   *
+   * Strategy: read the current cursor position from the compositor (via
+   * Electron's `screen` API), compute the pixel delta to the target, and
+   * send a relative `mousemove dx dy`.
    */
-  private toEvdev(x: number, y: number): { x: number; y: number } {
-    const bounds = virtualDesktopBounds(this.allMonitors());
-    if (bounds.w === 0 || bounds.h === 0) return { x: 0, y: 0 };
-    const ex = Math.max(0, Math.min(32767, Math.round(((x - bounds.x) / bounds.w) * 32767)));
-    const ey = Math.max(0, Math.min(32767, Math.round(((y - bounds.y) / bounds.h) * 32767)));
-    return { x: ex, y: ey };
+  private async moveCursorTo(targetX: number, targetY: number): Promise<void> {
+    const current = screen.getCursorScreenPoint();
+    const dx = targetX - current.x;
+    const dy = targetY - current.y;
+    if (dx === 0 && dy === 0) return;
+    await this.runYdotool(['mousemove', '--', String(dx), String(dy)]);
   }
 
   private allMonitors(): MonitorInfo[] {
