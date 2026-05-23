@@ -5,24 +5,34 @@ import { ToolCallCard } from './ToolCallCard';
 import { ApprovalCard } from './ApprovalCard';
 import { ProcessCard } from './ProcessCard';
 import { rehypeEmojiIcons } from './rehype-emoji-icons';
-import { EMOJI_TO_ICON } from './emoji-icons';
+import { EMOJI_TO_ICON, twemojiUrl } from './emoji-icons';
 
 const markdownComponents: Components = {
-  // The rehype plugin emits <span class="otto-icon" data-emoji="…" />; map
-  // those back to Lucide components. All other <span>s render normally.
+  // The rehype plugin emits <span class="otto-emoji" data-emoji="…" />; we
+  // render Lucide icons for mapped emojis and Twemoji SVGs for the rest.
   span(props) {
     const { className, children, node: _n, ...rest } = props as typeof props & {
       'data-emoji'?: string;
     };
     const classes = Array.isArray(className) ? className.join(' ') : className ?? '';
-    if (classes.includes('otto-icon')) {
+    if (classes.includes('otto-emoji')) {
       const emoji = (props as { 'data-emoji'?: string })['data-emoji'];
-      const Icon = emoji ? EMOJI_TO_ICON[emoji] : undefined;
-      if (Icon) {
+      if (emoji) {
+        const Icon = EMOJI_TO_ICON[emoji];
+        if (Icon) {
+          return (
+            <Icon
+              className="inline-block align-[-0.15em] mx-[0.1em] w-[1em] h-[1em] text-accent"
+              aria-label={emoji}
+            />
+          );
+        }
         return (
-          <Icon
-            className="inline-block align-[-0.15em] mx-[0.1em] w-[1em] h-[1em] text-accent"
-            aria-label={emoji}
+          <img
+            src={twemojiUrl(emoji)}
+            alt={emoji}
+            draggable={false}
+            className="inline-block align-[-0.15em] mx-[0.1em] w-[1.1em] h-[1.1em] select-none"
           />
         );
       }

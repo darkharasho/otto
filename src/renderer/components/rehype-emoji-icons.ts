@@ -1,30 +1,31 @@
 import { visit, SKIP } from 'unist-util-visit';
 import type { Root, Text, ElementContent } from 'hast';
-import { EMOJI_REGEX } from './emoji-icons';
+import { makeEmojiRegex } from './emoji-icons';
 
-// Walks HAST text nodes and replaces mapped emoji graphemes with a marker
-// <span class="otto-icon" data-emoji="…" /> element. The React renderer
-// overrides `span.otto-icon` to draw the corresponding Lucide icon.
+// Walks HAST text nodes and replaces *every* emoji grapheme with a marker
+// <span class="otto-emoji" data-emoji="…" /> element. The React renderer
+// decides whether to draw a Lucide icon (mapped emojis) or fall back to a
+// Twemoji SVG (everything else).
 export function rehypeEmojiIcons() {
   return (tree: Root) => {
     visit(tree, 'text', (node: Text, index, parent) => {
       if (!parent || typeof index !== 'number') return;
       const text = node.value;
-      EMOJI_REGEX.lastIndex = 0;
-      if (!EMOJI_REGEX.test(text)) return;
-      EMOJI_REGEX.lastIndex = 0;
+      const regex = makeEmojiRegex();
+      if (!regex.test(text)) return;
+      regex.lastIndex = 0;
 
       const out: ElementContent[] = [];
       let last = 0;
       let m: RegExpExecArray | null;
-      while ((m = EMOJI_REGEX.exec(text)) !== null) {
-        const emoji = m[1]!;
+      while ((m = regex.exec(text)) !== null) {
+        const emoji = m[0];
         if (m.index > last) out.push({ type: 'text', value: text.slice(last, m.index) });
         out.push({
           type: 'element',
           tagName: 'span',
           properties: {
-            className: ['otto-icon'],
+            className: ['otto-emoji'],
             'data-emoji': emoji,
           },
           children: [],
