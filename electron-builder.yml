@@ -5,6 +5,8 @@ directories:
   buildResources: build
 files:
   - out/**
+  - public/tray/**
+  - public/svg/**
   - package.json
 linux:
   target:

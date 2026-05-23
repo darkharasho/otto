@@ -19,6 +19,7 @@
     "toggle": "node out/main/index.js toggle",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "lint": "eslint . --ext .ts,.tsx",
+    "tray-icon": "node scripts/generate-tray-icon.mjs",
     "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
