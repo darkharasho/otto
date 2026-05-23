@@ -144,12 +144,14 @@ export class LinuxAdapter implements PlatformAdapter {
     },
     move: async (x: number, y: number): Promise<void> => {
       await this.ensureInputReady();
-      await this.runYdotool(['mousemove', '--absolute', String(x), String(y)]);
+      const e = this.toEvdev(x, y);
+      await this.runYdotool(['mousemove', '--absolute', String(e.x), String(e.y)]);
     },
     scroll: async (dx: number, dy: number, x?: number, y?: number): Promise<void> => {
       await this.ensureInputReady();
       if (x !== undefined && y !== undefined) {
-        await this.runYdotool(['mousemove', '--absolute', String(x), String(y)]);
+        const e = this.toEvdev(x, y);
+        await this.runYdotool(['mousemove', '--absolute', String(e.x), String(e.y)]);
       }
       if (dy !== 0) {
         await this.runYdotool(['mousemove', '--wheel', '0', String(dy)]);
@@ -160,21 +162,25 @@ export class LinuxAdapter implements PlatformAdapter {
     },
     click: async (x: number, y: number, button: MouseButton): Promise<void> => {
       await this.ensureInputReady();
-      await this.runYdotool(['mousemove', '--absolute', String(x), String(y)]);
+      const e = this.toEvdev(x, y);
+      await this.runYdotool(['mousemove', '--absolute', String(e.x), String(e.y)]);
       await this.runYdotool(['click', BUTTON_CODE[button]]);
     },
     doubleClick: async (x: number, y: number, button: MouseButton): Promise<void> => {
       await this.ensureInputReady();
-      await this.runYdotool(['mousemove', '--absolute', String(x), String(y)]);
+      const e = this.toEvdev(x, y);
+      await this.runYdotool(['mousemove', '--absolute', String(e.x), String(e.y)]);
       await this.runYdotool(['click', BUTTON_CODE[button]]);
       await new Promise<void>((resolve) => setTimeout(resolve, 50));
       await this.runYdotool(['click', BUTTON_CODE[button]]);
     },
     drag: async (x1: number, y1: number, x2: number, y2: number, button: MouseButton): Promise<void> => {
       await this.ensureInputReady();
-      await this.runYdotool(['mousemove', '--absolute', String(x1), String(y1)]);
+      const a = this.toEvdev(x1, y1);
+      const b = this.toEvdev(x2, y2);
+      await this.runYdotool(['mousemove', '--absolute', String(a.x), String(a.y)]);
       await this.runYdotool(['mousedown', BUTTON_LOW[button]]);
-      await this.runYdotool(['mousemove', '--absolute', String(x2), String(y2)]);
+      await this.runYdotool(['mousemove', '--absolute', String(b.x), String(b.y)]);
       await this.runYdotool(['mouseup', BUTTON_LOW[button]]);
     },
     type: async (text: string): Promise<void> => {
@@ -188,6 +194,19 @@ export class LinuxAdapter implements PlatformAdapter {
       await this.runYdotool(args);
     },
   };
+
+  /**
+   * Convert pixel coordinates (virtual-desktop absolute) to ydotool's evdev
+   * normalized range (0..32767). ydotool's `mousemove --absolute` does NOT
+   * accept pixels — values are scaled across the full virtual desktop.
+   */
+  private toEvdev(x: number, y: number): { x: number; y: number } {
+    const bounds = virtualDesktopBounds(this.allMonitors());
+    if (bounds.w === 0 || bounds.h === 0) return { x: 0, y: 0 };
+    const ex = Math.max(0, Math.min(32767, Math.round(((x - bounds.x) / bounds.w) * 32767)));
+    const ey = Math.max(0, Math.min(32767, Math.round(((y - bounds.y) / bounds.h) * 32767)));
+    return { x: ex, y: ey };
+  }
 
   private allMonitors(): MonitorInfo[] {
     return screen.getAllDisplays().map((d) => ({
