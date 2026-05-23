@@ -71,8 +71,10 @@ describe('openmojiCodepoint', () => {
     expect(openmojiCodepoint('🥥')).toBe('1F965');
   });
 
-  it('preserves FE0F in multi-codepoint sequences (OpenMoji convention)', () => {
-    expect(openmojiCodepoint('⚠️')).toBe('26A0-FE0F');
+  it('drops FE0F so single-base sequences match OpenMoji filenames', () => {
+    expect(openmojiCodepoint('⚠️')).toBe('26A0');
+    // 🖌️ (U+1F58C U+FE0F) → 1F58C.svg, not 1F58C-FE0F.svg
+    expect(openmojiCodepoint('🖌️')).toBe('1F58C');
   });
 
   it('joins ZWJ sequences with dashes', () => {

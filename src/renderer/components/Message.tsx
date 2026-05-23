@@ -24,7 +24,8 @@ const markdownComponents: Components = {
         if (Icon) {
           return (
             <Icon
-              className="inline-block align-[-0.15em] mx-[0.1em] w-[1em] h-[1em] text-accent"
+              className="inline-block align-[-0.2em] mx-[0.1em] w-[1.1em] h-[1.1em] text-accent"
+              strokeWidth={2.25}
               aria-label={emoji}
             />
           );

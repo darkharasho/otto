@@ -282,8 +282,10 @@ export function makeEmojiRegex(): RegExp {
   return emojiRegex();
 }
 
-// OpenMoji file convention: uppercase hex codepoints joined by "-", and FE0F
-// variation selectors *are* preserved (unlike Twemoji).
+// OpenMoji file convention: uppercase hex codepoints joined by "-". The
+// FE0F variation selector is dropped — e.g. 🖌️ is U+1F58C U+FE0F but the
+// OpenMoji file is `1F58C.svg`, not `1F58C-FE0F.svg`. ZWJ joiners (200D)
+// stay so sequences like 👨‍💻 (1F468-200D-1F4BB) still resolve.
 export function openmojiCodepoint(emoji: string): string {
   const codepoints: string[] = [];
   for (const ch of emoji) {
@@ -291,7 +293,7 @@ export function openmojiCodepoint(emoji: string): string {
     if (cp === undefined) continue;
     codepoints.push(cp.toString(16).toUpperCase());
   }
-  return codepoints.join('-');
+  return codepoints.filter((c) => c !== 'FE0F').join('-');
 }
 
 // Black/monochrome OpenMoji SVGs via jsdelivr. Network-only — offline users
