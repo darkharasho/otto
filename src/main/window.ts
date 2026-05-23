@@ -21,6 +21,18 @@ export class WindowManager {
   private resizeAnimId = 0;
   private positionPref: WindowPositionPref = 'bottom-center';
   private hideOnBlur = false;
+  private visibilityListeners: Array<(visible: boolean) => void> = [];
+
+  onVisibilityChange(cb: (visible: boolean) => void): () => void {
+    this.visibilityListeners.push(cb);
+    return () => {
+      this.visibilityListeners = this.visibilityListeners.filter((l) => l !== cb);
+    };
+  }
+
+  private emitVisibility(visible: boolean): void {
+    for (const cb of this.visibilityListeners) cb(visible);
+  }
 
   setPositionPref(p: WindowPositionPref): void {
     this.positionPref = p;
@@ -65,6 +77,9 @@ export class WindowManager {
     win.on('blur', () => {
       if (this.hideOnBlur && this.window?.isVisible()) this.hide();
     });
+
+    win.on('show', () => this.emitVisibility(true));
+    win.on('hide', () => this.emitVisibility(false));
 
     this.window = win;
     return win;

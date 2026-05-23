@@ -91,6 +91,18 @@ button {
 }
 .otto-pop { animation: otto-pop 320ms cubic-bezier(0.16, 1, 0.3, 1); }
 
+@keyframes otto-pulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50%      { opacity: 1;   transform: scale(1.4); }
+}
+.otto-pulse { animation: otto-pulse 1.4s ease-in-out infinite; }
+
+@keyframes otto-step-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.otto-step-enter { animation: otto-step-enter 180ms ease-out; }
+
 .otto-pill-enter {
   animation: otto-msg-enter 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }

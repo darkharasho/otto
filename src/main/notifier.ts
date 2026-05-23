@@ -50,6 +50,12 @@ export class Notifier {
         return;
       }
       case 'tool-call-start':
+        // Reset the text accumulator: the preview should be Otto's *final*
+        // summary after the last tool call, not the opening "I'll help you…"
+        // monologue. Each new tool call discards the text that preceded it.
+        this.lastText.delete(event.sessionId);
+        this.hadActivity.add(event.sessionId);
+        return;
       case 'tool-call-result':
         this.hadActivity.add(event.sessionId);
         return;

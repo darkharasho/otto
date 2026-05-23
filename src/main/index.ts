@@ -57,6 +57,7 @@ async function startElectron(): Promise<void> {
   const { DecisionBroker } = await import('./autonomy/decision-broker');
   const { ProcessRegistry } = await import('./shell/process-registry');
   const { applyLinuxAutostart } = await import('./autostart-linux');
+  const { OverlayManager } = await import('./overlay-window');
 
   const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
 
@@ -131,8 +132,14 @@ async function startElectron(): Promise<void> {
     shouldNotifyApproval: () => settings.getNotifications().approval,
     silent: () => !settings.getNotifications().sound,
   });
+  const overlay = new OverlayManager(
+    path.join(app.getAppPath(), 'out', 'preload', 'index.js'),
+    rendererEntry(),
+    () => window.isVisible()
+  );
   const emitWithNotify: typeof emitSessionEvent = (event) => {
     notifier.handle(event);
+    overlay.handleSessionEvent(event);
     emitSessionEvent(event);
   };
 
@@ -161,6 +168,8 @@ async function startElectron(): Promise<void> {
 
   const preloadPath = path.join(app.getAppPath(), 'out', 'preload', 'index.js');
   window.create(preloadPath, rendererEntry());
+  overlay.start();
+  window.onVisibilityChange((visible) => overlay.setMainVisible(visible));
 
   const onToggle = () => {
     const mode = shouldResume(repo, sessions) ? 'panel' : 'bar';
@@ -230,6 +239,7 @@ async function startElectron(): Promise<void> {
     void registry.killAll();
     tray.destroy();
     settingsWindow.destroy();
+    overlay.destroy();
     db.close();
   });
 
