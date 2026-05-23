@@ -132,7 +132,6 @@ export function App() {
             <StatusFooter
               model={MODEL}
               sessionId={activeSession?.id ?? null}
-              streaming={streaming}
               mode={mode}
             />
           </div>
