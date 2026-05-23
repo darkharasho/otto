@@ -1,6 +1,6 @@
 import { spawn as nodeSpawn } from 'node:child_process';
 import { promises as fsp } from 'node:fs';
-import { tmpdir } from 'node:os';
+import os, { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { nativeImage, screen } from 'electron';
@@ -29,6 +29,12 @@ const BUTTON_LOW: Record<MouseButton, string> = {
   right: '0x41',
   middle: '0x42',
 };
+
+function ydotoolSocketPath(): string {
+  const runtimeDir =
+    process.env.XDG_RUNTIME_DIR ?? path.join('/run/user', String(os.userInfo().uid));
+  return path.join(runtimeDir, '.ydotool_socket');
+}
 
 export class LinuxAdapter implements PlatformAdapter {
   readonly name = 'linux';
@@ -182,7 +188,10 @@ export class LinuxAdapter implements PlatformAdapter {
 
   private runYdotool(args: string[]): Promise<void> {
     return new Promise((resolve, reject) => {
-      const child = nodeSpawn('ydotool', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      const child = nodeSpawn('ydotool', args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: { ...process.env, YDOTOOL_SOCKET: ydotoolSocketPath() },
+      });
       let stderr = '';
       child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8'); });
       child.once('error', reject);
@@ -203,7 +212,10 @@ export class LinuxAdapter implements PlatformAdapter {
 
   private runYdotoolWithStdin(args: string[], stdinText: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const child = nodeSpawn('ydotool', args, { stdio: ['pipe', 'pipe', 'pipe'] });
+      const child = nodeSpawn('ydotool', args, {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        env: { ...process.env, YDOTOOL_SOCKET: ydotoolSocketPath() },
+      });
       let stderr = '';
       child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8'); });
       child.once('error', reject);

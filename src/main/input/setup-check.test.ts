@@ -17,6 +17,7 @@ import { checkYdotoolReady, _resetCacheForTesting } from './setup-check';
 beforeEach(() => {
   execMock.mockReset();
   _resetCacheForTesting();
+  process.env.OTTO_SKIP_USER_UNIT_INSTALL = '1';
 });
 
 afterEach(() => {

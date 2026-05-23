@@ -1,4 +1,7 @@
 import { exec as execCb } from 'node:child_process';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 
 function exec(cmd: string): Promise<{ stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
@@ -7,6 +10,43 @@ function exec(cmd: string): Promise<{ stdout: string; stderr: string }> {
       else resolve({ stdout: String(stdout ?? ''), stderr: String(stderr ?? '') });
     });
   });
+}
+
+/**
+ * Per-user systemd unit for ydotoold. Fedora's stock packaging only ships a
+ * system service that writes a root-owned socket, leaving users unable to
+ * connect. We drop our own user-scope unit (no sudo needed when /dev/uinput is
+ * ACL-accessible to the user).
+ */
+const USER_UNIT_CONTENT = `[Unit]
+Description=ydotool daemon (Otto user-scope)
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/ydotoold --socket-path=%t/.ydotool_socket --socket-own=%U:%G
+Restart=always
+
+[Install]
+WantedBy=default.target
+`;
+
+async function ensureUserUnitInstalled(): Promise<void> {
+  if (process.env.OTTO_SKIP_USER_UNIT_INSTALL === '1') return;
+  const dir = path.join(os.homedir(), '.config', 'systemd', 'user');
+  const file = path.join(dir, 'ydotoold.service');
+  try {
+    const existing = await fs.readFile(file, 'utf8');
+    if (existing === USER_UNIT_CONTENT) return;
+  } catch {
+    // file missing or unreadable; fall through to write
+  }
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(file, USER_UNIT_CONTENT);
+  try {
+    await exec('systemctl --user daemon-reload');
+  } catch {
+    // not fatal — enable+start below will surface real failures
+  }
 }
 
 export interface SetupResult {
@@ -61,7 +101,15 @@ export async function checkYdotoolReady(): Promise<SetupResult> {
     }
   }
 
-  // None active. Try to auto-enable any unit that doesn't need sudo.
+  // None active. Install our user-scope unit (idempotent) and try to enable it.
+  // This handles Fedora's case where the stock packaging only ships a broken
+  // system service.
+  try {
+    await ensureUserUnitInstalled();
+  } catch {
+    // Don't fail the whole check on a write error; fall through to the hint.
+  }
+
   for (const probe of PROBES) {
     if (!probe.autoEnableable) continue;
     try {
