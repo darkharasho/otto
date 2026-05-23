@@ -6,6 +6,7 @@ import { ApprovalCard } from './ApprovalCard';
 import { ProcessCard } from './ProcessCard';
 import { rehypeEmojiIcons } from './rehype-emoji-icons';
 import { EMOJI_TO_ICON, fluentEmojiUrl } from './emoji-icons';
+import { OttoMark } from './OttoMark';
 
 const markdownComponents: Components = {
   // The rehype plugin emits <span class="otto-emoji" data-emoji="…" />; we
@@ -98,6 +99,10 @@ export function MessageView({ message, isStreamingTarget = false }: Props) {
       .join(' ');
     return (
       <div data-testid="message-assistant" className={cls}>
+        <div className="flex items-center gap-1.5 mb-1 text-xs font-medium text-muted">
+          <OttoMark className="w-3.5 h-3.5 text-accent" />
+          <span>Otto</span>
+        </div>
         {renderBlocks(message.content, isStreamingTarget)}
         {message.cancelled && <div className="text-xs text-muted mt-1">(cancelled)</div>}
         {message.errored && <div className="text-xs text-danger mt-1">(error)</div>}
