@@ -72,14 +72,11 @@ export class WindowManager {
 
   toggle(mode: WindowMode = 'bar'): void {
     if (!this.window) return;
-    // Visible but unfocused (e.g. user clicked away) → re-focus instead of
-    // hiding. Otherwise the user has to hit the hotkey twice to bring it back.
+    // Strict toggle: hotkey always inverts visibility. The earlier
+    // "smart re-focus when visible-but-unfocused" path looked like the
+    // hotkey did nothing (window was already visible, focus change is
+    // invisible to the user), forcing a second press to actually hide.
     if (this.window.isVisible()) {
-      if (!this.window.isFocused()) {
-        this.repositionBottomCenter();
-        this.window.focus();
-        return;
-      }
       this.hide();
     } else {
       this.show(mode);
