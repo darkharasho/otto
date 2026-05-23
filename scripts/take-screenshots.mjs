@@ -91,12 +91,33 @@ const SEED = {
   ],
 };
 
+// A scripted assistant reply that gets streamed into the chat when the user
+// hits enter on the seeded prompt. Uses unicode emojis so the README
+// screenshot showcases Otto's rehype-emoji-icons pipeline (which maps each
+// emoji grapheme to a Lucide icon).
+const SCRIPTED_REPLY = [
+  "🔍 Took a look at your audio stack — found a sample-rate mismatch.\n\n",
+  "Discord is asking for **48 kHz** but PulseAudio's default sink is locked at **44.1 kHz**, so every callback is resampling on the fly. That's the cracking. 🔊\n\n",
+  "Here's the fix:\n\n",
+  "1. 🔧 Set `default-sample-rate = 48000` in `/etc/pulse/daemon.conf`\n",
+  "2. 🔄 Restart PulseAudio (`systemctl --user restart pulseaudio`)\n",
+  "3. ✅ Re-launch Discord — it'll lock to the new rate\n\n",
+  "Want me to apply 1 and 2 now? The PulseAudio restart will momentarily drop any active streams. 🎧",
+].join("");
+
 // Init script: runs before any page script. Sets up window.otto.
 const INIT_SCRIPT = `
 const __sessions = ${JSON.stringify(SEED.sessions)};
 const __settings = ${JSON.stringify(SEED.settings)};
 const __mode = ${JSON.stringify(SEED.mode)};
 const __approvalMessages = ${JSON.stringify(SEED.approvalMessages)};
+const __reply = ${JSON.stringify(SCRIPTED_REPLY)};
+
+let __sessionListener = null;
+function __emit(ev) {
+  if (__sessionListener) __sessionListener(ev);
+}
+
 window.otto = {
   invoke: async (channel, args) => {
     if (channel === 'session.list') return __sessions;
@@ -106,12 +127,29 @@ window.otto = {
     }
     if (channel === 'autonomy.getMode') return __mode;
     if (channel === 'settings.get') return __settings;
-    if (channel === 'session.start') return { sessionId: 'sess-new' };
-    if (channel === 'session.send') return undefined;
+    if (channel === 'session.start') return { sessionId: 'sess-conv' };
+    if (channel === 'session.send') {
+      // Stream a scripted reply so the panel shows a real conversation.
+      const sessionId = (args && args.sessionId) || 'sess-conv';
+      const messageId = 'msg-asst-' + Math.random().toString(36).slice(2, 8);
+      Promise.resolve().then(async () => {
+        __emit({ type: 'message-start', sessionId, messageId });
+        // Stream in chunks so the renderer's text-delta path is exercised.
+        const step = 24;
+        for (let i = 0; i < __reply.length; i += step) {
+          __emit({ type: 'text-delta', sessionId, messageId, text: __reply.slice(i, i + step) });
+          await new Promise((r) => setTimeout(r, 5));
+        }
+        __emit({ type: 'message-end', sessionId, messageId });
+        __emit({ type: 'done', sessionId });
+      });
+      return undefined;
+    }
     if (channel === 'window.setMode') return undefined;
+    if (channel === 'session.cancel') return undefined;
     return undefined;
   },
-  onSessionEvent: () => () => {},
+  onSessionEvent: (cb) => { __sessionListener = cb; return () => { __sessionListener = null; }; },
   onAutonomyEvent: () => () => {},
   updater: {
     status: async () => ({ kind: 'idle' }),
@@ -160,6 +198,22 @@ await capture('hero', '', { width: 720, height: 96 }, async (page) => {
     await input.type('Discord audio cracks when I open games — diagnose and fix it', { delay: 12 });
   } catch (err) {
     console.warn('  hero: could not type into input:', err.message);
+  }
+});
+
+// Conversation: type a prompt, submit, let the mocked stream render the
+// assistant reply (with emojis) in panel mode, then capture the panel.
+await capture('conversation', '', { width: 720, height: 720 }, async (page) => {
+  try {
+    const input = page.locator('input, textarea').first();
+    await input.waitFor({ timeout: 2000 });
+    await input.click();
+    await input.type('Discord audio cracks when I open games — diagnose and fix it', { delay: 8 });
+    await input.press('Enter');
+    // Wait for the panel to mount and the streamed reply to finish.
+    await page.waitForTimeout(1200);
+  } catch (err) {
+    console.warn('  conversation: failed:', err.message);
   }
 });
 

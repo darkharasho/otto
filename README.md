@@ -24,6 +24,10 @@ Otto is a desktop coworker for your whole machine. Game stuttering? Discord audi
   <img src="public/img/screenshots/hero.png" alt="Otto's command bar with a sample prompt about Discord audio" width="900" />
 </p>
 
+<p align="center">
+  <img src="public/img/screenshots/conversation.png" alt="Otto explaining a sample-rate mismatch causing Discord audio crackle, with inline emoji icons" width="720" />
+</p>
+
 ---
 
 ## Features
