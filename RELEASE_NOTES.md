@@ -1,3 +1,8 @@
+Version v0.2.3
+
+New:
+- **Tray badge for finished turns.** When a turn finishes while the Otto window is hidden, the tray icon gains a small amber dot so you can see at a glance that something's waiting. The badge clears the moment you show Otto again. Dev builds use a red dot (the dev icon is already amber).
+
 Version v0.2.2
 
 Bug fixes:
