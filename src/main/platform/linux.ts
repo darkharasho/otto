@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { nativeImage, screen } from 'electron';
 import { translateKeyCombo } from '../input/keymap';
 import { checkYdotoolReady } from '../input/setup-check';
+import { checkBinary } from '../system/binary-check';
 import type {
   CaptureOptions,
   CaptureResult,
@@ -256,7 +257,18 @@ export class LinuxAdapter implements PlatformAdapter {
   }
 
 
-  private runSpectacle(args: string[], timeoutMs: number): Promise<void> {
+  private async runSpectacle(args: string[], timeoutMs: number): Promise<void> {
+    const check = await checkBinary({
+      name: 'spectacle',
+      purpose: 'screen capture',
+      hints: {
+        fedora: 'sudo dnf install kde-spectacle',
+        debian: 'sudo apt install kde-spectacle',
+        arch: 'sudo pacman -S spectacle',
+        fallback: 'install KDE Spectacle from your package manager',
+      },
+    });
+    if (!check.ok) throw new Error(`${check.reason}\n\n${check.hint}`);
     return new Promise((resolve, reject) => {
       const child = nodeSpawn('spectacle', args, { stdio: ['ignore', 'pipe', 'pipe'] });
       let stderr = '';
