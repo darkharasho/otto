@@ -20,16 +20,15 @@ const BRAND_PURPLE = '#7c7dff';
 
 async function main() {
   const rawSvg = await readFile(srcSvg, 'utf8');
-  // App icons keep the original (black) silhouette so OS tinting / dark-mode
-  // rendering stays consistent. The README logo gets the brand color so it
-  // reads as Otto's identity, not a generic glyph.
-  const appIconSvg = Buffer.from(rawSvg, 'utf8');
+  // Brand-tinted SVG drives every output: app icons (so the OS launcher shows
+  // Otto's purple identity) and the README header logo. The icon pipeline
+  // doesn't need a separate untinted variant.
   const brandedSvg = Buffer.from(rawSvg.replace(/fill:#000000/g, `fill:${BRAND_PURPLE}`), 'utf8');
 
   await mkdir(outDir, { recursive: true });
 
   // 1024x1024 master PNG (in-memory) for ico/icns generation.
-  const master = await sharp(appIconSvg, { density: 384 })
+  const master = await sharp(brandedSvg, { density: 384 })
     .resize(1024, 1024, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
     .png()
     .toBuffer();
@@ -47,13 +46,10 @@ async function main() {
   if (!icns) throw new Error('createICNS failed');
   await writeFile(join(outDir, 'icon.icns'), icns);
 
-  // README header: 256x256 PNG under public/img/, in brand purple.
+  // README header: 256x256 PNG under public/img/ (same brand-tinted source).
   const readmeOutDir = join(repoRoot, 'public', 'img');
   await mkdir(readmeOutDir, { recursive: true });
-  await sharp(brandedSvg, { density: 384 })
-    .resize(256, 256, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
-    .png()
-    .toFile(join(readmeOutDir, 'otto-logo.png'));
+  await sharp(master).resize(256, 256).png().toFile(join(readmeOutDir, 'otto-logo.png'));
 
   console.log('Wrote build/icon.{png,ico,icns} and public/img/otto-logo.png');
 }
