@@ -1,4 +1,4 @@
-import sharp from 'sharp';
+import { nativeImage } from 'electron';
 
 export interface ProcessResult {
   bytes: Buffer;
@@ -8,10 +8,10 @@ export interface ProcessResult {
 }
 
 /**
- * Read PNG dimensions from the IHDR chunk without invoking sharp/libvips.
- * Sharp's `metadata()` call has been observed to abort the Electron process
- * with a libvips assertion on some Linux builds, so we avoid touching sharp
- * unless we actually need to resize.
+ * Read PNG dimensions from the IHDR chunk without invoking any image library.
+ * sharp/libvips has been observed to abort the Electron main process with
+ * `VObject::operator=: assertion failed` on Linux, so we keep image handling
+ * inside Electron's `nativeImage` which is stable here.
  */
 function readPngDims(bytes: Buffer): { width: number; height: number } | null {
   if (bytes.length < 24) return null;
@@ -23,16 +23,17 @@ export async function downscaleIfNeeded(
   pngBytes: Buffer,
   maxEdge: number
 ): Promise<ProcessResult> {
-  const native = readPngDims(pngBytes);
   let width: number;
   let height: number;
+  const native = readPngDims(pngBytes);
   if (native) {
     width = native.width;
     height = native.height;
   } else {
-    const meta = await sharp(pngBytes).metadata();
-    width = meta.width ?? 0;
-    height = meta.height ?? 0;
+    const img = nativeImage.createFromBuffer(pngBytes);
+    const size = img.getSize();
+    width = size.width;
+    height = size.height;
   }
   if (!width || !height) {
     throw new Error('could not read PNG dimensions');
@@ -43,6 +44,7 @@ export async function downscaleIfNeeded(
   const scale = maxEdge / Math.max(width, height);
   const targetW = Math.round(width * scale);
   const targetH = Math.round(height * scale);
-  const out = await sharp(pngBytes).resize(targetW, targetH).png().toBuffer();
-  return { bytes: out, width: targetW, height: targetH, downscaled: true };
+  const img = nativeImage.createFromBuffer(pngBytes);
+  const resized = img.resize({ width: targetW, height: targetH });
+  return { bytes: resized.toPNG(), width: targetW, height: targetH, downscaled: true };
 }
