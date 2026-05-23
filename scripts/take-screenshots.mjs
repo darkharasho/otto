@@ -138,11 +138,16 @@ async function capture(name, hash, viewport, prepare) {
   });
   await page.goto(`${baseUrl}${hash}`);
   await page.waitForLoadState('domcontentloaded');
+  // The real Otto window is transparent (frame: false, transparent: true).
+  // Strip body/html backgrounds so the screenshot preserves alpha.
+  await page.addStyleTag({
+    content: 'html, body, #root { background: transparent !important; }',
+  });
   // Let React mount and effects fire.
   await page.waitForTimeout(800);
   if (prepare) await prepare(page);
   await page.waitForTimeout(400);
-  await page.screenshot({ path: path.join(OUT_DIR, `${name}.png`), omitBackground: false });
+  await page.screenshot({ path: path.join(OUT_DIR, `${name}.png`), omitBackground: true });
   await ctx.close();
 }
 
