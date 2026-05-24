@@ -8,6 +8,9 @@ patchedDependencies:
   dbus-next@0.10.2:
     hash: irytzdmpvi7hp4smhew37yywmy
     path: patches/dbus-next@0.10.2.patch
+  usocket@0.3.0:
+    hash: vydxzyarbvjhtagroaiu6wkp2e
+    path: patches/usocket@0.3.0.patch
 
 importers:
 
@@ -5814,7 +5817,7 @@ snapshots:
       safe-buffer: 5.2.1
       xml2js: 0.4.23
     optionalDependencies:
-      usocket: 0.3.0
+      usocket: 0.3.0(patch_hash=vydxzyarbvjhtagroaiu6wkp2e)
 
   debug@4.4.3:
     dependencies:
@@ -8937,7 +8940,7 @@ snapshots:
     dependencies:
       punycode: 2.3.1
 
-  usocket@0.3.0:
+  usocket@0.3.0(patch_hash=vydxzyarbvjhtagroaiu6wkp2e):
     dependencies:
       bindings: 1.5.0
       nan: 2.27.0

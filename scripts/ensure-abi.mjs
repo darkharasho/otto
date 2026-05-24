@@ -4,6 +4,7 @@
 // the binary is already correct. Invoked from npm pre-hooks.
 
 import { execSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,9 +28,19 @@ if (current === target && existsSync(binary)) {
 console.log(`[ensure-abi] rebuilding better-sqlite3 for ${target}…`);
 try {
   if (target === 'electron') {
-    execSync('npx --no-install @electron/rebuild -f -w better-sqlite3', {
-      cwd: repoRoot,
-      stdio: 'inherit',
+    // Use @electron/rebuild's JS API rather than its CLI bin — pnpm doesn't
+    // hoist transitive bins, so `electron-rebuild` isn't on PATH and the
+    // previous `npx --no-install` shell-out fails with "command not found".
+    const require = createRequire(import.meta.url);
+    const { rebuild } = require('@electron/rebuild');
+    const electronVersion = require(
+      path.join(repoRoot, 'node_modules', 'electron', 'package.json')
+    ).version;
+    await rebuild({
+      buildPath: repoRoot,
+      electronVersion,
+      onlyModules: ['better-sqlite3'],
+      force: true,
     });
   } else {
     execSync('npm rebuild better-sqlite3', { cwd: repoRoot, stdio: 'inherit' });

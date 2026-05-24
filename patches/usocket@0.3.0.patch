@@ -1,0 +1,14 @@
+diff --git a/package.json b/package.json
+index 1b74a9df4adc3ac390cda793aa1f14288547c1f2..ca1bbd971582cc9f8a3ae722bc03310e2423fbe1 100644
+--- a/package.json
++++ b/package.json
+@@ -33,5 +33,8 @@
+     "bindings": "^1.5.0",
+     "nan": "^2.14.2",
+     "node-gyp": "^7.1.2"
+-  }
++  },
++  "os": [
++    "!win32"
++  ]
+ }
