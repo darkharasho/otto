@@ -124,6 +124,15 @@ export const useOttoStore = create<OttoState>((set, get) => ({
         });
         return;
       }
+      case 'system-message': {
+        set({
+          activeSession: {
+            ...session,
+            messages: [...session.messages, event.message],
+          },
+        });
+        return;
+      }
       case 'text-delta': {
         const next = updateAssistant(session, event.messageId, (m) => {
           const content = m.content.slice();

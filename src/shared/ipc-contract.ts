@@ -120,6 +120,7 @@ export type IpcChannel = IpcRequest['channel'];
 
 export type SessionEvent =
   | { type: 'message-start'; sessionId: string; messageId: string }
+  | { type: 'system-message'; sessionId: string; message: Message }
   | { type: 'text-delta'; sessionId: string; messageId: string; text: string }
   | { type: 'tool-call-start'; sessionId: string; messageId: string; callId: string; name: string; input: unknown }
   | { type: 'tool-call-result'; sessionId: string; messageId: string; callId: string; result: unknown; isError: boolean }
