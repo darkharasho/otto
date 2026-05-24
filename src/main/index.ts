@@ -78,6 +78,7 @@ async function startElectron(): Promise<void> {
   const { regenerateKnowledgeFile, renderPinnedAsMarkdown } = await import('./knowledge/store');
   const { getEmbedder } = await import('./embeddings/embedder');
   const { backfillEmbeddings } = await import('./embeddings/backfill');
+  const { MemorySearch } = await import('./memory/search');
 
   const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
 
@@ -193,6 +194,8 @@ async function startElectron(): Promise<void> {
   factRepo.rerank();
   void regenerateKnowledgeFile(ottoConfigDir, factRepo);
 
+  const memorySearch = new MemorySearch({ factRepo, artifactRepo, embedder, db });
+
   async function runReflectorSdk(prompt: string): Promise<string> {
     const sdkMod = await import('@anthropic-ai/claude-agent-sdk');
     const ac = new AbortController();
@@ -265,29 +268,10 @@ async function startElectron(): Promise<void> {
     getConfigDir: () => ottoConfigDir,
     recall: async (args) => {
       const limit = Math.min(args.limit ?? 5, 20);
-      const kinds = args.kinds;
-      const wantsFacts = !kinds || kinds.includes('fact');
-      const artifactKinds = kinds?.filter((k) => k !== 'fact') as Array<
-        'playbook' | 'anti_pattern' | 'heuristic'
-      > | undefined;
-
-      const artifactRows = artifactRepo.search({
-        query: args.query,
-        kinds: artifactKinds,
-        limit,
-      });
-      for (const row of artifactRows) artifactRepo.bumpUse(row.id);
-
-      let facts: string[] = [];
-      if (wantsFacts) {
-        const hits = factRepo.search({ query: args.query, limit });
-        // Use a fixed pseudo-session id so all recall-tool hits in this process count once each toward distinct_sessions, regardless of which real session triggered them.
-      if (hits.length > 0) factRepo.bumpUse(hits.map((h) => h.id), 'recall');
-        facts = hits.map((h) => h.body);
-      }
+      const out = await memorySearch.search({ query: args.query, kinds: args.kinds, limit });
       return {
-        facts,
-        artifacts: artifactRows.map((r) => ({
+        facts: out.facts.map((f) => f.body),
+        artifacts: out.artifacts.map((r) => ({
           id: r.id,
           kind: r.kind,
           title: r.title,
@@ -357,6 +341,7 @@ async function startElectron(): Promise<void> {
     hotkey,
     artifactRepo,
     factRepo,
+    memorySearch,
     configDir: ottoConfigDir,
     applyStartAtLogin,
     openLogsDir: () => {

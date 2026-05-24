@@ -7,6 +7,7 @@ import type { Settings } from '../autonomy/settings';
 import type { ProcessRegistry } from '../shell/process-registry';
 import type { ArtifactRepo } from '../db/artifact-repo';
 import type { FactRepo } from '../db/fact-repo';
+import type { MemorySearch } from '../memory/search';
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import type {
@@ -38,6 +39,7 @@ export function registerIpcHandlers(deps: {
   hotkey: HotkeyManager;
   artifactRepo: ArtifactRepo;
   factRepo: FactRepo;
+  memorySearch: MemorySearch;
   configDir: string;
   applyStartAtLogin(enabled: boolean): void;
   openLogsDir(): void;
@@ -190,51 +192,46 @@ export function registerIpcHandlers(deps: {
     }
   );
 
-  ipcMain.handle(
-    'memory.list',
-    async (
-      _e,
-      args: {
-        kind: 'fact' | 'playbook' | 'anti_pattern' | 'heuristic';
-        query?: string;
-        includeArchived?: boolean;
-      }
-    ) => {
-      if (args.kind === 'fact') {
-        const hits = args.query
-          ? deps.factRepo.search({ query: args.query, limit: 100 })
-          : deps.factRepo.list({ limit: 200 });
+  ipcMain.handle('memory.list', async (_e, args: {
+    kind: 'fact' | 'playbook' | 'anti_pattern' | 'heuristic';
+    query?: string;
+    includeArchived?: boolean;
+  }) => {
+    if (args.kind === 'fact') {
+      if (args.query && args.query.trim()) {
+        const out = await deps.memorySearch.search({ query: args.query, kinds: ['fact'], limit: 100 });
         return {
           artifacts: [],
-          facts: hits.map((f) => ({
-            id: f.id,
-            body: f.body,
-            pinned: f.pinned,
-            useCount: f.useCount,
-            lastUsedAt: f.lastUsedAt,
-          })),
+          facts: out.facts.map((f) => ({ id: f.id, body: f.body, pinned: f.pinned, useCount: f.useCount, lastUsedAt: f.lastUsedAt })),
         };
       }
-      const rows = args.query
-        ? deps.artifactRepo.search({ query: args.query, kinds: [args.kind], limit: 200 })
-        : deps.artifactRepo.list({ kind: args.kind, includeArchived: args.includeArchived });
+      const hits = deps.factRepo.list({ limit: 200 });
       return {
-        artifacts: rows.map((r) => ({
-          id: r.id,
-          kind: r.kind,
-          title: r.title,
-          body: r.body,
-          tags: r.tags,
-          createdAt: r.createdAt,
-          updatedAt: r.updatedAt,
-          useCount: r.useCount,
-          lastUsedAt: r.lastUsedAt,
-          archived: r.archived,
+        artifacts: [],
+        facts: hits.map((f) => ({ id: f.id, body: f.body, pinned: f.pinned, useCount: f.useCount, lastUsedAt: f.lastUsedAt })),
+      };
+    }
+    if (args.query && args.query.trim()) {
+      const out = await deps.memorySearch.search({ query: args.query, kinds: [args.kind], limit: 200 });
+      return {
+        artifacts: out.artifacts.map((r) => ({
+          id: r.id, kind: r.kind, title: r.title, body: r.body, tags: r.tags,
+          createdAt: r.createdAt, updatedAt: r.updatedAt, useCount: r.useCount,
+          lastUsedAt: r.lastUsedAt, archived: r.archived,
         })),
         facts: [],
       };
     }
-  );
+    const rows = deps.artifactRepo.list({ kind: args.kind, includeArchived: args.includeArchived });
+    return {
+      artifacts: rows.map((r) => ({
+        id: r.id, kind: r.kind, title: r.title, body: r.body, tags: r.tags,
+        createdAt: r.createdAt, updatedAt: r.updatedAt, useCount: r.useCount,
+        lastUsedAt: r.lastUsedAt, archived: r.archived,
+      })),
+      facts: [],
+    };
+  });
 
   ipcMain.handle('memory.get', async (_e, args: { id: string }) => {
     const row = deps.artifactRepo.get(args.id);
