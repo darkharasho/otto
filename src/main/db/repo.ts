@@ -22,7 +22,7 @@ interface MessageRow {
   id: string;
   session_id: string;
   seq: number;
-  role: 'user' | 'assistant' | 'tool';
+  role: 'user' | 'assistant' | 'tool' | 'system';
   content: string;
   created_at: number;
 }
@@ -165,5 +165,6 @@ function rowToMessage(row: MessageRow): Message {
     };
   }
   if (row.role === 'tool') return { ...base, role: 'tool' };
+  if (row.role === 'system') return { ...base, role: 'system' };
   return { ...base, role: 'user' };
 }

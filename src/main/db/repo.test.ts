@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { Database } from 'better-sqlite3';
 import { openDatabase } from './db';
 import { Repo } from './repo';
-import { newUserMessage, newAssistantMessage } from '@shared/messages';
+import { newUserMessage, newAssistantMessage, newSystemMessage } from '@shared/messages';
 
 let dir: string;
 let db: Database;
@@ -82,5 +82,24 @@ describe('Repo.messages', () => {
     repo.appendMessage(a);
     const [loaded] = repo.loadMessages('s1');
     expect(loaded!.content).toEqual(a.content);
+  });
+});
+
+describe('Repo.messages system role', () => {
+  it('round-trips a system message with a memory-update content block', () => {
+    repo.createSession({ id: 's1', model: 'm', createdAt: 1, lastActive: 1 });
+    const sys = {
+      ...newSystemMessage([
+        { type: 'memory-update' as const, facts: 1, playbooks: 2, antiPatterns: 0, heuristics: 1 },
+      ]),
+      sessionId: 's1',
+    };
+    repo.appendMessage(sys);
+    const loaded = repo.loadMessages('s1');
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0]!.role).toBe('system');
+    expect(loaded[0]!.content).toEqual([
+      { type: 'memory-update', facts: 1, playbooks: 2, antiPatterns: 0, heuristics: 1 },
+    ]);
   });
 });

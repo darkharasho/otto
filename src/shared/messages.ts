@@ -24,6 +24,13 @@ export type ContentBlock =
       lines: Array<{ stream: 'stdout' | 'stderr'; data: string }>;
       status: 'running' | 'exited' | 'killed';
       exitCode: number | null;
+    }
+  | {
+      type: 'memory-update';
+      facts: number;
+      playbooks: number;
+      antiPatterns: number;
+      heuristics: number;
     };
 
 export interface BaseMessage {
@@ -48,7 +55,11 @@ export interface ToolMessage extends BaseMessage {
   role: 'tool';
 }
 
-export type Message = UserMessage | AssistantMessage | ToolMessage;
+export interface SystemMessage extends BaseMessage {
+  role: 'system';
+}
+
+export type Message = UserMessage | AssistantMessage | ToolMessage | SystemMessage;
 
 export interface SessionMeta {
   id: string;
@@ -90,6 +101,18 @@ export function newAssistantMessage(): AssistantMessage {
   };
 }
 
+export function newSystemMessage(content: ContentBlock[]): SystemMessage {
+  return {
+    id: newId('msg'),
+    sessionId: null,
+    seq: 0,
+    createdAt: Date.now(),
+    role: 'system',
+    content,
+  };
+}
+
 export const isUserMessage = (m: Message): m is UserMessage => m.role === 'user';
 export const isAssistantMessage = (m: Message): m is AssistantMessage => m.role === 'assistant';
 export const isToolMessage = (m: Message): m is ToolMessage => m.role === 'tool';
+export const isSystemMessage = (m: Message): m is SystemMessage => m.role === 'system';
