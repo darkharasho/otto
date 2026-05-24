@@ -172,6 +172,10 @@ async function startElectron(): Promise<void> {
     currentMessageId: () => currentMessageId ?? '',
     getRegistry: () => registry,
     getConfigDir: () => ottoConfigDir,
+    // Stubs until Task 14 wires the real reflection pipeline.
+    recall: async () => ({ facts: [], artifacts: [] }),
+    memoryCounts: () => ({ playbook: 0, anti_pattern: 0, heuristic: 0 }),
+    onMarkTaskComplete: () => {},
   });
   const sessions = new SessionManager(
     repo,

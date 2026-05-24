@@ -1,5 +1,9 @@
 import type { SdkClient, SdkStreamEvent, SdkTurn } from './session';
-import { buildInputTools, buildKnowledgeTool, buildScreenshotTool, buildShellTools, stubTools, type OttoTool } from './tools';
+import {
+  buildInputTools, buildKnowledgeTool, buildScreenshotTool, buildShellTools, stubTools,
+  buildRecallTool, buildMarkTaskCompleteTool,
+  type OttoTool,
+} from './tools';
 import { appendKnowledge, readKnowledge } from '../knowledge/store';
 import { exec as execInput, type InputAction } from '../input/executor';
 import type { DecisionBroker } from '../autonomy/decision-broker';
@@ -93,6 +97,8 @@ const SYSTEM_PROMPT = [
   '- WebSearch(query): search the web; returns titles, urls, and snippets you can cite.',
   '- WebFetch(url, prompt): fetch a URL and extract readable content based on the prompt.',
   '- knowledge_append(note): save a durable fact/preference to Otto\'s per-machine knowledge file. Current contents are injected into your prompt every turn (see "Known about this machine and user" below, if present). Use sparingly — only things worth remembering next session.',
+  '- recall(query, kinds?, limit?): search Otto\'s durable memory from prior sessions on this machine. Returns matching facts and structured artifacts (playbooks, anti-patterns, heuristics). Call this at the START of any task that resembles past work before deciding on an approach.',
+  '- mark_task_complete(summary): call ONCE when you believe the user\'s request is fully addressed. Triggers a silent background reflection pass; does not affect the chat. Do not call between sub-steps.',
   '- echo(msg), fake-mutate(target), fake-wipe(target): test stubs; ignore unless explicitly asked.',
   '',
   'GUI workflow — when the user asks you to type, click, or otherwise interact with their screen:',
@@ -130,6 +136,23 @@ export interface RealSdkClientDeps {
   currentMessageId: () => string;
   getRegistry: () => ProcessRegistry;
   getConfigDir: () => string;
+  recall(args: {
+    query: string;
+    kinds?: Array<'fact' | 'playbook' | 'anti_pattern' | 'heuristic'>;
+    limit?: number;
+  }): Promise<{
+    facts: string[];
+    artifacts: Array<{
+      id: string;
+      kind: 'playbook' | 'anti_pattern' | 'heuristic';
+      title: string;
+      body: string;
+      tags: string[];
+      updated_at: number;
+    }>;
+  }>;
+  memoryCounts(): { playbook: number; anti_pattern: number; heuristic: number };
+  onMarkTaskComplete(sessionId: string, summary: string): void;
 }
 
 interface ToolCtx {
@@ -138,6 +161,8 @@ interface ToolCtx {
   messageId: string;
   getRegistry: () => ProcessRegistry;
   getConfigDir: () => string;
+  recall: RealSdkClientDeps['recall'];
+  onMarkTaskComplete: RealSdkClientDeps['onMarkTaskComplete'];
 }
 
 /**
@@ -217,6 +242,8 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
     buildScreenshotTool(),
     ...buildInputTools(),
     buildKnowledgeTool(),
+    buildRecallTool(),
+    buildMarkTaskCompleteTool(),
   ];
   const sdkTools = allTools.map((t) => {
     const shape = (t.schema as unknown as { shape?: Record<string, unknown> }).shape;
@@ -310,6 +337,19 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
           };
         }
 
+        if (t.name === 'recall') {
+          const out = await ctx.recall(args as { query: string; kinds?: Array<'fact' | 'playbook' | 'anti_pattern' | 'heuristic'>; limit?: number });
+          return {
+            content: [{ type: 'text' as const, text: JSON.stringify(out) }],
+          };
+        }
+
+        if (t.name === 'mark_task_complete') {
+          const { summary } = args as { summary: string };
+          ctx.onMarkTaskComplete(ctx.sessionId, summary);
+          return { content: [{ type: 'text' as const, text: 'noted' }] };
+        }
+
         const result = await t.run(args);
         return {
           content: [
@@ -330,6 +370,9 @@ function createFakeSdkClient(deps?: {
   currentMessageId?: () => string;
   getRegistry?: () => ProcessRegistry;
   getConfigDir?: () => string;
+  recall?: RealSdkClientDeps['recall'];
+  memoryCounts?: RealSdkClientDeps['memoryCounts'];
+  onMarkTaskComplete?: RealSdkClientDeps['onMarkTaskComplete'];
 }): SdkClient {
   let counter = 0;
   return {
@@ -470,6 +513,8 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
     buildScreenshotTool(),
     ...buildInputTools(),
     buildKnowledgeTool(),
+    buildRecallTool(),
+    buildMarkTaskCompleteTool(),
   ];
   const allowedTools = [
     ...allToolsForAllow.map((t) => `mcp__otto-tools__${t.name}`),
@@ -509,12 +554,19 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
           messageId: deps.currentMessageId(),
           getRegistry: deps.getRegistry,
           getConfigDir: deps.getConfigDir,
+          recall: deps.recall,
+          onMarkTaskComplete: deps.onMarkTaskComplete,
         });
         const spawnOverrides = getSdkSpawnOverrides();
         const knowledge = await readKnowledge(deps.getConfigDir()).catch(() => '');
-        const systemPrompt = knowledge.trim().length > 0
-          ? `${SYSTEM_PROMPT}\n\n---\nKnown about this machine and user (from knowledge_append in prior sessions):\n${knowledge.trim()}`
-          : SYSTEM_PROMPT;
+        const memCounts = deps.memoryCounts();
+        const memLine = `Memory currently holds ${memCounts.playbook} playbooks, ${memCounts.anti_pattern} anti-patterns, ${memCounts.heuristic} heuristics.`;
+        const parts = [SYSTEM_PROMPT, '', '---', memLine];
+        if (knowledge.trim().length > 0) {
+          parts.push('Known about this machine and user (from knowledge_append in prior sessions):');
+          parts.push(knowledge.trim());
+        }
+        const systemPrompt = parts.join('\n');
         const iter = sdk.query({
           prompt: text,
           options: {
