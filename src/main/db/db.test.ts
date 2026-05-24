@@ -62,16 +62,15 @@ describe('openDatabase', () => {
 
 describe('migration 004 (fact + fact_session + fact_fts)', () => {
   it('runs migration 004 creating fact, fact_session, fact_fts', () => {
-    const dir = mkdtempSync(path.join(tmpdir(), 'otto-db-'));
+    const dir = freshDir();
     const db = openDatabase(path.join(dir, 'otto.db'));
     const version = (db.prepare('SELECT MAX(version) AS v FROM schema_version').get() as { v: number }).v;
     expect(version).toBeGreaterThanOrEqual(4);
-    const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' OR type='virtual table'").all() as { name: string }[]).map((r) => r.name);
+    const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as { name: string }[]).map((r) => r.name);
     expect(tables).toContain('fact');
     expect(tables).toContain('fact_session');
     expect(tables).toContain('fact_fts');
     db.close();
-    rmSync(dir, { recursive: true, force: true });
   });
 });
 

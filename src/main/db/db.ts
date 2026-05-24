@@ -94,7 +94,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS fact_body_norm_idx ON fact(body_norm);
 CREATE INDEX IF NOT EXISTS fact_pinned_idx ON fact(pinned);
 
 CREATE TABLE IF NOT EXISTS fact_session (
-  fact_id    TEXT NOT NULL,
+  fact_id    TEXT NOT NULL REFERENCES fact(id) ON DELETE CASCADE,
   session_id TEXT NOT NULL,
   PRIMARY KEY (fact_id, session_id)
 );
