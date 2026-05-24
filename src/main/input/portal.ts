@@ -290,6 +290,7 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
     const cur = getCursor();
     const dx = Math.round(x - cur.x);
     const dy = Math.round(y - cur.y);
+    logger.info(`portal move: target=(${x},${y}) cur=(${cur.x},${cur.y}) delta=(${dx},${dy})`);
     await callMember(rd, 'NotifyPointerMotion', sessionPath!, {}, dx, dy);
   }
 
