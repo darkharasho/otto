@@ -35,9 +35,52 @@ const MIGRATION_002_SDK_SESSION_ID = `
 ALTER TABLE sessions ADD COLUMN sdk_session_id TEXT;
 `;
 
+const MIGRATION_003_ARTIFACTS = `
+CREATE TABLE artifact (
+  id                 TEXT PRIMARY KEY,
+  kind               TEXT NOT NULL,
+  title              TEXT NOT NULL,
+  body               TEXT NOT NULL,
+  tags               TEXT NOT NULL,
+  created_at         INTEGER NOT NULL,
+  updated_at         INTEGER NOT NULL,
+  source_session_id  TEXT,
+  use_count          INTEGER NOT NULL DEFAULT 0,
+  last_used_at       INTEGER,
+  archived           INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX artifact_kind_idx ON artifact(kind);
+CREATE INDEX artifact_archived_idx ON artifact(archived);
+
+CREATE VIRTUAL TABLE artifact_fts USING fts5(
+  title, body, tags,
+  content='artifact',
+  content_rowid='rowid'
+);
+
+CREATE TRIGGER artifact_ai AFTER INSERT ON artifact BEGIN
+  INSERT INTO artifact_fts(rowid, title, body, tags)
+  VALUES (new.rowid, new.title, new.body, new.tags);
+END;
+
+CREATE TRIGGER artifact_ad AFTER DELETE ON artifact BEGIN
+  INSERT INTO artifact_fts(artifact_fts, rowid, title, body, tags)
+  VALUES ('delete', old.rowid, old.title, old.body, old.tags);
+END;
+
+CREATE TRIGGER artifact_au AFTER UPDATE ON artifact BEGIN
+  INSERT INTO artifact_fts(artifact_fts, rowid, title, body, tags)
+  VALUES ('delete', old.rowid, old.title, old.body, old.tags);
+  INSERT INTO artifact_fts(rowid, title, body, tags)
+  VALUES (new.rowid, new.title, new.body, new.tags);
+END;
+`;
+
 const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 1, sql: MIGRATION_001_INIT },
   { version: 2, sql: MIGRATION_002_SDK_SESSION_ID },
+  { version: 3, sql: MIGRATION_003_ARTIFACTS },
 ];
 
 export function openDatabase(dbPath: string): DB {
