@@ -15,6 +15,11 @@ import { getPlatformAdapter } from '../platform';
 import { capture } from '../screenshot/executor';
 import { withSelfHidden } from '../screenshot/self-mask';
 import { downscaleIfNeeded } from '../screenshot/processor';
+
+// Anthropic's many-image request cap is 2000px on either edge. Stay under it
+// with margin so a HiDPI capture downscaled exactly to the limit doesn't trip
+// the rounding boundary on the server side.
+const MAX_SCREENSHOT_EDGE = 1920;
 import { save } from '../screenshot/store';
 import { tmpdir } from 'node:os';
 import { existsSync } from 'node:fs';
@@ -317,7 +322,7 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
         if (t.name === 'screenshot') {
           const sArgs = args as { region?: { x: number; y: number; w: number; h: number }; window?: string };
           const captured = await withSelfHidden(() => capture(sArgs, getPlatformAdapter()));
-          const downscaled = await downscaleIfNeeded(captured.bytes, 4096);
+          const downscaled = await downscaleIfNeeded(captured.bytes, MAX_SCREENSHOT_EDGE);
           const savedPath = await save(captured.bytes, ctx.sessionId, ctx.getConfigDir());
           const meta = {
             path: savedPath,
@@ -464,7 +469,7 @@ function createFakeSdkClient(deps?: {
           if (outcome === 'allow') {
             try {
               const captured = await withSelfHidden(() => capture({}, getPlatformAdapter()));
-              const downscaled = await downscaleIfNeeded(captured.bytes, 4096);
+              const downscaled = await downscaleIfNeeded(captured.bytes, MAX_SCREENSHOT_EDGE);
               const savedPath = await save(
                 captured.bytes,
                 sid,
