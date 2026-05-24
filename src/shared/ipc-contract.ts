@@ -88,7 +88,9 @@ export type IpcRequest =
     }
   | { channel: 'memory.delete'; args: { id: string }; result: void }
   | { channel: 'memory.readFacts'; args: void; result: string }
-  | { channel: 'memory.writeFacts'; args: { text: string }; result: void };
+  | { channel: 'memory.writeFacts'; args: { text: string }; result: void }
+  | { channel: 'remoteDesktop.status'; args: void; result: { granted: boolean } }
+  | { channel: 'remoteDesktop.revoke'; args: void; result: void };
 
 export interface AppInfo {
   isDev: boolean;

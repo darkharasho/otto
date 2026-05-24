@@ -269,6 +269,25 @@ export function registerIpcHandlers(deps: {
     await fsp.writeFile(path.join(deps.configDir, 'knowledge.md'), args.text, 'utf8');
   });
 
+  ipcMain.handle('remoteDesktop.status', async (): Promise<{ granted: boolean }> => {
+    const tokenPath = path.join(deps.configDir, 'remote-desktop-token');
+    try {
+      await fsp.access(tokenPath);
+      return { granted: true };
+    } catch {
+      return { granted: false };
+    }
+  });
+
+  ipcMain.handle('remoteDesktop.revoke', async (): Promise<void> => {
+    const tokenPath = path.join(deps.configDir, 'remote-desktop-token');
+    try {
+      await fsp.unlink(tokenPath);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+    }
+  });
+
   settings.onChange((snap) => {
     broker.setMode(snap.autonomy.mode);
     emitAutonomyEvent({ type: 'mode-changed', mode: snap.autonomy.mode });
