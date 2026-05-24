@@ -39,6 +39,19 @@ const BTN_CODE: Record<MouseButton, number> = {
 const SCROLL_NOTCH = 10;
 const DOUBLE_CLICK_DELAY_MS = 50;
 const KEY_DELAY_MS = 12;
+// KWin's pointer acceleration knee sits around ~200px per motion event.
+// Stay comfortably below it so big jumps remain in the linear region.
+const MAX_DELTA_PX = 150;
+// How long lastSentCursor is trusted after we set it. Beyond this window,
+// rawMove resyncs from Electron — a focus-stealing event (e.g. a portal
+// approval dialog) may have moved the cursor without our knowledge.
+const TRACKED_STALE_MS = 2000;
+
+function clampStep(remaining: number): number {
+  if (remaining > MAX_DELTA_PX) return MAX_DELTA_PX;
+  if (remaining < -MAX_DELTA_PX) return -MAX_DELTA_PX;
+  return remaining;
+}
 
 // XKB keysyms. ASCII printables use their char code directly. Named keys
 // follow the standard X11 names (XK_*). See <X11/keysymdef.h>.
@@ -137,7 +150,10 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
   // screen.getCursorScreenPoint() returns stale values on Wayland once the
   // cursor leaves any Electron window. Without this, every move after the
   // first computes a delta from the wrong "current" and overshoots.
+  // The tracked position is only trusted within TRACKED_STALE_MS of being
+  // set — beyond that, focus-stealing events may have invalidated it.
   let lastSentCursor: { x: number; y: number } | null = null;
+  let lastMoveTime = 0;
 
   async function getBus(): Promise<MessageBus> {
     if (busRef) return busRef;
@@ -332,31 +348,33 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
 
   async function rawMove(x: number, y: number): Promise<void> {
     const rd = await getRemoteDesktop();
-    // Absolute motion via NotifyPointerMotionAbsolute bypasses KWin's
-    // pointer acceleration, which was clamping large relative deltas to
-    // the top-left corner. KDE accepts stream=0 as "whole virtual screen"
-    // when no ScreenCast session is active. If that fails on this host
-    // we'll need to start a ScreenCast session to get a real stream id —
-    // see logs for the rejection.
-    try {
-      await callMember(rd, 'NotifyPointerMotionAbsolute', sessionPath!, {}, 0, x, y);
-      logger.info(`portal move (abs): target=(${x},${y})`);
-      lastSentCursor = { x, y };
-      return;
-    } catch (err) {
-      logger.warn(
-        `portal NotifyPointerMotionAbsolute failed, falling back to relative: ${err instanceof Error ? err.message : String(err)}`
-      );
+    // Chunked relative motion. KWin applies pointer acceleration nonlinearly
+    // to large per-event deltas — anything past roughly 200px gets scaled
+    // into off-screen territory and clamps to (0,0). Sub-knee chunks stay
+    // in the linear region and land where we ask. Absolute motion via
+    // NotifyPointerMotionAbsolute(stream=0,…) was tried briefly but it
+    // misbehaves on multi-monitor (KWin treats the coords as primary-display
+    // local without an active ScreenCast stream).
+    //
+    // Resync the starting position from Electron if our tracked position is
+    // stale. Focus-stealing events (KDE approval dialogs, Otto's own window
+    // appearing) move the cursor outside our control, leaving
+    // lastSentCursor lying about where the cursor really is.
+    const now = Date.now();
+    const fresh = lastSentCursor !== null && now - lastMoveTime < TRACKED_STALE_MS;
+    const start = fresh ? lastSentCursor! : getCursor();
+    let remainingDx = Math.round(x - start.x);
+    let remainingDy = Math.round(y - start.y);
+    logger.info(`portal move: target=(${x},${y}) start=(${start.x},${start.y}) delta=(${remainingDx},${remainingDy}) source=${fresh ? 'tracked' : 'electron'}`);
+    while (remainingDx !== 0 || remainingDy !== 0) {
+      const stepDx = clampStep(remainingDx);
+      const stepDy = clampStep(remainingDy);
+      await callMember(rd, 'NotifyPointerMotion', sessionPath!, {}, stepDx, stepDy);
+      remainingDx -= stepDx;
+      remainingDy -= stepDy;
     }
-    // Relative-motion fallback. Suffers from pointer-accel overshoot for
-    // long jumps; the previous logic is retained so a partial session can
-    // still try.
-    const cur = lastSentCursor ?? getCursor();
-    const dx = Math.round(x - cur.x);
-    const dy = Math.round(y - cur.y);
-    logger.info(`portal move (rel): target=(${x},${y}) cur=(${cur.x},${cur.y}) delta=(${dx},${dy}) source=${lastSentCursor ? 'tracked' : 'electron'}`);
-    await callMember(rd, 'NotifyPointerMotion', sessionPath!, {}, dx, dy);
     lastSentCursor = { x, y };
+    lastMoveTime = Date.now();
   }
 
   async function rawButton(button: MouseButton, state: 0 | 1): Promise<void> {
