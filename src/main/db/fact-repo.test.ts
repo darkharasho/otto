@@ -122,7 +122,7 @@ describe('FactRepo.rerank', () => {
     const pinned = repo.listPinned();
     expect(pinned).toHaveLength(40);
     const pinnedIds = new Set(pinned.map((p) => p.id));
-    expect(pinnedIds.has(ids[40])).toBe(false); // oldest is NOT in pinned
+    expect(pinnedIds.has(ids[40]!)).toBe(false); // oldest is NOT in pinned
     expect(result.promoted).toHaveLength(40);    // all 40 went from learned to pinned
     expect(result.demoted).toHaveLength(0);      // nothing was pinned before, nothing demoted
 
