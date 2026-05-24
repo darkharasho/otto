@@ -14,12 +14,15 @@ import { exec } from '../shell/executor';
 import { getPlatformAdapter } from '../platform';
 import { capture } from '../screenshot/executor';
 import { withSelfHidden } from '../screenshot/self-mask';
-import { downscaleIfNeeded } from '../screenshot/processor';
+import { tileIfNeeded } from '../screenshot/processor';
 
 // Anthropic's many-image request cap is 2000px on either edge. Stay under it
 // with margin so a HiDPI capture downscaled exactly to the limit doesn't trip
 // the rounding boundary on the server side.
 const MAX_SCREENSHOT_EDGE = 1920;
+// Hard ceiling on tiles per capture: prevents an absurd capture (e.g., 8000px+
+// across, 4+ stacked monitors) from blowing up the per-turn image budget.
+const MAX_SCREENSHOT_TILES = 8;
 import { save } from '../screenshot/store';
 import { tmpdir } from 'node:os';
 import { existsSync } from 'node:fs';
@@ -90,7 +93,7 @@ const SYSTEM_PROMPT = [
   '- shell_read(handle, since?): read buffered output for a spawned process.',
   '- shell_wait(handle, timeout_ms?): block until a spawned process exits.',
   '- shell_kill(handle): send SIGTERM to a spawned process.',
-  '- screenshot(region?, window?): capture the virtual desktop as a PNG. Default is the full desktop (all monitors stitched); `region` crops by virtual-desktop coords; `window` (name pattern like "Firefox") crops to that window\'s bounds via kdotool — strongly preferred for iteration once a target window is identified, since it\'s much smaller and faster than a full capture. Result includes a `monitors` array with each display\'s {x, y, w, h}. Image is attached so you can see it.',
+  '- screenshot(region?, window?): capture the virtual desktop as a PNG. Default is the full desktop (all monitors stitched); `region` crops by virtual-desktop coords; `window` (name pattern like "Firefox") crops to that window\'s bounds via kdotool — strongly preferred for iteration once a target window is identified, since it\'s much smaller and faster than a full capture. Result includes a `monitors` array with each display\'s {x, y, w, h} and a `tiles` array describing how the image was split.',
   '- get_cursor_position(): return the cursor position {x, y} in virtual-desktop pixels.',
   '- move(x, y): move the cursor to the given monitor-relative position.',
   '- scroll(dx, dy, x?, y?): scroll by (dx, dy); optional (x, y) moves cursor first.',
@@ -105,6 +108,8 @@ const SYSTEM_PROMPT = [
   '- recall(query, kinds?, limit?): search Otto\'s durable memory from prior sessions on this machine. Returns matching facts and structured artifacts (playbooks, anti-patterns, heuristics). Call this at the START of any task that resembles past work before deciding on an approach.',
   '- mark_task_complete(summary): call ONCE when you believe the user\'s request is fully addressed. Triggers a silent background reflection pass; does not affect the chat. Do not call between sub-steps.',
   '- echo(msg), fake-mutate(target), fake-wipe(target): test stubs; ignore unless explicitly asked.',
+  '',
+  'When a screenshot is too large for a single image, it is split into TILES. The meta\'s `tiles` array lists each tile\'s virtual-desktop rect: `[{ index, x, y, w, h }, ...]`, in the same order the image attachments appear. To convert a pixel you see at `(ix, iy)` inside tile N to virtual-desktop coords for clicking: `(tiles[N].x + ix, tiles[N].y + iy)`. The image pixel pitch is always 1:1 with virtual-desktop pixels (no DPR scaling) so no further math is needed. When `tiles.length === 1`, the offset is `(0, 0)` for full-desktop captures and the region/window origin for crops — translation still works the same way.',
   '',
   'GUI workflow — when the user asks you to type, click, or otherwise interact with their screen:',
   '1. Gather context with BOTH shell and vision before acting. Pick the cheapest tool that answers the question:',
@@ -322,21 +327,28 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
         if (t.name === 'screenshot') {
           const sArgs = args as { region?: { x: number; y: number; w: number; h: number }; window?: string };
           const captured = await withSelfHidden(() => capture(sArgs, getPlatformAdapter()));
-          const downscaled = await downscaleIfNeeded(captured.bytes, MAX_SCREENSHOT_EDGE);
+          const tiled = await tileIfNeeded(captured.bytes, MAX_SCREENSHOT_EDGE, MAX_SCREENSHOT_TILES);
           const savedPath = await save(captured.bytes, ctx.sessionId, ctx.getConfigDir());
           const meta = {
             path: savedPath,
             width: captured.width,
             height: captured.height,
             monitors: captured.monitors,
+            tiles: tiled.tiles.map((t, index) => ({
+              index,
+              x: captured.origin.x + t.x,
+              y: captured.origin.y + t.y,
+              w: t.w,
+              h: t.h,
+            })),
           };
           return {
             content: [
-              {
+              ...tiled.tiles.map((t) => ({
                 type: 'image' as const,
-                data: downscaled.bytes.toString('base64'),
+                data: t.bytes.toString('base64'),
                 mimeType: 'image/png',
-              },
+              })),
               { type: 'text' as const, text: JSON.stringify(meta) },
             ],
           };
@@ -469,7 +481,7 @@ function createFakeSdkClient(deps?: {
           if (outcome === 'allow') {
             try {
               const captured = await withSelfHidden(() => capture({}, getPlatformAdapter()));
-              const downscaled = await downscaleIfNeeded(captured.bytes, MAX_SCREENSHOT_EDGE);
+              const tiled = await tileIfNeeded(captured.bytes, MAX_SCREENSHOT_EDGE, MAX_SCREENSHOT_TILES);
               const savedPath = await save(
                 captured.bytes,
                 sid,
@@ -480,8 +492,14 @@ function createFakeSdkClient(deps?: {
                 width: captured.width,
                 height: captured.height,
                 monitors: captured.monitors,
+                tiles: tiled.tiles.map((t, index) => ({
+                  index,
+                  x: captured.origin.x + t.x,
+                  y: captured.origin.y + t.y,
+                  w: t.w,
+                  h: t.h,
+                })),
               };
-              void downscaled;
               yield { type: 'tool-call-start', callId: 'c-ss', name: 'screenshot', input: {} };
               yield { type: 'tool-call-result', callId: 'c-ss', result: meta, isError: false };
             } catch (err) {
