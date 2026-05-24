@@ -6,6 +6,7 @@ import { OttoMark } from './components/OttoMark';
 import { Section, Toggle, RadioGroup, NumberField } from './components/SettingsControls';
 import { UpdaterSection } from './components/UpdaterSection';
 import { ShortcutSection } from './components/ShortcutSection';
+import { MemoryPanel } from './components/MemoryPanel';
 import type { SettingsView } from '@shared/ipc-contract';
 import type { AutonomyMode } from '@shared/messages';
 
@@ -203,6 +204,10 @@ export function SettingsApp() {
           </Section>
 
           <UpdaterSection appVersion={s.version} />
+
+          <Section title="Memory" description="Facts and playbooks Otto has learned from prior sessions.">
+            <MemoryPanel />
+          </Section>
 
           <Section title="About">
             <div className="flex items-center justify-between text-xs text-muted py-1">
