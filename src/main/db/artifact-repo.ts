@@ -1,5 +1,7 @@
 import type { Database } from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
+import type { Embedder } from '../embeddings/embedder';
+import { getEmbedder } from '../embeddings/embedder';
 import { sanitizeFtsQuery } from './fts-utils';
 
 export type ArtifactKind = 'playbook' | 'anti_pattern' | 'heuristic';
@@ -73,10 +75,11 @@ export { sanitizeFtsQuery } from './fts-utils';
 export class ArtifactRepo {
   constructor(
     private readonly db: Database,
-    private readonly now: () => number = Date.now
+    private readonly now: () => number = Date.now,
+    private readonly embedder: Embedder = getEmbedder()
   ) {}
 
-  upsert(input: ArtifactInput): string {
+  async upsert(input: ArtifactInput): Promise<string> {
     const existing = this.db
       .prepare(
         `SELECT id FROM artifact
@@ -85,42 +88,40 @@ export class ArtifactRepo {
       )
       .get(input.kind, input.title) as { id: string } | undefined;
 
+    const embeddingInput = `${input.title}\n${input.body}`;
+    const vec = await this.embedder.embed(embeddingInput);
+
     const t = this.now();
     if (existing) {
-      this.db
-        .prepare(
-          `UPDATE artifact
-              SET title = ?, body = ?, tags = ?, updated_at = ?, source_session_id = ?
-            WHERE id = ?`
-        )
-        .run(
-          input.title,
-          input.body,
-          JSON.stringify(input.tags),
-          t,
-          input.sourceSessionId ?? null,
-          existing.id
-        );
+      const txn = this.db.transaction(() => {
+        this.db
+          .prepare(
+            `UPDATE artifact
+                SET title = ?, body = ?, tags = ?, updated_at = ?, source_session_id = ?
+              WHERE id = ?`
+          )
+          .run(input.title, input.body, JSON.stringify(input.tags), t, input.sourceSessionId ?? null, existing.id);
+        this.db.prepare(`DELETE FROM memory_vec WHERE ref_id = ?`).run(existing.id);
+        this.db.prepare(`INSERT INTO memory_vec(embedding, kind, ref_id) VALUES (?, ?, ?)`)
+          .run(Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength), input.kind, existing.id);
+      });
+      txn();
       return existing.id;
     }
 
     const id = randomUUID();
-    this.db
-      .prepare(
-        `INSERT INTO artifact
-          (id, kind, title, body, tags, created_at, updated_at, source_session_id, use_count, archived)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`
-      )
-      .run(
-        id,
-        input.kind,
-        input.title,
-        input.body,
-        JSON.stringify(input.tags),
-        t,
-        t,
-        input.sourceSessionId ?? null
-      );
+    const txn = this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO artifact
+            (id, kind, title, body, tags, created_at, updated_at, source_session_id, use_count, archived)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`
+        )
+        .run(id, input.kind, input.title, input.body, JSON.stringify(input.tags), t, t, input.sourceSessionId ?? null);
+      this.db.prepare(`INSERT INTO memory_vec(embedding, kind, ref_id) VALUES (?, ?, ?)`)
+        .run(Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength), input.kind, id);
+    });
+    txn();
     return id;
   }
 
@@ -203,7 +204,11 @@ export class ArtifactRepo {
   }
 
   delete(id: string): void {
-    this.db.prepare(`DELETE FROM artifact WHERE id = ?`).run(id);
+    const txn = this.db.transaction(() => {
+      this.db.prepare(`DELETE FROM memory_vec WHERE ref_id=?`).run(id);
+      this.db.prepare(`DELETE FROM artifact WHERE id = ?`).run(id);
+    });
+    txn();
   }
 
   counts(): { playbook: number; anti_pattern: number; heuristic: number } {
