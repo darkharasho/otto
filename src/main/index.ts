@@ -76,6 +76,8 @@ async function startElectron(): Promise<void> {
   const { FactRepo } = await import('./db/fact-repo');
   const { importLegacyKnowledge } = await import('./knowledge/import-legacy');
   const { regenerateKnowledgeFile, renderPinnedAsMarkdown } = await import('./knowledge/store');
+  const { getEmbedder } = await import('./embeddings/embedder');
+  const { backfillEmbeddings } = await import('./embeddings/backfill');
 
   const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
 
@@ -178,14 +180,16 @@ async function startElectron(): Promise<void> {
     (command, cwd) => platform.shell.spawnShell(command, cwd)
   );
 
-  const artifactRepo = new ArtifactRepo(db);
+  const embedder = getEmbedder();
+  const artifactRepo = new ArtifactRepo(db, undefined, embedder);
 
-  const factRepo = new FactRepo(db);
+  const factRepo = new FactRepo(db, undefined, embedder);
   try {
     await importLegacyKnowledge(ottoConfigDir, factRepo);
   } catch (err) {
     logger.error('importLegacyKnowledge failed', err);
   }
+  await backfillEmbeddings({ db, embedder });
   factRepo.rerank();
   void regenerateKnowledgeFile(ottoConfigDir, factRepo);
 
