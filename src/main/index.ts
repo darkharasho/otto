@@ -69,6 +69,9 @@ async function startElectron(): Promise<void> {
   const { ProcessRegistry } = await import('./shell/process-registry');
   const { applyLinuxAutostart } = await import('./autostart-linux');
   const { OverlayManager } = await import('./overlay-window');
+  const { ArtifactRepo } = await import('./db/artifact-repo');
+  const { ReflectionPipeline } = await import('./reflection/pipeline');
+  const { CompletionDetector } = await import('./reflection/completion-detector');
 
   const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
 
@@ -133,6 +136,9 @@ async function startElectron(): Promise<void> {
   });
 
   let currentMessageId: string | null = null;
+  // Forward-declared so closures (emitWithNotify, reflection notifyLearned,
+  // window.onVisibilityChange) can capture it before TrayManager is built.
+  let tray: InstanceType<typeof TrayManager>;
 
   // Intercept every session event so the Notifier can decide whether to
   // surface an OS notification (turn-complete / approval).
@@ -167,15 +173,117 @@ async function startElectron(): Promise<void> {
     (command, cwd) => platform.shell.spawnShell(command, cwd)
   );
 
+  const artifactRepo = new ArtifactRepo(db);
+
+  async function runReflectorSdk(prompt: string): Promise<string> {
+    const sdkMod = await import('@anthropic-ai/claude-agent-sdk');
+    const ac = new AbortController();
+    const iter = sdkMod.query({
+      prompt,
+      options: {
+        systemPrompt:
+          'You are Otto\'s reflection step. Output ONLY the JSON object requested by the user prompt — no prose, no markdown fences, no commentary.',
+        tools: [],
+        allowedTools: [],
+        mcpServers: {},
+        abortController: ac,
+      },
+    });
+    const chunks: string[] = [];
+    for await (const msg of iter) {
+      const m = msg as { type?: string; message?: { content?: Array<{ type?: string; text?: string }> } };
+      if (m.type === 'assistant') {
+        for (const block of m.message?.content ?? []) {
+          if (block.type === 'text' && typeof block.text === 'string') chunks.push(block.text);
+        }
+      }
+    }
+    return chunks.join('');
+  }
+
+  const { reflect } = await import('./reflection/reflector');
+
+  const pipeline = new ReflectionPipeline({
+    repo,
+    artifactRepo,
+    configDir: ottoConfigDir,
+    runReflector: (prompt) =>
+      reflect({
+        sdk: { run: async (p, _opts) => runReflectorSdk(p) },
+        prompt,
+        timeoutMs: 60_000,
+      }),
+    notifyLearned: (n) => tray.notifyLearned(n),
+  });
+
+  const detector = new CompletionDetector({
+    idleMs: 90_000,
+    onTrigger: ({ sessionId, sinceSeq }) => {
+      void (async () => {
+        try {
+          await pipeline.run({ sessionId, sinceSeq });
+          const msgs = repo.loadMessages(sessionId);
+          const lastSeq = msgs.length > 0 ? msgs[msgs.length - 1]!.seq : sinceSeq;
+          detector.notePersistedSeq(sessionId, lastSeq);
+        } catch (err) {
+          logger.error('reflection pipeline threw', err);
+        }
+      })();
+    },
+  });
+
   const sdk = createRealSdkClient({
     broker,
     currentMessageId: () => currentMessageId ?? '',
     getRegistry: () => registry,
     getConfigDir: () => ottoConfigDir,
-    // Stubs until Task 14 wires the real reflection pipeline.
-    recall: async () => ({ facts: [], artifacts: [] }),
-    memoryCounts: () => ({ playbook: 0, anti_pattern: 0, heuristic: 0 }),
-    onMarkTaskComplete: () => {},
+    recall: async (args) => {
+      const limit = Math.min(args.limit ?? 5, 20);
+      const kinds = args.kinds;
+      const wantsFacts = !kinds || kinds.includes('fact');
+      const artifactKinds = kinds?.filter((k) => k !== 'fact') as Array<
+        'playbook' | 'anti_pattern' | 'heuristic'
+      > | undefined;
+
+      const artifactRows = artifactRepo.search({
+        query: args.query,
+        kinds: artifactKinds,
+        limit,
+      });
+      for (const row of artifactRows) artifactRepo.bumpUse(row.id);
+
+      const { readKnowledge } = await import('./knowledge/store');
+      let facts: string[] = [];
+      if (wantsFacts) {
+        const text = await readKnowledge(ottoConfigDir).catch(() => '');
+        const tokens = args.query
+          .toLowerCase()
+          .split(/\s+/)
+          .filter((t) => t.length > 0);
+        facts = text
+          .split('\n')
+          .filter((line) => {
+            const l = line.toLowerCase();
+            return tokens.some((tok) => l.includes(tok));
+          })
+          .slice(0, limit);
+      }
+      return {
+        facts,
+        artifacts: artifactRows.map((r) => ({
+          id: r.id,
+          kind: r.kind,
+          title: r.title,
+          body: r.body,
+          tags: r.tags,
+          updated_at: r.updatedAt,
+        })),
+      };
+    },
+    memoryCounts: () => artifactRepo.counts(),
+    onMarkTaskComplete: (sessionId, _summary) => {
+      detector.onMarkComplete(sessionId);
+    },
   });
   const sessions = new SessionManager(
     repo,
@@ -186,6 +294,9 @@ async function startElectron(): Promise<void> {
       currentMessageId = id;
     }
   );
+
+  sessions.onDoneListener((sessionId) => detector.onDone(sessionId));
+  sessions.onUserActiveListener((sessionId) => detector.onUserActive(sessionId));
 
   const preloadPath = path.join(app.getAppPath(), 'out', 'preload', 'index.js');
   window.create(preloadPath, rendererEntry());
@@ -244,7 +355,7 @@ async function startElectron(): Promise<void> {
 
   const settingsWindow = new SettingsWindowManager(preloadPath, rendererEntry());
 
-  const tray = new TrayManager({
+  tray = new TrayManager({
     onShow: () => {
       const mode = shouldResume(repo, sessions) ? 'panel' : 'bar';
       window.show(mode);
