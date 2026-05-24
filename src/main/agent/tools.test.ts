@@ -170,3 +170,46 @@ describe('buildInputTools', () => {
     }
   });
 });
+
+import { buildRecallTool, buildMarkTaskCompleteTool } from './tools';
+
+describe('buildRecallTool', () => {
+  it('returns a read-class tool with name "recall"', () => {
+    const t = buildRecallTool();
+    expect(t.name).toBe('recall');
+    expect(t.actionClass).toBe('read');
+  });
+
+  it('schema accepts query alone and with kinds + limit', () => {
+    const t = buildRecallTool();
+    expect(() => t.schema.parse({ query: 'audio' })).not.toThrow();
+    expect(() =>
+      t.schema.parse({ query: 'audio', kinds: ['fact', 'playbook'], limit: 10 })
+    ).not.toThrow();
+  });
+
+  it('schema rejects bad kind', () => {
+    const t = buildRecallTool();
+    expect(() => t.schema.parse({ query: 'x', kinds: ['weird'] })).toThrow();
+  });
+
+  it('schema rejects limit > 20', () => {
+    const t = buildRecallTool();
+    expect(() => t.schema.parse({ query: 'x', limit: 50 })).toThrow();
+  });
+});
+
+describe('buildMarkTaskCompleteTool', () => {
+  it('returns a read-class tool with name "mark_task_complete"', () => {
+    const t = buildMarkTaskCompleteTool();
+    expect(t.name).toBe('mark_task_complete');
+    expect(t.actionClass).toBe('read');
+  });
+
+  it('schema requires a non-empty summary', () => {
+    const t = buildMarkTaskCompleteTool();
+    expect(() => t.schema.parse({ summary: 'fixed audio' })).not.toThrow();
+    expect(() => t.schema.parse({})).toThrow();
+    expect(() => t.schema.parse({ summary: '' })).toThrow();
+  });
+});

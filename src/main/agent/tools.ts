@@ -270,3 +270,33 @@ export function buildInputTools(): OttoTool[] {
     },
   ];
 }
+
+export function buildRecallTool(): OttoTool {
+  return {
+    name: 'recall',
+    description:
+      "Search Otto's durable memory from prior sessions on this machine. Returns matching facts (lines from knowledge.md) and structured artifacts (playbooks, anti-patterns, heuristics). Call this at the START of any task that resembles past work — fixing a recurring problem, automating a familiar app, dealing with a known quirk of this machine — before deciding on an approach. Returns empty arrays when nothing matches; that is fine, proceed normally.",
+    actionClass: 'read',
+    schema: z.object({
+      query: z.string().min(1),
+      kinds: z.array(z.enum(['fact', 'playbook', 'anti_pattern', 'heuristic'])).optional(),
+      limit: z.number().int().positive().max(20).optional(),
+    }),
+    async run(_input) {
+      throw new Error('recall must be invoked via the SDK handler');
+    },
+  };
+}
+
+export function buildMarkTaskCompleteTool(): OttoTool {
+  return {
+    name: 'mark_task_complete',
+    description:
+      "Call this when you believe the user's request is fully addressed and you are about to stop. Provide a one-sentence `summary` of what was accomplished. This triggers Otto's background reflection pass; it does not affect the user-visible chat. Do NOT call between sub-steps of an ongoing task — only at true completion.",
+    actionClass: 'read',
+    schema: z.object({ summary: z.string().min(1).max(500) }),
+    async run(_input) {
+      throw new Error('mark_task_complete must be invoked via the SDK handler');
+    },
+  };
+}
