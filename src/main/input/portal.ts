@@ -116,26 +116,72 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
    * derived from the sender's unique name + handle_token, so we can prepare
    * the listener up-front and avoid the race where Response fires before we
    * subscribe.
+   *
+   * Real production path: register a bus match rule + listen for raw
+   * `message` events. The dynamic Request objects don't introspect reliably,
+   * so a proxy-based listener (getProxyObject(requestPath).getInterface(...))
+   * throws "interface not found in proxy object" on real KDE.
+   *
+   * Test path: stubs expose a per-request `StubInterface` via getProxyObject;
+   * we fall back to that when the bus doesn't support addMatch.
    */
   async function subscribeResponse(
     handleToken: string
   ): Promise<{ pending: Promise<Record<string, unknown>> }> {
     const bus = await getBus();
     const requestPath = predictedRequestPath(handleToken);
-    const proxy = await bus.getProxyObject(PORTAL_SERVICE, requestPath);
-    const iface = proxy.getInterface(REQUEST_IFACE) as unknown as AnyIface;
+    const busAny = bus as unknown as AnyIface;
+
+    // Test/stub bus: doesn't speak addMatch + raw messages. Use the proxy.
+    if (typeof busAny.addMatch !== 'function') {
+      const proxy = await bus.getProxyObject(PORTAL_SERVICE, requestPath);
+      const iface = proxy.getInterface(REQUEST_IFACE) as unknown as AnyIface;
+      const pending = new Promise<Record<string, unknown>>((resolve, reject) => {
+        const handler = (...args: unknown[]): void => {
+          const code = args[0] as number;
+          const results = (args[1] ?? {}) as Record<string, unknown>;
+          offListener(iface, 'Response', handler);
+          if (code !== 0) {
+            reject(new Error(`portal request failed (code ${code})`));
+            return;
+          }
+          resolve(results);
+        };
+        iface.on('Response', handler);
+      });
+      return { pending };
+    }
+
+    // Real bus: install a match rule, then filter raw message events.
+    const rule = `type='signal',interface='${REQUEST_IFACE}',path='${requestPath}',member='Response'`;
+    await (busAny.addMatch as (r: string) => Promise<void>)(rule);
+
     const pending = new Promise<Record<string, unknown>>((resolve, reject) => {
-      const handler = (...args: unknown[]): void => {
-        const code = args[0] as number;
-        const results = (args[1] ?? {}) as Record<string, unknown>;
-        offListener(iface, 'Response', handler);
+      const handler = (msg: unknown): void => {
+        const m = msg as {
+          path?: string;
+          interface?: string;
+          member?: string;
+          body?: unknown[];
+        };
+        if (
+          m.path !== requestPath ||
+          m.interface !== REQUEST_IFACE ||
+          m.member !== 'Response'
+        ) return;
+        const body = m.body ?? [];
+        const code = (body[0] ?? 0) as number;
+        const results = (body[1] ?? {}) as Record<string, unknown>;
+        busAny.off?.('message', handler);
+        const removeMatch = busAny.removeMatch as ((r: string) => Promise<void>) | undefined;
+        if (removeMatch) void removeMatch.call(busAny, rule).catch(() => {});
         if (code !== 0) {
           reject(new Error(`portal request failed (code ${code})`));
           return;
         }
         resolve(results);
       };
-      iface.on('Response', handler);
+      busAny.on('message', handler);
     });
     return { pending };
   }
