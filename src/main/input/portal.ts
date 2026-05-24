@@ -133,7 +133,7 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
     const busAny = bus as unknown as AnyIface;
 
     // Test/stub bus: doesn't speak addMatch + raw messages. Use the proxy.
-    if (typeof busAny.addMatch !== 'function') {
+    if (typeof busAny._addMatch !== 'function') {
       const proxy = await bus.getProxyObject(PORTAL_SERVICE, requestPath);
       const iface = proxy.getInterface(REQUEST_IFACE) as unknown as AnyIface;
       const pending = new Promise<Record<string, unknown>>((resolve, reject) => {
@@ -154,7 +154,7 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
 
     // Real bus: install a match rule, then filter raw message events.
     const rule = `type='signal',interface='${REQUEST_IFACE}',path='${requestPath}',member='Response'`;
-    await (busAny.addMatch as (r: string) => Promise<void>)(rule);
+    await (busAny._addMatch as (r: string) => Promise<void>)(rule);
 
     const pending = new Promise<Record<string, unknown>>((resolve, reject) => {
       const handler = (msg: unknown): void => {
@@ -173,7 +173,7 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
         const code = (body[0] ?? 0) as number;
         const results = (body[1] ?? {}) as Record<string, unknown>;
         busAny.off?.('message', handler);
-        const removeMatch = busAny.removeMatch as ((r: string) => Promise<void>) | undefined;
+        const removeMatch = busAny._removeMatch as ((r: string) => Promise<void>) | undefined;
         if (removeMatch) void removeMatch.call(busAny, rule).catch(() => {});
         if (code !== 0) {
           reject(new Error(`portal request failed (code ${code})`));
