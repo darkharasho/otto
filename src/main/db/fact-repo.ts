@@ -1,6 +1,7 @@
 import type { Database } from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import { normalizeFactLine } from '../knowledge/dedup';
+import { sanitizeFtsQuery } from './fts-utils';
 
 export const PINNED_BUDGET = 40;
 export const SCORE_HALF_LIFE_MS = 21 * 86_400_000;
@@ -63,15 +64,7 @@ function rowToFact(r: Row): Fact {
   };
 }
 
-export function sanitizeFtsQuery(q: string): string {
-  const cleaned = q.replace(/["()*:^-]/g, ' ').trim();
-  if (!cleaned) return '';
-  return cleaned
-    .split(/\s+/)
-    .filter((t) => t.length > 0)
-    .map((t) => `${t}*`)
-    .join(' ');
-}
+export { sanitizeFtsQuery } from './fts-utils';
 
 export class FactRepo {
   constructor(

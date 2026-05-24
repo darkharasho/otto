@@ -1,5 +1,6 @@
 import type { Database } from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
+import { sanitizeFtsQuery } from './fts-utils';
 
 export type ArtifactKind = 'playbook' | 'anti_pattern' | 'heuristic';
 
@@ -67,16 +68,7 @@ function rowToArtifact(r: Row): Artifact {
   };
 }
 
-/** Strip FTS5 operator characters so untrusted query text cannot break MATCH. */
-export function sanitizeFtsQuery(q: string): string {
-  const cleaned = q.replace(/["()*:^]/g, ' ').trim();
-  if (!cleaned) return '';
-  return cleaned
-    .split(/\s+/)
-    .filter((t) => t.length > 0)
-    .map((t) => `${t}*`)
-    .join(' ');
-}
+export { sanitizeFtsQuery } from './fts-utils';
 
 export class ArtifactRepo {
   constructor(

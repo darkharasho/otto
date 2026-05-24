@@ -65,4 +65,12 @@ describe('FactRepo.search', () => {
     repo.upsert({ body: 'x' });
     expect(repo.search({ query: '()*', limit: 5 })).toEqual([]);
   });
+
+  it('strips hyphens to prevent FTS5 MATCH operator misparse', () => {
+    repo.upsert({ body: 'multi-monitor setup requires xrandr' });
+    // Without hyphen stripping this would throw "no such column: monitor"
+    expect(() => repo.search({ query: 'multi-monitor', limit: 5 })).not.toThrow();
+    const hits = repo.search({ query: 'multi-monitor', limit: 5 });
+    expect(hits).toHaveLength(1);
+  });
 });
