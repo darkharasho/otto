@@ -6,7 +6,7 @@ const invokeMock = vi.fn();
 
 beforeEach(() => {
   invokeMock.mockReset();
-  (globalThis as unknown as { window: Window & { otto?: unknown } }).window.otto = {
+  (globalThis as unknown as { window: { otto: unknown } }).window.otto = {
     invoke: invokeMock,
   };
 });
