@@ -1,4 +1,5 @@
 import { isToggleInvocation, sendToggle } from './cli';
+import { newSystemMessage } from '@shared/messages';
 
 // Handle `otto toggle` BEFORE any Electron initialization. The CLI path
 // connects to the running instance's Unix socket, prints the response, and
@@ -214,7 +215,13 @@ async function startElectron(): Promise<void> {
         prompt,
         timeoutMs: 60_000,
       }),
-    notifyLearned: (n) => tray.notifyLearned(n),
+    appendSystemNote: (sessionId, block) => {
+      const msg = repo.appendMessage({
+        ...newSystemMessage([block]),
+        sessionId,
+      });
+      emitWithNotify({ type: 'system-message', sessionId, message: msg });
+    },
   });
 
   const detector = new CompletionDetector({

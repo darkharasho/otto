@@ -15,23 +15,6 @@ export class TrayManager {
 
   constructor(private readonly actions: TrayActions) {}
 
-  notifyLearned(count: number): void {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { Notification } = require('electron') as typeof import('electron');
-      if (!Notification.isSupported()) return;
-      const n = new Notification({
-        title: `${instanceDisplayName()} learned ${count === 1 ? '1 new thing' : `${count} new things`}`,
-        body: 'Open Memory to review.',
-        silent: true,
-      });
-      n.on('click', () => this.actions.onOpenSettings());
-      n.show();
-    } catch (err) {
-      logger.warn(`tray notifyLearned failed: ${err instanceof Error ? err.message : err}`);
-    }
-  }
-
   setBadged(badged: boolean): void {
     if (this.badged === badged) return;
     this.badged = badged;
