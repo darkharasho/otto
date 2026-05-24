@@ -48,3 +48,86 @@ export async function downscaleIfNeeded(
   const resized = img.resize({ width: targetW, height: targetH });
   return { bytes: resized.toPNG(), width: targetW, height: targetH, downscaled: true };
 }
+
+export interface Tile {
+  bytes: Buffer;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface TileResult {
+  tiles: Tile[];
+  width: number;
+  height: number;
+  fellBackToDownscale: boolean;
+}
+
+const DEFAULT_MAX_TILES = 8;
+
+export async function tileIfNeeded(
+  pngBytes: Buffer,
+  maxEdge: number,
+  maxTiles: number = DEFAULT_MAX_TILES
+): Promise<TileResult> {
+  let width: number;
+  let height: number;
+  const native = readPngDims(pngBytes);
+  if (native) {
+    width = native.width;
+    height = native.height;
+  } else {
+    const img = nativeImage.createFromBuffer(pngBytes);
+    const size = img.getSize();
+    width = size.width;
+    height = size.height;
+  }
+  if (!width || !height) {
+    throw new Error('could not read PNG dimensions');
+  }
+
+  if (Math.max(width, height) <= maxEdge) {
+    return {
+      tiles: [{ bytes: pngBytes, x: 0, y: 0, w: width, h: height }],
+      width,
+      height,
+      fellBackToDownscale: false,
+    };
+  }
+
+  const cols = Math.ceil(width / maxEdge);
+  const rows = Math.ceil(height / maxEdge);
+
+  if (cols * rows > maxTiles) {
+    const ds = await downscaleIfNeeded(pngBytes, maxEdge);
+    return {
+      tiles: [{ bytes: ds.bytes, x: 0, y: 0, w: ds.width, h: ds.height }],
+      width,
+      height,
+      fellBackToDownscale: true,
+    };
+  }
+
+  const baseCellW = Math.floor(width / cols);
+  const baseCellH = Math.floor(height / rows);
+  const img = nativeImage.createFromBuffer(pngBytes);
+  const tiles: Tile[] = [];
+  for (let row = 0; row < rows; row += 1) {
+    for (let col = 0; col < cols; col += 1) {
+      const cellX = col * baseCellW;
+      const cellY = row * baseCellH;
+      const cellW = col === cols - 1 ? width - cellX : baseCellW;
+      const cellH = row === rows - 1 ? height - cellY : baseCellH;
+      const cropped = img.crop({ x: cellX, y: cellY, width: cellW, height: cellH });
+      tiles.push({
+        bytes: cropped.toPNG(),
+        x: cellX,
+        y: cellY,
+        w: cellW,
+        h: cellH,
+      });
+    }
+  }
+  return { tiles, width, height, fellBackToDownscale: false };
+}
