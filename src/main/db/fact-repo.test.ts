@@ -121,9 +121,17 @@ describe('FactRepo.rerank', () => {
     const result = repo.rerank();
     const pinned = repo.listPinned();
     expect(pinned).toHaveLength(40);
-    // The oldest (last id) should be the only demoted one.
-    expect(result.demoted).toEqual(expect.arrayContaining([ids[40]]));
-    expect(result.demoted).toHaveLength(1);
+    const pinnedIds = new Set(pinned.map((p) => p.id));
+    expect(pinnedIds.has(ids[40])).toBe(false); // oldest is NOT in pinned
+    expect(result.promoted).toHaveLength(40);    // all 40 went from learned to pinned
+    expect(result.demoted).toHaveLength(0);      // nothing was pinned before, nothing demoted
+
+    // Verify the demoted-from-pinned path with a second rerank after explicit demotion:
+    const learnedNow = repo.upsert({ body: 'late entrant', preference: true });
+    db.prepare('UPDATE fact SET distinct_sessions = 10, last_used_at = ? WHERE id = ?').run(NOW, learnedNow.id);
+    const result2 = repo.rerank();
+    expect(result2.promoted).toContain(learnedNow.id);
+    expect(result2.demoted).toHaveLength(1); // whoever was the lowest-scoring pinned fact got bumped
   });
 
   it('reports promoted ids when a learned fact moves into the budget', () => {

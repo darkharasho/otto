@@ -177,7 +177,7 @@ export class FactRepo {
       for (const s of scored) {
         const shouldPin = newPinned.has(s.id);
         if (shouldPin && !s.wasPinned) promoted.push(s.id);
-        if (!shouldPin && (s.wasPinned || rows.length > PINNED_BUDGET)) demoted.push(s.id);
+        else if (!shouldPin && s.wasPinned) demoted.push(s.id);
         updateScore.run(s.score, shouldPin ? 1 : 0, s.id);
       }
     });
