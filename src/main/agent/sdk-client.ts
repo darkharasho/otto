@@ -122,7 +122,6 @@ const SYSTEM_PROMPT = [
   '     - `kdotool windowmove <id> <x> <y>` moves a window to a known position.',
   '   - `screenshot` for anything visual — locating buttons inside a window, reading on-screen text, confirming an action.',
   '   Combine signals: e.g., "type into the browser" → `kdotool search --name firefox` + `kdotool windowactivate <id>` to focus it, then `type(...)`.',
-  '   Cursor-warp tip: on Wayland the cursor cannot be teleported reliably; if a click needs to land precisely, use `kdotool windowactivate` to focus the right window first, then use keyboard navigation (`key("Tab")`, `key("Return")`) instead of clicking when possible.',
   '',
   'CRITICAL focus discipline: when the user has to click "Approve" on an autonomy prompt for an input action, focus moves to Otto\'s window. To prevent typing into Otto:',
   '- Call `shell_exec("kdotool windowactivate <id>")` IMMEDIATELY before EACH `type`/`key`/`click` call, after any approval. Yes — re-activate every single time you fire an input tool.',
