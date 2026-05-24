@@ -10,6 +10,7 @@ import { Repo } from '../db/repo';
 import { ReflectionPipeline } from './pipeline';
 import { newAssistantMessage, newUserMessage } from '@shared/messages';
 import type { ReflectOutcome } from './reflector';
+import { createStubEmbedder } from '../embeddings/stub';
 
 let dir: string;
 let db: Database;
@@ -33,8 +34,8 @@ beforeEach(() => {
   dir = mkdtempSync(path.join(tmpdir(), 'otto-pipe-'));
   db = openDatabase(path.join(dir, 'otto.db'));
   repo = new Repo(db);
-  artifactRepo = new ArtifactRepo(db, () => 1000);
-  factRepo = new FactRepo(db, () => 1000);
+  artifactRepo = new ArtifactRepo(db, () => 1000, createStubEmbedder());
+  factRepo = new FactRepo(db, () => 1000, createStubEmbedder());
   repo.createSession({ id: 's1', model: 'm', createdAt: 0, lastActive: 0 });
   repo.appendMessage({ ...newUserMessage('please fix audio'), sessionId: 's1' });
   repo.appendMessage({ ...newAssistantMessage(), sessionId: 's1' });
@@ -123,7 +124,7 @@ describe('ReflectionPipeline.run', () => {
 
   it('refuses to insert new artifacts once a kind hits the 500 hard cap', async () => {
     for (let i = 0; i < 500; i += 1) {
-      artifactRepo.upsert({ kind: 'playbook', title: `pb-${i}`, body: 'b', tags: [] });
+      await artifactRepo.upsert({ kind: 'playbook', title: `pb-${i}`, body: 'b', tags: [] });
     }
     const pipeline = new ReflectionPipeline({
       repo,

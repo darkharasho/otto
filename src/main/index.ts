@@ -303,7 +303,7 @@ async function startElectron(): Promise<void> {
     },
     bumpFactUse: (ids, sessionId) => factRepo.bumpUse(ids, sessionId),
     appendKnowledge: async (note, sessionId) => {
-      factRepo.upsert({ body: note, preference: true, sourceSessionId: sessionId });
+      await factRepo.upsert({ body: note, preference: true, sourceSessionId: sessionId });
       factRepo.rerank();
       await regenerateKnowledgeFile(ottoConfigDir, factRepo);
     },

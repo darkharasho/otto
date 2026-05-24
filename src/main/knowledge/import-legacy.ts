@@ -33,7 +33,7 @@ export async function importLegacyKnowledge(configDir: string, repo: FactRepo): 
       body = line;
     }
     try {
-      repo.upsert({ body, pinned: true, createdAt });
+      await repo.upsert({ body, pinned: true, createdAt });
     } catch (err) {
       logger.warn(`importLegacyKnowledge skipped a line: ${err instanceof Error ? err.message : String(err)}`);
     }

@@ -77,7 +77,7 @@ export class ReflectionPipeline {
     let factsWritten = 0;
     for (const f of outcome.result.facts) {
       try {
-        const { inserted } = factRepo.upsert({
+        const { inserted } = await factRepo.upsert({
           body: f.body,
           preference: f.preference,
           sourceSessionId: args.sessionId,
@@ -115,7 +115,7 @@ export class ReflectionPipeline {
           continue;
         }
         try {
-          artifactRepo.upsert({
+          await artifactRepo.upsert({
             kind,
             title: item.title,
             body: item.body,
