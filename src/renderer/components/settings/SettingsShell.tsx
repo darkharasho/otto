@@ -30,7 +30,7 @@ export function SettingsShell({
               role="tab"
               aria-selected={selected}
               onClick={() => onTabChange(t.id)}
-              className={`px-3 py-1 text-xs rounded ${
+              className={`px-3 py-1 text-[13px] font-medium rounded ${
                 selected ? 'bg-accent text-white' : 'bg-bg/40 text-muted hover:text-text'
               }`}
             >
@@ -50,7 +50,7 @@ export function SettingsShell({
                 type="button"
                 aria-current={current}
                 onClick={() => onSubChange(s.id)}
-                className={`block w-full text-left px-4 py-1.5 text-xs ${
+                className={`block w-full text-left px-4 py-1.5 text-[13px] ${
                   current ? 'bg-accent/15 text-text font-medium' : 'text-muted hover:text-text hover:bg-bg/40'
                 }`}
               >
