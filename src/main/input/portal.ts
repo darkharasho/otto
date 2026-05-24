@@ -332,13 +332,29 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
 
   async function rawMove(x: number, y: number): Promise<void> {
     const rd = await getRemoteDesktop();
-    // Prefer the cursor we last moved ourselves (we know exactly where it
-    // is). Fall back to Electron's screen reading only on the very first
-    // move of the session, before we've sent anything.
+    // Absolute motion via NotifyPointerMotionAbsolute bypasses KWin's
+    // pointer acceleration, which was clamping large relative deltas to
+    // the top-left corner. KDE accepts stream=0 as "whole virtual screen"
+    // when no ScreenCast session is active. If that fails on this host
+    // we'll need to start a ScreenCast session to get a real stream id —
+    // see logs for the rejection.
+    try {
+      await callMember(rd, 'NotifyPointerMotionAbsolute', sessionPath!, {}, 0, x, y);
+      logger.info(`portal move (abs): target=(${x},${y})`);
+      lastSentCursor = { x, y };
+      return;
+    } catch (err) {
+      logger.warn(
+        `portal NotifyPointerMotionAbsolute failed, falling back to relative: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+    // Relative-motion fallback. Suffers from pointer-accel overshoot for
+    // long jumps; the previous logic is retained so a partial session can
+    // still try.
     const cur = lastSentCursor ?? getCursor();
     const dx = Math.round(x - cur.x);
     const dy = Math.round(y - cur.y);
-    logger.info(`portal move: target=(${x},${y}) cur=(${cur.x},${cur.y}) delta=(${dx},${dy}) source=${lastSentCursor ? 'tracked' : 'electron'}`);
+    logger.info(`portal move (rel): target=(${x},${y}) cur=(${cur.x},${cur.y}) delta=(${dx},${dy}) source=${lastSentCursor ? 'tracked' : 'electron'}`);
     await callMember(rd, 'NotifyPointerMotion', sessionPath!, {}, dx, dy);
     lastSentCursor = { x, y };
   }
