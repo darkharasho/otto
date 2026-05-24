@@ -5,6 +5,10 @@ import type { WindowManager } from '../window';
 import type { DecisionBroker } from '../autonomy/decision-broker';
 import type { Settings } from '../autonomy/settings';
 import type { ProcessRegistry } from '../shell/process-registry';
+import type { ArtifactRepo } from '../db/artifact-repo';
+import { readKnowledge } from '../knowledge/store';
+import { promises as fsp } from 'node:fs';
+import path from 'node:path';
 import type {
   SessionStartArgs,
   SessionStartResult,
@@ -32,6 +36,8 @@ export function registerIpcHandlers(deps: {
   appVersion: string;
   recommendedChord: string;
   hotkey: HotkeyManager;
+  artifactRepo: ArtifactRepo;
+  configDir: string;
   applyStartAtLogin(enabled: boolean): void;
   openLogsDir(): void;
 }): void {
@@ -182,6 +188,86 @@ export function registerIpcHandlers(deps: {
       return { launched };
     }
   );
+
+  ipcMain.handle(
+    'memory.list',
+    async (
+      _e,
+      args: {
+        kind: 'fact' | 'playbook' | 'anti_pattern' | 'heuristic';
+        query?: string;
+        includeArchived?: boolean;
+      }
+    ) => {
+      if (args.kind === 'fact') {
+        const text = await readKnowledge(deps.configDir).catch(() => '');
+        const lines = text.split('\n').filter((l) => l.trim().startsWith('- ('));
+        const q = (args.query ?? '').toLowerCase().trim();
+        const filtered = q ? lines.filter((l) => l.toLowerCase().includes(q)) : lines;
+        return { artifacts: [], facts: filtered };
+      }
+      const rows = args.query
+        ? deps.artifactRepo.search({ query: args.query, kinds: [args.kind], limit: 200 })
+        : deps.artifactRepo.list({ kind: args.kind, includeArchived: args.includeArchived });
+      return {
+        artifacts: rows.map((r) => ({
+          id: r.id,
+          kind: r.kind,
+          title: r.title,
+          body: r.body,
+          tags: r.tags,
+          createdAt: r.createdAt,
+          updatedAt: r.updatedAt,
+          useCount: r.useCount,
+          lastUsedAt: r.lastUsedAt,
+          archived: r.archived,
+        })),
+        facts: [],
+      };
+    }
+  );
+
+  ipcMain.handle('memory.get', async (_e, args: { id: string }) => {
+    const row = deps.artifactRepo.get(args.id);
+    if (!row) return null;
+    return {
+      id: row.id,
+      kind: row.kind,
+      title: row.title,
+      body: row.body,
+      tags: row.tags,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      useCount: row.useCount,
+      lastUsedAt: row.lastUsedAt,
+      archived: row.archived,
+    };
+  });
+
+  ipcMain.handle(
+    'memory.update',
+    async (
+      _e,
+      args: {
+        id: string;
+        patch: { title?: string; body?: string; tags?: string[]; archived?: boolean };
+      }
+    ) => {
+      deps.artifactRepo.update(args.id, args.patch);
+    }
+  );
+
+  ipcMain.handle('memory.delete', async (_e, args: { id: string }) => {
+    deps.artifactRepo.delete(args.id);
+  });
+
+  ipcMain.handle('memory.readFacts', async () => {
+    return readKnowledge(deps.configDir).catch(() => '');
+  });
+
+  ipcMain.handle('memory.writeFacts', async (_e, args: { text: string }) => {
+    await fsp.writeFile(path.join(deps.configDir, 'knowledge.md'), args.text, 'utf8');
+  });
 
   settings.onChange((snap) => {
     broker.setMode(snap.autonomy.mode);

@@ -67,7 +67,28 @@ export type IpcRequest =
   | { channel: 'shell.kill'; args: { handle: string }; result: { killed: boolean } }
   | { channel: 'shortcut.info'; args: void; result: ShortcutInfoView }
   | { channel: 'shortcut.openKeyboardSettings'; args: void; result: { launched: boolean } }
-  | { channel: 'app.info'; args: void; result: AppInfo };
+  | { channel: 'app.info'; args: void; result: AppInfo }
+  | {
+      channel: 'memory.list';
+      args: {
+        kind: 'fact' | 'playbook' | 'anti_pattern' | 'heuristic';
+        query?: string;
+        includeArchived?: boolean;
+      };
+      result: MemoryListResult;
+    }
+  | { channel: 'memory.get'; args: { id: string }; result: MemoryArtifactView | null }
+  | {
+      channel: 'memory.update';
+      args: {
+        id: string;
+        patch: { title?: string; body?: string; tags?: string[]; archived?: boolean };
+      };
+      result: void;
+    }
+  | { channel: 'memory.delete'; args: { id: string }; result: void }
+  | { channel: 'memory.readFacts'; args: void; result: string }
+  | { channel: 'memory.writeFacts'; args: { text: string }; result: void };
 
 export interface AppInfo {
   isDev: boolean;
@@ -187,4 +208,22 @@ declare global {
   interface Window {
     otto: OttoBridge;
   }
+}
+
+export interface MemoryArtifactView {
+  id: string;
+  kind: 'playbook' | 'anti_pattern' | 'heuristic';
+  title: string;
+  body: string;
+  tags: string[];
+  createdAt: number;
+  updatedAt: number;
+  useCount: number;
+  lastUsedAt: number | null;
+  archived: boolean;
+}
+
+export interface MemoryListResult {
+  artifacts: MemoryArtifactView[];
+  facts: string[];
 }

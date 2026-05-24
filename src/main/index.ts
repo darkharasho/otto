@@ -325,6 +325,8 @@ async function startElectron(): Promise<void> {
     appVersion: app.getVersion(),
     recommendedChord: platform.defaultHotkey(),
     hotkey,
+    artifactRepo,
+    configDir: ottoConfigDir,
     applyStartAtLogin,
     openLogsDir: () => {
       void shell.openPath(ottoConfigDir);
