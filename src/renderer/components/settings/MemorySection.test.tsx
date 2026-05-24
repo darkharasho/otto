@@ -28,13 +28,14 @@ describe('MemorySection', () => {
   });
 
   it('renders facts list when kind is "fact"', async () => {
-    invokeMock.mockResolvedValueOnce({ artifacts: [], facts: ['- (2026-05-22) Browser is Zen'] });
+    invokeMock.mockResolvedValueOnce({
+      artifacts: [],
+      facts: [{ id: 'f1', body: 'Browser is Zen', pinned: true, useCount: 4, lastUsedAt: null }],
+    });
     render(<MemorySection kind="fact" />);
     await waitFor(() => expect(screen.getByText(/Browser is Zen/)).toBeTruthy());
-    expect(invokeMock).toHaveBeenLastCalledWith(
-      'memory.list',
-      expect.objectContaining({ kind: 'fact' })
-    );
+    expect(screen.getByText(/pinned/i)).toBeTruthy();
+    expect(screen.getByText(/4×/)).toBeTruthy();
   });
 
   it('archive calls memory.update with archived:true and refreshes', async () => {

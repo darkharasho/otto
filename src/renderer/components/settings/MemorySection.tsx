@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { ipc } from '../../ipc';
-import type { MemoryArtifactView } from '@shared/ipc-contract';
+import type { MemoryArtifactView, MemoryFactView } from '@shared/ipc-contract';
 import { SubsectionPage } from './SubsectionPage';
 
 export type MemoryKind = 'fact' | 'playbook' | 'anti_pattern' | 'heuristic';
@@ -15,9 +15,8 @@ const KIND_LABELS: Record<MemoryKind, string> = {
 export function MemorySection({ kind }: { kind: MemoryKind }) {
   const [query, setQuery] = useState('');
   const [artifacts, setArtifacts] = useState<MemoryArtifactView[]>([]);
-  const [facts, setFacts] = useState<string[]>([]);
+  const [facts, setFacts] = useState<MemoryFactView[]>([]);
   const [editing, setEditing] = useState<MemoryArtifactView | null>(null);
-  const [factsEdit, setFactsEdit] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const out = await ipc.invoke('memory.list', { kind, query: query.trim() || undefined });
@@ -54,18 +53,6 @@ export function MemorySection({ kind }: { kind: MemoryKind }) {
     await load();
   }
 
-  async function openFactsEditor() {
-    const text = await ipc.invoke('memory.readFacts', undefined);
-    setFactsEdit(text);
-  }
-
-  async function saveFacts() {
-    if (factsEdit === null) return;
-    await ipc.invoke('memory.writeFacts', { text: factsEdit });
-    setFactsEdit(null);
-    await load();
-  }
-
   return (
     <SubsectionPage title={KIND_LABELS[kind]}>
       <div className="space-y-3">
@@ -78,22 +65,21 @@ export function MemorySection({ kind }: { kind: MemoryKind }) {
       />
 
       {kind === 'fact' ? (
-        <div>
-          <ul className="space-y-1 text-xs text-text">
-            {facts.length === 0 ? (
-              <li className="text-muted">No facts yet.</li>
-            ) : (
-              facts.map((line, i) => <li key={i}>{line}</li>)
-            )}
-          </ul>
-          <button
-            type="button"
-            onClick={openFactsEditor}
-            className="mt-2 text-xs text-accent hover:underline"
-          >
-            Edit knowledge.md…
-          </button>
-        </div>
+        <ul className="space-y-1 text-xs text-text">
+          {facts.length === 0 ? (
+            <li className="text-muted">No facts yet.</li>
+          ) : (
+            facts.map((f) => (
+              <li key={f.id} className="flex items-start gap-2">
+                {f.pinned && (
+                  <span className="px-1 rounded bg-accent/20 text-accent text-[10px] uppercase">pinned</span>
+                )}
+                <span className="flex-1">{f.body}</span>
+                <span className="text-muted text-[10px] tabular-nums">{f.useCount}×</span>
+              </li>
+            ))
+          )}
+        </ul>
       ) : (
         <ul className="space-y-2">
           {artifacts.length === 0 ? (
@@ -157,21 +143,6 @@ export function MemorySection({ kind }: { kind: MemoryKind }) {
         </div>
       )}
 
-      {factsEdit !== null && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-surface border border-border rounded-lg p-4 w-[640px] max-h-[80vh] flex flex-col gap-2">
-            <textarea
-              value={factsEdit}
-              onChange={(e) => setFactsEdit(e.target.value)}
-              className="flex-1 min-h-[320px] px-2 py-1 text-xs font-mono bg-bg/40 border border-border rounded"
-            />
-            <div className="flex justify-end gap-2 text-xs">
-              <button type="button" className="text-muted hover:text-text" onClick={() => setFactsEdit(null)}>Cancel</button>
-              <button type="button" className="text-accent hover:underline" onClick={saveFacts}>Save</button>
-            </div>
-          </div>
-        </div>
-      )}
       </div>
     </SubsectionPage>
   );

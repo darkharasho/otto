@@ -87,8 +87,6 @@ export type IpcRequest =
       result: void;
     }
   | { channel: 'memory.delete'; args: { id: string }; result: void }
-  | { channel: 'memory.readFacts'; args: void; result: string }
-  | { channel: 'memory.writeFacts'; args: { text: string }; result: void }
   | { channel: 'remoteDesktop.status'; args: void; result: { granted: boolean } }
   | { channel: 'remoteDesktop.revoke'; args: void; result: void };
 
@@ -226,7 +224,15 @@ export interface MemoryArtifactView {
   archived: boolean;
 }
 
+export interface MemoryFactView {
+  id: string;
+  body: string;
+  pinned: boolean;
+  useCount: number;
+  lastUsedAt: number | null;
+}
+
 export interface MemoryListResult {
   artifacts: MemoryArtifactView[];
-  facts: string[];
+  facts: MemoryFactView[];
 }

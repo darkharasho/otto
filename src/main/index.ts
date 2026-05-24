@@ -350,6 +350,7 @@ async function startElectron(): Promise<void> {
     recommendedChord: platform.defaultHotkey(),
     hotkey,
     artifactRepo,
+    factRepo,
     configDir: ottoConfigDir,
     applyStartAtLogin,
     openLogsDir: () => {
