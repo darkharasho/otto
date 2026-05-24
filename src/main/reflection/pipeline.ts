@@ -58,6 +58,12 @@ export class ReflectionPipeline {
     const outcome = await runReflector(prompt);
     if (!outcome.ok) {
       logger.warn(`reflector failed: ${outcome.reason}`);
+      if (outcome.raw) {
+        // Truncated to keep the log tidy; full prompt iteration goes via
+        // scripts/eval-reflector.ts.
+        const preview = outcome.raw.length > 600 ? `${outcome.raw.slice(0, 600)}…(${outcome.raw.length - 600} more)` : outcome.raw;
+        logger.warn(`reflector raw output (for prompt tuning):\n${preview}`);
+      }
       return {
         savedFacts: 0,
         savedArtifacts: 0,
