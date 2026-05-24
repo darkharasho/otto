@@ -14,11 +14,11 @@ let dir: string;
 let db: Database;
 let repo: Repo;
 let artifactRepo: ArtifactRepo;
-const REFLECTOR_OK = (overrides: Partial<{ facts: string[] }> = {}): ReflectOutcome => ({
+const REFLECTOR_OK = (overrides: Partial<{ facts: { body: string; preference?: boolean }[] }> = {}): ReflectOutcome => ({
   ok: true,
   raw: '{}',
   result: {
-    facts: overrides.facts ?? ['Browser is Zen'],
+    facts: overrides.facts ?? [{ body: 'Browser is Zen' }],
     playbooks: [
       { title: 'Restart audio', body: '## Steps\n1. restart pipewire', tags: ['audio'] },
     ],
@@ -104,7 +104,7 @@ describe('ReflectionPipeline.run', () => {
       repo,
       artifactRepo,
       configDir: dir,
-      runReflector: async () => REFLECTOR_OK({ facts: ['Browser is Zen', 'Browser is Zen'] }),
+      runReflector: async () => REFLECTOR_OK({ facts: [{ body: 'Browser is Zen' }, { body: 'Browser is Zen' }] }),
       appendSystemNote: () => {},
     });
     await pipeline.run({ sessionId: 's1', sinceSeq: -1 });

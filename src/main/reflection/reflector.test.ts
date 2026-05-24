@@ -14,7 +14,7 @@ describe('reflect', () => {
   it('returns parsed result when SDK emits valid JSON', async () => {
     const sdk = scriptedSdk([
       '{',
-      '  "facts": ["Browser is Zen"],',
+      '  "facts": [{"body": "Browser is Zen"}],',
       '  "playbooks": [],',
       '  "antiPatterns": [],',
       '  "heuristics": []',
@@ -26,7 +26,7 @@ describe('reflect', () => {
       timeoutMs: 1000,
     });
     expect(out.ok).toBe(true);
-    if (out.ok) expect(out.result.facts).toEqual(['Browser is Zen']);
+    if (out.ok) expect(out.result.facts).toEqual([{ body: 'Browser is Zen' }]);
   });
 
   it('extracts JSON even when wrapped in stray prose or markdown fence', async () => {
