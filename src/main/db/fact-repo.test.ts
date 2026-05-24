@@ -152,3 +152,20 @@ describe('FactRepo.rerank', () => {
     expect(repo.get(recent.id)!.score).toBeGreaterThan(repo.get(old.id)!.score);
   });
 });
+
+describe('FactRepo.list and counts', () => {
+  it('list returns facts ordered by score desc, includes pinned flag', () => {
+    repo.upsert({ body: 'a' });
+    repo.upsert({ body: 'b', pinned: true });
+    const all = repo.list({ limit: 10 });
+    expect(all).toHaveLength(2);
+    expect(all.map((f) => f.body)).toEqual(expect.arrayContaining(['a', 'b']));
+  });
+
+  it('counts returns pinned + total', () => {
+    repo.upsert({ body: 'a' });
+    repo.upsert({ body: 'b', pinned: true });
+    repo.upsert({ body: 'c', pinned: true });
+    expect(repo.counts()).toEqual({ pinned: 2, total: 3 });
+  });
+});

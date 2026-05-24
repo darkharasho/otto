@@ -191,4 +191,17 @@ export class FactRepo {
       .all() as Row[];
     return rows.map(rowToFact);
   }
+
+  list(args: { limit?: number } = {}): Fact[] {
+    const limit = args.limit ?? 500;
+    return (this.db
+      .prepare('SELECT * FROM fact ORDER BY pinned DESC, score DESC, created_at DESC LIMIT ?')
+      .all(limit) as Row[]).map(rowToFact);
+  }
+
+  counts(): { pinned: number; total: number } {
+    const total = (this.db.prepare('SELECT COUNT(*) AS n FROM fact').get() as { n: number }).n;
+    const pinned = (this.db.prepare('SELECT COUNT(*) AS n FROM fact WHERE pinned = 1').get() as { n: number }).n;
+    return { pinned, total };
+  }
 }
