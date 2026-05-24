@@ -62,5 +62,9 @@ asarUnpack:
   - "**/node_modules/@anthropic-ai/claude-agent-sdk/**"
   - "**/node_modules/onnxruntime-node/**"
   - "**/node_modules/sqlite-vec/**"
+  # The actual loadable extension (vec0.so/.dll/.dylib) lives in a sibling
+  # platform-specific package, not in sqlite-vec itself. dlopen can't traverse
+  # into app.asar, so the platform binary has to be on the real filesystem.
+  - "**/node_modules/sqlite-vec-*/**"
   - "**/node_modules/@xenova/transformers/**"
   - "resources/embedding/**"
