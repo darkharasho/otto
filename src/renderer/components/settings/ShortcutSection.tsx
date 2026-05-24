@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ipc } from '../../ipc';
-import { Section } from '../SettingsControls';
+import { SubsectionPage } from './SubsectionPage';
 import type { ShortcutInfoView } from '@shared/ipc-contract';
 
 export function ShortcutSection() {
@@ -14,9 +14,9 @@ export function ShortcutSection() {
 
   if (!info) {
     return (
-      <Section title="Keyboard shortcut">
+      <SubsectionPage title="Keyboard shortcut">
         <div className="text-xs text-muted">Loading…</div>
-      </Section>
+      </SubsectionPage>
     );
   }
 
@@ -27,7 +27,7 @@ export function ShortcutSection() {
   };
 
   return (
-    <Section title="Keyboard shortcut" description={describeMechanism(info)}>
+    <SubsectionPage title="Keyboard shortcut" description={describeMechanism(info)}>
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-3">
           <div>
@@ -85,7 +85,7 @@ export function ShortcutSection() {
           </div>
         )}
       </div>
-    </Section>
+    </SubsectionPage>
   );
 }
 

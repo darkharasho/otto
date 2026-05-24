@@ -1,4 +1,5 @@
-import { Section, RadioGroup } from '../SettingsControls';
+import { RadioGroup } from '../SettingsControls';
+import { SubsectionPage } from './SubsectionPage';
 import type { AutonomyMode } from '@shared/messages';
 
 export function AutonomySection({
@@ -9,7 +10,7 @@ export function AutonomySection({
   onChange: (m: AutonomyMode) => void;
 }) {
   return (
-    <Section title="Autonomy" description="How freely Otto can take action without asking.">
+    <SubsectionPage title="Autonomy" description="How freely Otto can take action without asking.">
       <RadioGroup<AutonomyMode>
         value={mode}
         onChange={onChange}
@@ -19,6 +20,6 @@ export function AutonomySection({
           { value: 'full-allow', label: 'Full allow', description: 'Run everything without asking. Use at your own risk.' },
         ]}
       />
-    </Section>
+    </SubsectionPage>
   );
 }

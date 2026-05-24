@@ -1,4 +1,5 @@
-import { Section, Toggle } from '../SettingsControls';
+import { Toggle } from '../SettingsControls';
+import { SubsectionPage } from './SubsectionPage';
 
 export function StartupSection({
   startAtLogin,
@@ -8,13 +9,13 @@ export function StartupSection({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <Section title="Startup">
+    <SubsectionPage title="Startup">
       <Toggle
         checked={startAtLogin}
         onChange={onChange}
         label="Start at login"
         description="Run Otto in the background when you sign in."
       />
-    </Section>
+    </SubsectionPage>
   );
 }

@@ -1,4 +1,5 @@
-import { Section, Toggle, RadioGroup } from '../SettingsControls';
+import { Toggle, RadioGroup } from '../SettingsControls';
+import { SubsectionPage } from './SubsectionPage';
 
 export type WindowPosition = 'bottom-center' | 'top-center';
 
@@ -16,7 +17,7 @@ export function WindowSection({
   onHideOnBlurChange,
 }: Props) {
   return (
-    <Section title="Window" description="Where the bar and panel appear when summoned.">
+    <SubsectionPage title="Window" description="Where the bar and panel appear when summoned.">
       <RadioGroup<WindowPosition>
         value={windowPosition}
         onChange={onPositionChange}
@@ -31,6 +32,6 @@ export function WindowSection({
         label="Hide when clicked away"
         description="When on, clicking outside Otto hides it (like a popover). When off, Otto stays open until you dismiss it with the hotkey."
       />
-    </Section>
+    </SubsectionPage>
   );
 }

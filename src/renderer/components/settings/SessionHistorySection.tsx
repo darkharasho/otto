@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Section, NumberField } from '../SettingsControls';
+import { NumberField } from '../SettingsControls';
+import { SubsectionPage } from './SubsectionPage';
 
 export function SessionHistorySection({
   autoDeleteDays,
@@ -11,7 +12,7 @@ export function SessionHistorySection({
   onResetAllSessions: () => Promise<void>;
 }) {
   return (
-    <Section title="Session history" description="Sessions live in a local SQLite database.">
+    <SubsectionPage title="Session history" description="Sessions live in a local SQLite database.">
       <div className="flex items-center justify-between gap-3 py-1.5">
         <div className="flex-1">
           <div className="text-sm">Auto-delete older than</div>
@@ -26,7 +27,7 @@ export function SessionHistorySection({
           onConfirm={onResetAllSessions}
         />
       </div>
-    </Section>
+    </SubsectionPage>
   );
 }
 
