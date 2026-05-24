@@ -299,7 +299,19 @@ async function startElectron(): Promise<void> {
         })),
       };
     },
-    memoryCounts: () => artifactRepo.counts(),
+    memoryCounts: () => ({ ...artifactRepo.counts(), factsPinned: factRepo.counts().pinned, factsTotal: factRepo.counts().total }),
+    factsForPrompt: () => {
+      const pinned = factRepo.listPinned();
+      if (pinned.length === 0) return { markdown: '', ids: [] };
+      return {
+        markdown: pinned.map((f) => `- ${f.body}`).join('\n'),
+        ids: pinned.map((f) => f.id),
+      };
+    },
+    bumpFactUse: (ids, sessionId) => factRepo.bumpUse(ids, sessionId),
+    appendKnowledge: async (note, sessionId) => {
+      factRepo.upsert({ body: note, preference: true, sourceSessionId: sessionId });
+    },
     onMarkTaskComplete: (sessionId, _summary) => {
       detector.onMarkComplete(sessionId);
     },
