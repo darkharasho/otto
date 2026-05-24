@@ -67,7 +67,18 @@ export interface PlatformAdapter {
   input: PlatformInput;
 }
 
+// The adapter must be a singleton so per-instance state (e.g. the portal
+// input's tracked cursor position) survives across the many call sites
+// that ask for an adapter — screenshot, click, move, shell, etc. Without
+// this cache every call gets a fresh adapter and the tracked cursor is
+// reset to null, breaking subsequent portal moves.
+let cachedAdapter: PlatformAdapter | null = null;
+
 export function getPlatformAdapter(): PlatformAdapter {
-  if (process.platform === 'linux') return new LinuxAdapter();
+  if (cachedAdapter) return cachedAdapter;
+  if (process.platform === 'linux') {
+    cachedAdapter = new LinuxAdapter();
+    return cachedAdapter;
+  }
   throw new Error(`Otto skeleton supports linux only (current: ${process.platform})`);
 }
