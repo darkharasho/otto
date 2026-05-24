@@ -137,4 +137,58 @@ export class FactRepo {
     `;
     return (this.db.prepare(sql).all(q, args.limit) as Row[]).map(rowToFact);
   }
+
+  /** distinct_sessions * exp(-age_days / 21). Exported via rerank() side-effect. */
+  private computeScore(distinctSessions: number, lastUsedAt: number | null, createdAt: number, now: number): number {
+    const ts = lastUsedAt ?? createdAt;
+    const ageMs = Math.max(0, now - ts);
+    const decay = Math.exp(-ageMs / SCORE_HALF_LIFE_MS);
+    return distinctSessions * decay;
+  }
+
+  rerank(): { promoted: string[]; demoted: string[] } {
+    const now = this.now();
+    const rows = this.db
+      .prepare('SELECT id, pinned, distinct_sessions, last_used_at, created_at FROM fact')
+      .all() as Array<{
+        id: string;
+        pinned: number;
+        distinct_sessions: number;
+        last_used_at: number | null;
+        created_at: number;
+      }>;
+
+    const scored = rows.map((r) => ({
+      id: r.id,
+      wasPinned: r.pinned === 1,
+      score: this.computeScore(r.distinct_sessions, r.last_used_at, r.created_at, now),
+      createdAt: r.created_at,
+    }));
+
+    // Sort by score DESC, tiebreak by created_at DESC (newer wins on cold start).
+    scored.sort((a, b) => (b.score - a.score) || (b.createdAt - a.createdAt));
+
+    const newPinned = new Set(scored.slice(0, PINNED_BUDGET).map((s) => s.id));
+
+    const updateScore = this.db.prepare('UPDATE fact SET score = ?, pinned = ? WHERE id = ?');
+    const promoted: string[] = [];
+    const demoted: string[] = [];
+    const txn = this.db.transaction(() => {
+      for (const s of scored) {
+        const shouldPin = newPinned.has(s.id);
+        if (shouldPin && !s.wasPinned) promoted.push(s.id);
+        if (!shouldPin && (s.wasPinned || rows.length > PINNED_BUDGET)) demoted.push(s.id);
+        updateScore.run(s.score, shouldPin ? 1 : 0, s.id);
+      }
+    });
+    txn();
+    return { promoted, demoted };
+  }
+
+  listPinned(): Fact[] {
+    const rows = this.db
+      .prepare('SELECT * FROM fact WHERE pinned = 1 ORDER BY score DESC')
+      .all() as Row[];
+    return rows.map(rowToFact);
+  }
 }

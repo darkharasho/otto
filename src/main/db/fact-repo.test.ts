@@ -97,3 +97,50 @@ describe('FactRepo.bumpUse', () => {
     expect(() => repo.bumpUse([], 's1')).not.toThrow();
   });
 });
+
+describe('FactRepo.rerank', () => {
+  function seedWithSessions(body: string, sessions: string[], lastUsedAt: number): string {
+    const { id } = repo.upsert({ body });
+    for (const s of sessions) {
+      // bypass bumpUse to control timestamp
+      db.prepare('INSERT OR IGNORE INTO fact_session (fact_id, session_id) VALUES (?, ?)').run(id, s);
+    }
+    db.prepare(
+      'UPDATE fact SET distinct_sessions = ?, use_count = ?, last_used_at = ? WHERE id = ?'
+    ).run(sessions.length, sessions.length, lastUsedAt, id);
+    return id;
+  }
+
+  it('elects top PINNED_BUDGET by recency-weighted score', () => {
+    // 41 facts, all with distinct_sessions=5; vary recency so the oldest is bumped.
+    const ids: string[] = [];
+    for (let i = 0; i < 41; i++) {
+      const ageDays = i; // i=0 newest, i=40 oldest
+      ids.push(seedWithSessions(`fact ${i}`, ['s1', 's2', 's3', 's4', 's5'], NOW - ageDays * 86_400_000));
+    }
+    const result = repo.rerank();
+    const pinned = repo.listPinned();
+    expect(pinned).toHaveLength(40);
+    // The oldest (last id) should be the only demoted one.
+    expect(result.demoted).toEqual(expect.arrayContaining([ids[40]]));
+    expect(result.demoted).toHaveLength(1);
+  });
+
+  it('reports promoted ids when a learned fact moves into the budget', () => {
+    const learned = repo.upsert({ body: 'a freshly promoted fact' });
+    db.prepare('UPDATE fact SET distinct_sessions = ?, use_count = ?, last_used_at = ? WHERE id = ?')
+      .run(5, 5, NOW, learned.id);
+    const result = repo.rerank();
+    expect(result.promoted).toContain(learned.id);
+    expect(repo.get(learned.id)!.pinned).toBe(true);
+  });
+
+  it('uses created_at when last_used_at is null', () => {
+    const old = repo.upsert({ body: 'old never-used', createdAt: NOW - 100 * 86_400_000 });
+    const recent = repo.upsert({ body: 'recent never-used', createdAt: NOW });
+    db.prepare('UPDATE fact SET distinct_sessions = ? WHERE id = ?').run(1, old.id);
+    db.prepare('UPDATE fact SET distinct_sessions = ? WHERE id = ?').run(1, recent.id);
+    repo.rerank();
+    expect(repo.get(recent.id)!.score).toBeGreaterThan(repo.get(old.id)!.score);
+  });
+});
