@@ -105,6 +105,7 @@ function scriptHandshakeOK(restoreToken = 'tok-abc'): void {
     );
     return `/org/freedesktop/portal/desktop/request/_/${handleToken}`;
   });
+  bus.iface.script('NotifyPointerMotionAbsolute', async () => undefined);
   bus.iface.script('NotifyPointerMotion', async () => undefined);
   bus.iface.script('NotifyPointerButton', async () => undefined);
   bus.iface.script('NotifyPointerAxis', async () => undefined);
@@ -153,7 +154,7 @@ describe('createPortalInput', () => {
     cleanup();
   });
 
-  it('click issues motion(dx, dy) → button(press) → button(release)', async () => {
+  it('click issues motion(x, y) → button(press) → button(release)', async () => {
     scriptHandshakeOK();
     const input = build();
     getCursor = () => ({ x: 100, y: 200 });
@@ -162,15 +163,36 @@ describe('createPortalInput', () => {
       .filter((c) => c.member.startsWith('NotifyPointer'))
       .map((c) => ({ m: c.member, args: c.args }));
     expect(events).toHaveLength(3);
-    expect(events[0]!.m).toBe('NotifyPointerMotion');
-    const [, , dx, dy] = events[0]!.args as [unknown, unknown, number, number];
-    expect(dx).toBe(50);
-    expect(dy).toBe(50);
+    expect(events[0]!.m).toBe('NotifyPointerMotionAbsolute');
+    const [, , stream, x, y] = events[0]!.args as [unknown, unknown, number, number, number];
+    expect(stream).toBe(0);
+    expect(x).toBe(150);
+    expect(y).toBe(250);
     expect(events[1]!.m).toBe('NotifyPointerButton');
     expect((events[1]!.args as unknown[])[2]).toBe(0x110); // BTN_LEFT
     expect((events[1]!.args as unknown[])[3]).toBe(1); // press
     expect(events[2]!.m).toBe('NotifyPointerButton');
     expect((events[2]!.args as unknown[])[3]).toBe(0); // release
+    cleanup();
+  });
+
+  it('falls back to relative NotifyPointerMotion when the absolute call rejects', async () => {
+    scriptHandshakeOK();
+    // Override the absolute handler to reject, simulating a KDE that does not
+    // accept stream=0 without an active ScreenCast session.
+    bus.iface.script('NotifyPointerMotionAbsolute', async () => {
+      throw new Error('no screencast stream');
+    });
+    const input = build();
+    getCursor = () => ({ x: 100, y: 200 });
+    await input.move(150, 250);
+    const events = bus.log
+      .filter((c) => c.member.startsWith('NotifyPointer'))
+      .map((c) => ({ m: c.member, args: c.args }));
+    expect(events.map((e) => e.m)).toEqual(['NotifyPointerMotionAbsolute', 'NotifyPointerMotion']);
+    const [, , dx, dy] = events[1]!.args as [unknown, unknown, number, number];
+    expect(dx).toBe(50);
+    expect(dy).toBe(50);
     cleanup();
   });
 
@@ -184,10 +206,10 @@ describe('createPortalInput', () => {
       .filter((c) => c.member.startsWith('NotifyPointer'))
       .map((c) => c.member);
     expect(events).toEqual([
-      'NotifyPointerMotion',
+      'NotifyPointerMotionAbsolute',
       'NotifyPointerButton',
       'NotifyPointerButton',
-      'NotifyPointerMotion',
+      'NotifyPointerMotionAbsolute',
     ]);
     cleanup();
   });
