@@ -13,12 +13,9 @@ const PANEL_MAX_DISPLAY_RATIO = 0.7;
 
 export type WindowPositionPref = 'bottom-center' | 'top-center';
 
-const RESIZE_DURATION_MS = 180;
-
 export class WindowManager {
   private window: BrowserWindow | null = null;
   private mode: WindowMode = 'bar';
-  private resizeAnimId = 0;
   private positionPref: WindowPositionPref = 'bottom-center';
   private hideOnBlur = false;
   private visibilityListeners: Array<(visible: boolean) => void> = [];
@@ -139,44 +136,18 @@ export class WindowManager {
 
   private applyMode(mode: WindowMode): void {
     if (!this.window) return;
-    const wasMode = this.mode;
     this.mode = mode;
     const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     const maxPanelHeight = Math.floor(display.workArea.height * PANEL_MAX_DISPLAY_RATIO);
     const height =
       mode === 'bar' ? BAR_HEIGHT : Math.max(PANEL_MIN_HEIGHT, Math.min(maxPanelHeight, 520));
     const { x, y } = this.bottomCenter(display.workArea, BAR_WIDTH, height);
-    const target = { x, y, width: BAR_WIDTH, height };
-    if (this.window.isVisible() && wasMode !== mode) {
-      this.animateBoundsTo(target, RESIZE_DURATION_MS);
-    } else {
-      this.window.setBounds(target);
-    }
+    // Single setBounds instead of a 12-frame interpolation. Wayland
+    // compositors can drop/coalesce rapid bounds updates, which leaves the
+    // window grown-but-not-repositioned — the input visually "jumps" because
+    // the bottom edge wasn't pinned through the animation.
+    this.window.setBounds({ x, y, width: BAR_WIDTH, height });
     logger.debug(`window mode → ${mode} (${BAR_WIDTH}x${height} @ ${x},${y})`);
-  }
-
-  private animateBoundsTo(target: Electron.Rectangle, duration: number): void {
-    if (!this.window) return;
-    this.resizeAnimId += 1;
-    const id = this.resizeAnimId;
-    const start = this.window.getBounds();
-    const startTime = Date.now();
-    // ease-out cubic — quick first, settles softly
-    const ease = (t: number): number => 1 - Math.pow(1 - t, 3);
-    const lerp = (a: number, b: number, t: number) => Math.round(a + (b - a) * t);
-    const step = () => {
-      if (id !== this.resizeAnimId || !this.window || this.window.isDestroyed()) return;
-      const t = Math.min(1, (Date.now() - startTime) / duration);
-      const e = ease(t);
-      this.window.setBounds({
-        x: lerp(start.x, target.x, e),
-        y: lerp(start.y, target.y, e),
-        width: lerp(start.width, target.width, e),
-        height: lerp(start.height, target.height, e),
-      });
-      if (t < 1) setTimeout(step, 16);
-    };
-    step();
   }
 
   private repositionBottomCenter(): void {
