@@ -73,6 +73,8 @@ async function startElectron(): Promise<void> {
   const { ArtifactRepo } = await import('./db/artifact-repo');
   const { ReflectionPipeline } = await import('./reflection/pipeline');
   const { CompletionDetector } = await import('./reflection/completion-detector');
+  const { FactRepo } = await import('./db/fact-repo');
+  const { importLegacyKnowledge } = await import('./knowledge/import-legacy');
 
   const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
 
@@ -176,6 +178,14 @@ async function startElectron(): Promise<void> {
   );
 
   const artifactRepo = new ArtifactRepo(db);
+
+  const factRepo = new FactRepo(db);
+  try {
+    await importLegacyKnowledge(ottoConfigDir, factRepo);
+  } catch (err) {
+    logger.error('importLegacyKnowledge failed', err);
+  }
+  factRepo.rerank();
 
   async function runReflectorSdk(prompt: string): Promise<string> {
     const sdkMod = await import('@anthropic-ai/claude-agent-sdk');
