@@ -5,7 +5,7 @@ import { ModelSwitcher } from './components/ModelSwitcher';
 import { OttoMark } from './components/OttoMark';
 import { Section, Toggle, RadioGroup, NumberField } from './components/SettingsControls';
 import { UpdaterSection } from './components/UpdaterSection';
-import { ShortcutSection } from './components/ShortcutSection';
+import { ShortcutSection } from './components/settings/ShortcutSection';
 import { MemoryPanel } from './components/MemoryPanel';
 import type { SettingsView } from '@shared/ipc-contract';
 import type { AutonomyMode } from '@shared/messages';

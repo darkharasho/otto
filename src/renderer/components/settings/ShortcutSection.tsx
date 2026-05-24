@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ipc } from '../ipc';
-import { Section } from './SettingsControls';
+import { ipc } from '../../ipc';
+import { Section } from '../SettingsControls';
 import type { ShortcutInfoView } from '@shared/ipc-contract';
 
 export function ShortcutSection() {
