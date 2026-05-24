@@ -45,6 +45,8 @@ describe('SystemMessage', () => {
       playbooks: 2,
       antiPatterns: 0,
       heuristics: 1,
+      promoted: 0,
+      demoted: 0,
     };
     const m: SystemMessage = newSystemMessage([block]);
     expect(m.role).toBe('system');
@@ -55,7 +57,7 @@ describe('SystemMessage', () => {
 
   it('isSystemMessage type guard returns true for system role and false for others', () => {
     const sys = newSystemMessage([
-      { type: 'memory-update', facts: 1, playbooks: 0, antiPatterns: 0, heuristics: 0 },
+      { type: 'memory-update', facts: 1, playbooks: 0, antiPatterns: 0, heuristics: 0, promoted: 0, demoted: 0 },
     ]);
     expect(isSystemMessage(sys)).toBe(true);
   });

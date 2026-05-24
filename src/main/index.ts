@@ -218,6 +218,7 @@ async function startElectron(): Promise<void> {
   const pipeline = new ReflectionPipeline({
     repo,
     artifactRepo,
+    factRepo,
     configDir: ottoConfigDir,
     runReflector: (prompt) =>
       reflect({

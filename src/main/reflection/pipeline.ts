@@ -1,9 +1,8 @@
 import type { Repo } from '../db/repo';
 import type { ArtifactKind, ArtifactRepo } from '../db/artifact-repo';
+import type { FactRepo } from '../db/fact-repo';
 import type { ReflectOutcome } from './reflector';
 import type { ContentBlock } from '@shared/messages';
-import { appendKnowledge, readKnowledge } from '../knowledge/store';
-import { filterNovelFacts } from '../knowledge/dedup';
 import { buildTranscriptSlice } from './transcript';
 import { buildReflectorPrompt } from './prompt';
 import { logger } from '../logger';
@@ -14,6 +13,7 @@ const HARD_CAP_PER_KIND = 500;
 export interface PipelineDeps {
   repo: Repo;
   artifactRepo: ArtifactRepo;
+  factRepo: FactRepo;
   configDir: string;
   runReflector: (prompt: string) => Promise<ReflectOutcome>;
   appendSystemNote: (sessionId: string, content: ContentBlock) => void;
@@ -32,7 +32,7 @@ export class ReflectionPipeline {
   constructor(private readonly deps: PipelineDeps) {}
 
   async run(args: { sessionId: string; sinceSeq: number }): Promise<PipelineResult> {
-    const { repo, artifactRepo, configDir, runReflector, appendSystemNote } = this.deps;
+    const { repo, artifactRepo, factRepo, runReflector, appendSystemNote } = this.deps;
     const allMessages = repo.loadMessages(args.sessionId);
     const slice = allMessages.filter((m) => m.seq > args.sinceSeq);
     if (slice.length === 0) {
@@ -46,12 +46,12 @@ export class ReflectionPipeline {
       };
     }
 
-    const knowledgeText = await readKnowledge(configDir).catch(() => '');
+    const pinnedFacts = factRepo.listPinned().map((f) => f.body).join('\n');
     const transcript = buildTranscriptSlice(slice, TRANSCRIPT_BUDGET_BYTES);
     const prompt = buildReflectorPrompt({
       originalRequest: transcript.originalRequest,
       transcript: transcript.text,
-      knowledgeText,
+      knowledgeText: pinnedFacts,
       existingTitles: artifactRepo.titlesForReflectorContext(),
     });
 
@@ -74,12 +74,17 @@ export class ReflectionPipeline {
       };
     }
 
-    const novelFacts = filterNovelFacts(outcome.result.facts, knowledgeText);
-    for (const fact of novelFacts) {
+    let factsWritten = 0;
+    for (const f of outcome.result.facts) {
       try {
-        await appendKnowledge(configDir, fact);
+        const { inserted } = factRepo.upsert({
+          body: f.body,
+          preference: f.preference,
+          sourceSessionId: args.sessionId,
+        });
+        if (inserted) factsWritten += 1;
       } catch (err) {
-        logger.error('appendKnowledge failed', err);
+        logger.error('factRepo.upsert failed', err);
       }
     }
 
@@ -94,7 +99,7 @@ export class ReflectionPipeline {
     ];
 
     const savedByKind: PipelineResult['savedByKind'] = {
-      fact: novelFacts.length,
+      fact: factsWritten,
       playbook: 0,
       anti_pattern: 0,
       heuristic: 0,
@@ -126,19 +131,22 @@ export class ReflectionPipeline {
       }
     }
 
-    const total = novelFacts.length + savedArtifacts;
+    const rerank = factRepo.rerank();
+    const total = factsWritten + savedArtifacts;
     if (total > 0) {
       appendSystemNote(args.sessionId, {
         type: 'memory-update',
-        facts: savedByKind.fact,
+        facts: factsWritten,
         playbooks: savedByKind.playbook,
         antiPatterns: savedByKind.anti_pattern,
         heuristics: savedByKind.heuristic,
+        promoted: rerank.promoted.length,
+        demoted: rerank.demoted.length,
       });
     }
 
     return {
-      savedFacts: novelFacts.length,
+      savedFacts: factsWritten,
       savedArtifacts,
       savedByKind,
       capReached,
