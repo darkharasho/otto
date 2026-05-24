@@ -75,6 +75,7 @@ async function startElectron(): Promise<void> {
   const { CompletionDetector } = await import('./reflection/completion-detector');
   const { FactRepo } = await import('./db/fact-repo');
   const { importLegacyKnowledge } = await import('./knowledge/import-legacy');
+  const { cleanupDuplicateFacts } = await import('./knowledge/cleanup');
   const { regenerateKnowledgeFile, renderPinnedAsMarkdown } = await import('./knowledge/store');
   const { getEmbedder } = await import('./embeddings/embedder');
   const { backfillEmbeddings } = await import('./embeddings/backfill');
@@ -189,6 +190,11 @@ async function startElectron(): Promise<void> {
     await importLegacyKnowledge(ottoConfigDir, factRepo);
   } catch (err) {
     logger.error('importLegacyKnowledge failed', err);
+  }
+  try {
+    cleanupDuplicateFacts(db, factRepo);
+  } catch (err) {
+    logger.error('cleanupDuplicateFacts failed', err);
   }
   await backfillEmbeddings({ db, embedder });
   factRepo.rerank();

@@ -9,6 +9,17 @@ const BULLET_RE = /^\s*-\s*\((\d{4})-(\d{2})-(\d{2})\)\s*(.*\S)\s*$/;
 
 export async function importLegacyKnowledge(configDir: string, repo: FactRepo): Promise<void> {
   const src = path.join(configDir, LEGACY_FILE);
+  const bak = path.join(configDir, BACKUP_FILE);
+  // The .bak marker means migration already ran. Without this guard, every
+  // startup re-imports the file that `regenerateKnowledgeFile` just rewrote,
+  // and since the regenerated lines look like `- body` (no date prefix), they
+  // fall through to the raw-line branch and get stored as dashed duplicates.
+  try {
+    await fsp.access(bak);
+    return;
+  } catch {
+    // .bak doesn't exist — proceed with the one-time import.
+  }
   let text: string;
   try {
     text = await fsp.readFile(src, 'utf8');

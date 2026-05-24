@@ -11,4 +11,11 @@ describe('normalizeFactLine', () => {
   it('collapses whitespace and lowercases bare text', () => {
     expect(normalizeFactLine('  Hello\tWorld\n')).toBe('hello world');
   });
+
+  it('collapses any number of leading markdown bullet prefixes onto the bare text', () => {
+    const bare = normalizeFactLine('Wayland typing: always click "Allow"');
+    expect(normalizeFactLine('- Wayland typing: always click "Allow"')).toBe(bare);
+    expect(normalizeFactLine('- - Wayland typing: always click "Allow"')).toBe(bare);
+    expect(normalizeFactLine('  -  - - Wayland typing: always click "Allow"')).toBe(bare);
+  });
 });
