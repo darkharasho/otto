@@ -4,6 +4,7 @@
   "description": "General-purpose computer coworking agent",
   "main": "out/main/index.js",
   "private": true,
+  "packageManager": "pnpm@9.15.0",
   "scripts": {
     "predev": "node scripts/ensure-abi.mjs electron",
     "dev": "electron-vite dev",
