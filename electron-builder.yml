@@ -1,5 +1,10 @@
 appId: dev.otto.app
 productName: Otto
+# Our postinstall already rebuilds better-sqlite3 (the only native dep we need
+# matched to Electron's ABI) via @electron/rebuild's JS API with onlyModules.
+# Without this, electron-builder runs its own full-tree rebuild at package time
+# and trips on usocket (POSIX-only, can't compile on Windows).
+npmRebuild: false
 directories:
   output: dist
   buildResources: build
