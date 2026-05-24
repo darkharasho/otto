@@ -26,17 +26,20 @@ export function Toggle({
   label,
   description,
   disabled = false,
+  divided = false,
 }: {
   checked: boolean;
   onChange(v: boolean): void;
   label: string;
   description?: string;
   disabled?: boolean;
+  divided?: boolean;
 }) {
   return (
     <label
       className={[
-        'flex items-start gap-3 py-1.5 cursor-pointer select-none',
+        'flex items-start gap-3 py-3 cursor-pointer select-none',
+        divided ? 'border-b border-border/40 last:border-b-0' : '',
         disabled ? 'opacity-50 cursor-not-allowed' : '',
       ].join(' ')}
     >
@@ -47,9 +50,6 @@ export function Toggle({
         disabled={disabled}
         onClick={() => !disabled && onChange(!checked)}
         className={[
-          // Track. box-content + explicit padding so the knob's geometry
-          // doesn't depend on border arithmetic — the inset 2px on every
-          // side is the "gutter" the 14px knob slides within.
           'group/toggle mt-0.5 box-content relative w-[28px] h-[14px] p-[2px] rounded-full',
           'border transition-colors flex-shrink-0',
           checked
@@ -66,8 +66,8 @@ export function Toggle({
         />
       </button>
       <div className="flex-1 min-w-0">
-        <div className="text-sm text-text leading-tight">{label}</div>
-        {description && <div className="text-[11px] text-muted mt-0.5">{description}</div>}
+        <div className="text-sm font-medium text-text leading-tight">{label}</div>
+        {description && <div className="text-[11px] text-muted mt-0.5 leading-snug">{description}</div>}
       </div>
     </label>
   );
@@ -92,7 +92,7 @@ export function RadioGroup<T extends string>({
             type="button"
             onClick={() => onChange(opt.value)}
             className={[
-              'relative w-full text-left pl-3 pr-2.5 py-2 rounded-lg transition-colors',
+              'relative w-full text-left pl-3 pr-2.5 py-2.5 rounded-lg transition-colors',
               active ? 'bg-accent/10 text-text' : 'text-text hover:bg-bg/60',
             ].join(' ')}
           >
