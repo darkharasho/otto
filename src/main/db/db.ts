@@ -36,7 +36,7 @@ ALTER TABLE sessions ADD COLUMN sdk_session_id TEXT;
 `;
 
 const MIGRATION_003_ARTIFACTS = `
-CREATE TABLE artifact (
+CREATE TABLE IF NOT EXISTS artifact (
   id                 TEXT PRIMARY KEY,
   kind               TEXT NOT NULL,
   title              TEXT NOT NULL,
@@ -50,26 +50,26 @@ CREATE TABLE artifact (
   archived           INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE INDEX artifact_kind_idx ON artifact(kind);
-CREATE INDEX artifact_archived_idx ON artifact(archived);
+CREATE INDEX IF NOT EXISTS artifact_kind_idx ON artifact(kind);
+CREATE INDEX IF NOT EXISTS artifact_archived_idx ON artifact(archived);
 
-CREATE VIRTUAL TABLE artifact_fts USING fts5(
+CREATE VIRTUAL TABLE IF NOT EXISTS artifact_fts USING fts5(
   title, body, tags,
   content='artifact',
   content_rowid='rowid'
 );
 
-CREATE TRIGGER artifact_ai AFTER INSERT ON artifact BEGIN
+CREATE TRIGGER IF NOT EXISTS artifact_ai AFTER INSERT ON artifact BEGIN
   INSERT INTO artifact_fts(rowid, title, body, tags)
   VALUES (new.rowid, new.title, new.body, new.tags);
 END;
 
-CREATE TRIGGER artifact_ad AFTER DELETE ON artifact BEGIN
+CREATE TRIGGER IF NOT EXISTS artifact_ad AFTER DELETE ON artifact BEGIN
   INSERT INTO artifact_fts(artifact_fts, rowid, title, body, tags)
   VALUES ('delete', old.rowid, old.title, old.body, old.tags);
 END;
 
-CREATE TRIGGER artifact_au AFTER UPDATE ON artifact BEGIN
+CREATE TRIGGER IF NOT EXISTS artifact_au AFTER UPDATE ON artifact BEGIN
   INSERT INTO artifact_fts(artifact_fts, rowid, title, body, tags)
   VALUES ('delete', old.rowid, old.title, old.body, old.tags);
   INSERT INTO artifact_fts(rowid, title, body, tags)
