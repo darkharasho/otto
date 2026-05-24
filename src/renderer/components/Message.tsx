@@ -80,6 +80,15 @@ interface Props {
 }
 
 export function MessageView({ message, isStreamingTarget = false }: Props) {
+  if (message.role === 'system') {
+    const block = message.content[0];
+    if (!block || block.type !== 'memory-update') return null;
+    const text = formatMemoryUpdate(block);
+    if (!text) return null;
+    return (
+      <div className="text-[11px] text-muted italic py-1 px-3">{text}</div>
+    );
+  }
   if (message.role === 'user') {
     return (
       <div data-testid="message-user" className="otto-msg-enter flex justify-end my-3">
@@ -194,4 +203,14 @@ function renderBlocks(content: ContentBlock[], streamingTarget: boolean) {
     );
   }
   return <>{elements}</>;
+}
+
+function formatMemoryUpdate(block: Extract<ContentBlock, { type: 'memory-update' }>): string {
+  const parts: string[] = [];
+  if (block.playbooks > 0) parts.push(`${block.playbooks} playbook${block.playbooks === 1 ? '' : 's'}`);
+  if (block.facts > 0) parts.push(`${block.facts} fact${block.facts === 1 ? '' : 's'}`);
+  if (block.antiPatterns > 0) parts.push(`${block.antiPatterns} anti-pattern${block.antiPatterns === 1 ? '' : 's'}`);
+  if (block.heuristics > 0) parts.push(`${block.heuristics} heuristic${block.heuristics === 1 ? '' : 's'}`);
+  if (parts.length === 0) return '';
+  return `${parts.join(', ')} created/updated`;
 }
