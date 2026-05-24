@@ -28,6 +28,7 @@
     "@anthropic-ai/claude-agent-sdk": "^0.1.0",
     "@fontsource/plus-jakarta-sans": "^5.2.8",
     "better-sqlite3": "^12.10.0",
+    "dbus-next": "^0.10.2",
     "electron-log": "^5.2.0",
     "electron-updater": "^6.8.3",
     "emoji-regex": "^10.6.0",
