@@ -138,6 +138,7 @@ async function startElectron(): Promise<void> {
   let currentMessageId: string | null = null;
   // Forward-declared so closures (emitWithNotify, reflection notifyLearned,
   // window.onVisibilityChange) can capture it before TrayManager is built.
+  // eslint-disable-next-line prefer-const
   let tray: InstanceType<typeof TrayManager>;
 
   // Intercept every session event so the Notifier can decide whether to
