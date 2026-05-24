@@ -143,3 +143,21 @@ describe('SessionManager', () => {
     expect(repo.getSession(sessionId)?.title).toBe('first prompt here');
   });
 });
+
+describe('SessionManager listeners', () => {
+  it('onDoneListener fires with sessionId after a turn settles', async () => {
+    const calls: string[] = [];
+    manager.onDoneListener((sid) => calls.push(sid));
+    const { sessionId } = await manager.start({});
+    await manager.send({ sessionId, text: 'hi' });
+    expect(calls).toEqual([sessionId]);
+  });
+
+  it('onUserActiveListener fires with sessionId at send start', async () => {
+    const calls: string[] = [];
+    manager.onUserActiveListener((sid) => calls.push(sid));
+    const { sessionId } = await manager.start({});
+    await manager.send({ sessionId, text: 'hi' });
+    expect(calls).toEqual([sessionId]);
+  });
+});

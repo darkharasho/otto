@@ -32,6 +32,8 @@ type Emitter = (event: SessionEvent) => void;
 export class SessionManager {
   private readonly aborts = new Map<string, AbortController>();
   private activeSessionId: string | null = null;
+  private readonly doneListeners: Array<(sessionId: string) => void> = [];
+  private readonly userActiveListeners: Array<(sessionId: string) => void> = [];
 
   constructor(
     private readonly repo: Repo,
@@ -43,6 +45,14 @@ export class SessionManager {
 
   getActiveSessionId(): string | null {
     return this.activeSessionId;
+  }
+
+  onDoneListener(cb: (sessionId: string) => void): void {
+    this.doneListeners.push(cb);
+  }
+
+  onUserActiveListener(cb: (sessionId: string) => void): void {
+    this.userActiveListeners.push(cb);
   }
 
   async start(args: { resume?: string; model?: string }): Promise<{ sessionId: string }> {
@@ -76,6 +86,9 @@ export class SessionManager {
     const controller = new AbortController();
     this.aborts.set(sessionId, controller);
     this.activeSessionId = sessionId;
+    for (const cb of this.userActiveListeners) {
+      try { cb(sessionId); } catch (err) { logger.warn(`userActive listener threw: ${err instanceof Error ? err.message : err}`); }
+    }
 
     this.onAssistantMessageId(assistant.id);
     this.emit({ type: 'message-start', sessionId, messageId: assistant.id });
@@ -160,6 +173,9 @@ export class SessionManager {
       // turn leaves the UI stuck in `streaming: true` because the SDK's
       // generator finally-yielded `done` never reaches our outer consumer.
       this.emit({ type: 'done', sessionId });
+      for (const cb of this.doneListeners) {
+        try { cb(sessionId); } catch (err) { logger.warn(`done listener threw: ${err instanceof Error ? err.message : err}`); }
+      }
       void user;
     }
   }
