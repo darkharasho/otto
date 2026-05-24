@@ -7,6 +7,7 @@ import { defaultSubFor, subsFor, type TabId } from './components/settings/Settin
 import { ModelSection } from './components/settings/ModelSection';
 import { WindowSection } from './components/settings/WindowSection';
 import { ShortcutSection } from './components/settings/ShortcutSection';
+import { RemoteDesktopSection } from './components/settings/RemoteDesktopSection';
 import { StartupSection } from './components/settings/StartupSection';
 import { AutonomySection } from './components/settings/AutonomySection';
 import { NotificationsSection } from './components/settings/NotificationsSection';
@@ -136,6 +137,7 @@ function renderSubsection(args: RenderArgs) {
         />
       );
     if (activeSub === 'shortcut') return <ShortcutSection />;
+    if (activeSub === 'remoteDesktop') return <RemoteDesktopSection />;
     if (activeSub === 'startup')
       return (
         <StartupSection

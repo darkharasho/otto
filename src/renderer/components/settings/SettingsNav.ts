@@ -20,6 +20,7 @@ export const TABS: TabEntry[] = [
       { id: 'model', label: 'Model' },
       { id: 'window', label: 'Window' },
       { id: 'shortcut', label: 'Shortcut' },
+      { id: 'remoteDesktop', label: 'Remote desktop' },
       { id: 'startup', label: 'Startup' },
     ],
   },
