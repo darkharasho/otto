@@ -106,8 +106,16 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
     return proxy.getInterface(REMOTE_DESKTOP_IFACE) as unknown as AnyIface;
   }
 
-  function predictedRequestPath(handleToken: string): string {
-    return `/org/freedesktop/portal/desktop/request/_/${handleToken}`;
+  function senderToken(busName: string | null | undefined): string {
+    // Per the xdg-desktop-portal spec, the Request path encodes the sender's
+    // unique bus name: leading ':' stripped, dots → underscores. Tests use
+    // the older '_' placeholder; real production uses the bus's unique name.
+    if (!busName) return '_';
+    return busName.replace(/^:/, '').replace(/\./g, '_');
+  }
+
+  function predictedRequestPath(handleToken: string, busName?: string | null): string {
+    return `/org/freedesktop/portal/desktop/request/${senderToken(busName)}/${handleToken}`;
   }
 
   /**
@@ -129,8 +137,8 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
     handleToken: string
   ): Promise<{ pending: Promise<Record<string, unknown>> }> {
     const bus = await getBus();
-    const requestPath = predictedRequestPath(handleToken);
-    const busAny = bus as unknown as AnyIface;
+    const busAny = bus as unknown as AnyIface & { name?: string | null };
+    const requestPath = predictedRequestPath(handleToken, busAny.name ?? null);
 
     // Test/stub bus: doesn't speak addMatch + raw messages. Use the proxy.
     if (typeof busAny._addMatch !== 'function') {
