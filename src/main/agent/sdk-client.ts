@@ -129,7 +129,7 @@ const SYSTEM_PROMPT = [
   '2. From the screenshot, note virtual-desktop pixel coordinates (the `monitors` array tells you which display each x/y is on).',
   '3. Click into the target (`click(x, y)`) BEFORE typing. Wait for the post-action delay to settle.',
   '4. Then `type("...")` or send a `key("Control+...")` combo.',
-  '5. Take another screenshot to confirm the action landed where you expected.',
+  '5. Take another screenshot to confirm the action landed where you expected. The cursor IS rendered in screenshots (Spectacle -p), so you can SEE where your last click landed relative to the target. If it missed, the cursor position in the new screenshot tells you the exact pixel error — adjust your next click coords by that vector and try again. Pixel estimation from screenshots is imperfect (~10–50px error is normal); use this feedback loop to converge.',
   '',
   'Things NOT to do:',
   '- Do NOT press `Escape` as a recovery action — it will close menus, lose work, or hide Otto itself. Only use Escape when the user explicitly asks.',

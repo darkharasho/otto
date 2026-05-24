@@ -116,7 +116,9 @@ export class LinuxAdapter implements PlatformAdapter {
       // (region, click, move) are virtual-desktop absolute. Crop in-process
       // via nativeImage when the caller requested a region.
       const tmp = path.join(tmpdir(), `otto-screenshot-${randomUUID()}.png`);
-      await this.runSpectacle(['-bnf', '-o', tmp], 5_000);
+      // -p includes the mouse pointer so the model can see where its last
+      // click landed and self-correct on the next attempt.
+      await this.runSpectacle(['-bnfp', '-o', tmp], 5_000);
 
       try {
         const fullBytes = await fsp.readFile(tmp);
