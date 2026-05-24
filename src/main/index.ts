@@ -75,7 +75,7 @@ async function startElectron(): Promise<void> {
   const { CompletionDetector } = await import('./reflection/completion-detector');
   const { FactRepo } = await import('./db/fact-repo');
   const { importLegacyKnowledge } = await import('./knowledge/import-legacy');
-  const { regenerateKnowledgeFile } = await import('./knowledge/store');
+  const { regenerateKnowledgeFile, renderPinnedAsMarkdown } = await import('./knowledge/store');
 
   const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
 
@@ -277,7 +277,8 @@ async function startElectron(): Promise<void> {
       let facts: string[] = [];
       if (wantsFacts) {
         const hits = factRepo.search({ query: args.query, limit });
-        if (hits.length > 0) factRepo.bumpUse(hits.map((h) => h.id), 'recall');
+        // Use a fixed pseudo-session id so all recall-tool hits in this process count once each toward distinct_sessions, regardless of which real session triggered them.
+      if (hits.length > 0) factRepo.bumpUse(hits.map((h) => h.id), 'recall');
         facts = hits.map((h) => h.body);
       }
       return {
@@ -295,15 +296,16 @@ async function startElectron(): Promise<void> {
     memoryCounts: () => ({ ...artifactRepo.counts(), factsPinned: factRepo.counts().pinned, factsTotal: factRepo.counts().total }),
     factsForPrompt: () => {
       const pinned = factRepo.listPinned();
-      if (pinned.length === 0) return { markdown: '', ids: [] };
       return {
-        markdown: pinned.map((f) => `- ${f.body}`).join('\n'),
+        markdown: renderPinnedAsMarkdown(factRepo),
         ids: pinned.map((f) => f.id),
       };
     },
     bumpFactUse: (ids, sessionId) => factRepo.bumpUse(ids, sessionId),
     appendKnowledge: async (note, sessionId) => {
       factRepo.upsert({ body: note, preference: true, sourceSessionId: sessionId });
+      factRepo.rerank();
+      await regenerateKnowledgeFile(ottoConfigDir, factRepo);
     },
     onMarkTaskComplete: (sessionId, _summary) => {
       detector.onMarkComplete(sessionId);

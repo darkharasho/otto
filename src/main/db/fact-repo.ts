@@ -5,7 +5,6 @@ import { sanitizeFtsQuery } from './fts-utils';
 
 export const PINNED_BUDGET = 40;
 export const SCORE_HALF_LIFE_MS = 21 * 86_400_000;
-export const PROMOTION_THRESHOLD = 3;
 export const BOOTSTRAP_PREFERENCE_SESSIONS = 2;
 
 export interface Fact {
