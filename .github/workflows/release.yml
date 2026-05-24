@@ -24,6 +24,11 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Pin Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -81,12 +86,10 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      # node-gyp 9 (pulled in via the transitive `usocket` native dep) still
-      # imports `distutils`, which Python 3.12+ removed. The Windows runner
-      # ships 3.12 now, so pin to 3.11 to keep node-gyp happy on Windows.
-      # Linux/mac runners build fine on the default Python.
-      - name: Pin Python (Windows)
-        if: matrix.platform == 'win'
+      # node-gyp 9 (used to rebuild native deps for the Electron ABI) still
+      # imports `distutils`, which Python 3.12+ removed. All three runner
+      # images now ship 3.12, so pin to 3.11 everywhere.
+      - name: Pin Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
