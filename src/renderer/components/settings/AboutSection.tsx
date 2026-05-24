@@ -1,4 +1,4 @@
-import { Section } from '../SettingsControls';
+import { SubsectionPage } from './SubsectionPage';
 
 export function AboutSection({
   version,
@@ -8,13 +8,13 @@ export function AboutSection({
   onOpenLogs: () => void;
 }) {
   return (
-    <Section title="About">
+    <SubsectionPage title="About">
       <div className="flex items-center justify-between text-xs text-muted py-1">
         <span>Otto v{version}</span>
         <button type="button" onClick={onOpenLogs} className="text-accent hover:underline">
           Open logs folder
         </button>
       </div>
-    </Section>
+    </SubsectionPage>
   );
 }

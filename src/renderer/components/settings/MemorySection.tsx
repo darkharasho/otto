@@ -1,8 +1,16 @@
 import { useEffect, useState, useCallback } from 'react';
 import { ipc } from '../../ipc';
 import type { MemoryArtifactView } from '@shared/ipc-contract';
+import { SubsectionPage } from './SubsectionPage';
 
 export type MemoryKind = 'fact' | 'playbook' | 'anti_pattern' | 'heuristic';
+
+const KIND_LABELS: Record<MemoryKind, string> = {
+  fact: 'Facts',
+  playbook: 'Playbooks',
+  anti_pattern: 'Anti-patterns',
+  heuristic: 'Heuristics',
+};
 
 export function MemorySection({ kind }: { kind: MemoryKind }) {
   const [query, setQuery] = useState('');
@@ -59,8 +67,9 @@ export function MemorySection({ kind }: { kind: MemoryKind }) {
   }
 
   return (
-    <div className="space-y-3">
-      <input
+    <SubsectionPage title={KIND_LABELS[kind]}>
+      <div className="space-y-3">
+        <input
         type="text"
         placeholder="Search…"
         value={query}
@@ -163,6 +172,7 @@ export function MemorySection({ kind }: { kind: MemoryKind }) {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </SubsectionPage>
   );
 }
