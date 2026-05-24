@@ -133,6 +133,11 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
   let sessionPath: string | null = null;
   let handshakePromise: Promise<void> | null = null;
   let tail: Promise<void> = Promise.resolve();
+  // We track the cursor we last moved to ourselves because Electron's
+  // screen.getCursorScreenPoint() returns stale values on Wayland once the
+  // cursor leaves any Electron window. Without this, every move after the
+  // first computes a delta from the wrong "current" and overshoots.
+  let lastSentCursor: { x: number; y: number } | null = null;
 
   async function getBus(): Promise<MessageBus> {
     if (busRef) return busRef;
@@ -327,11 +332,15 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
 
   async function rawMove(x: number, y: number): Promise<void> {
     const rd = await getRemoteDesktop();
-    const cur = getCursor();
+    // Prefer the cursor we last moved ourselves (we know exactly where it
+    // is). Fall back to Electron's screen reading only on the very first
+    // move of the session, before we've sent anything.
+    const cur = lastSentCursor ?? getCursor();
     const dx = Math.round(x - cur.x);
     const dy = Math.round(y - cur.y);
-    logger.info(`portal move: target=(${x},${y}) cur=(${cur.x},${cur.y}) delta=(${dx},${dy})`);
+    logger.info(`portal move: target=(${x},${y}) cur=(${cur.x},${cur.y}) delta=(${dx},${dy}) source=${lastSentCursor ? 'tracked' : 'electron'}`);
     await callMember(rd, 'NotifyPointerMotion', sessionPath!, {}, dx, dy);
+    lastSentCursor = { x, y };
   }
 
   async function rawButton(button: MouseButton, state: 0 | 1): Promise<void> {
