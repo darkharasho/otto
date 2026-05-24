@@ -11,7 +11,6 @@ import type {
   CursorPosition,
   DisplayServer,
   MonitorInfo,
-  MouseButton,
   PlatformAdapter,
   PlatformInput,
   ShellChild,
