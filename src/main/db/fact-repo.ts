@@ -2,6 +2,8 @@ import type { Database } from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import { normalizeFactLine } from '../knowledge/dedup';
 import { sanitizeFtsQuery } from './fts-utils';
+import type { Embedder } from '../embeddings/embedder';
+import { getEmbedder } from '../embeddings/embedder';
 
 export const PINNED_BUDGET = 40;
 export const SCORE_HALF_LIFE_MS = 21 * 86_400_000;
@@ -68,10 +70,11 @@ export { sanitizeFtsQuery } from './fts-utils';
 export class FactRepo {
   constructor(
     private readonly db: Database,
-    private readonly now: () => number = Date.now
+    private readonly now: () => number = Date.now,
+    private readonly embedder: Embedder = getEmbedder()
   ) {}
 
-  upsert(input: UpsertInput): UpsertResult {
+  async upsert(input: UpsertInput): Promise<UpsertResult> {
     const bodyTrimmed = input.body.trim();
     const bodyNorm = normalizeFactLine(bodyTrimmed);
     if (!bodyNorm) throw new Error('FactRepo.upsert: empty body');
@@ -85,15 +88,35 @@ export class FactRepo {
     const distinctSessions = input.preference ? BOOTSTRAP_PREFERENCE_SESSIONS : 0;
     const createdAt = input.createdAt ?? this.now();
     const pinned = input.pinned ? 1 : 0;
-    this.db
-      .prepare(
-        `INSERT INTO fact
-          (id, body, body_norm, pinned, use_count, distinct_sessions, score,
-           created_at, last_used_at, source_session_id)
-         VALUES (?, ?, ?, ?, 0, ?, 0, ?, NULL, ?)`
-      )
-      .run(id, bodyTrimmed, bodyNorm, pinned, distinctSessions, createdAt, input.sourceSessionId ?? null);
+
+    // Embed BEFORE the transaction so we don't hold a write lock across the
+    // (~10ms) embed call.
+    const vec = await this.embedder.embed(bodyTrimmed);
+
+    const insertFact = this.db.prepare(
+      `INSERT INTO fact
+        (id, body, body_norm, pinned, use_count, distinct_sessions, score,
+         created_at, last_used_at, source_session_id)
+       VALUES (?, ?, ?, ?, 0, ?, 0, ?, NULL, ?)`
+    );
+    const insertVec = this.db.prepare(
+      `INSERT INTO memory_vec(embedding, kind, ref_id) VALUES (?, 'fact', ?)`
+    );
+    const txn = this.db.transaction(() => {
+      insertFact.run(id, bodyTrimmed, bodyNorm, pinned, distinctSessions, createdAt, input.sourceSessionId ?? null);
+      insertVec.run(Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength), id);
+    });
+    txn();
     return { id, inserted: true };
+  }
+
+  delete(id: string): void {
+    const txn = this.db.transaction(() => {
+      this.db.prepare(`DELETE FROM memory_vec WHERE kind='fact' AND ref_id=?`).run(id);
+      this.db.prepare(`DELETE FROM fact_session WHERE fact_id=?`).run(id);
+      this.db.prepare(`DELETE FROM fact WHERE id=?`).run(id);
+    });
+    txn();
   }
 
   get(id: string): Fact | null {
