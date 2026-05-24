@@ -18,25 +18,6 @@ import type {
 } from './index';
 import { isDevInstance } from '../instance';
 
-const BUTTON_CODE: Record<MouseButton, string> = {
-  left: '0xC0',
-  right: '0xC1',
-  middle: '0xC2',
-};
-
-const BUTTON_LOW: Record<MouseButton, string> = {
-  left: '0x40',
-  right: '0x41',
-  middle: '0x42',
-};
-
-/** xdotool button numbers: 1=left, 2=middle, 3=right. */
-const XBTN: Record<MouseButton, string> = {
-  left: '1',
-  middle: '2',
-  right: '3',
-};
-
 /** Translate Otto's xdotool-style combo to xdotool's lowercase-modifier form. */
 function toXdotoolCombo(combo: string): string {
   return combo
@@ -66,6 +47,20 @@ function virtualDesktopBounds(monitors: MonitorInfo[]): { x: number; y: number; 
 
 export class LinuxAdapter implements PlatformAdapter {
   readonly name = 'linux';
+
+  private portalInput: import('../input/portal').InputHandle | null = null;
+
+  private getPortalInput(): import('../input/portal').InputHandle {
+    if (!this.portalInput) {
+      // Lazy require so dbus-next isn't pulled into the bundle until first use.
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { createPortalInput } = require('../input/portal') as typeof import('../input/portal');
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const { ottoConfigDir } = require('../logger') as typeof import('../logger');
+      this.portalInput = createPortalInput({ configDir: ottoConfigDir });
+    }
+    return this.portalInput;
+  }
 
   detectDisplayServer(): DisplayServer {
     const s = (process.env.XDG_SESSION_TYPE ?? '').toLowerCase();
@@ -173,42 +168,20 @@ export class LinuxAdapter implements PlatformAdapter {
       const point = screen.getCursorScreenPoint();
       return { x: point.x, y: point.y };
     },
-    move: async (x: number, y: number): Promise<void> => {
-      await this.ensureXdotool();
-      await this.runXdotool(['mousemove', String(x), String(y)]);
+    move: async (x, y): Promise<void> => {
+      await this.getPortalInput().move(x, y);
     },
-    scroll: async (dx: number, dy: number, x?: number, y?: number): Promise<void> => {
-      await this.ensureXdotool();
-      if (x !== undefined && y !== undefined) {
-        await this.runXdotool(['mousemove', String(x), String(y)]);
-      }
-      const vTicks = Math.abs(dy);
-      const vBtn = dy < 0 ? '4' : '5'; // 4 = up, 5 = down
-      for (let i = 0; i < vTicks; i += 1) {
-        await this.runXdotool(['click', vBtn]);
-      }
-      const hTicks = Math.abs(dx);
-      const hBtn = dx < 0 ? '6' : '7'; // 6 = left, 7 = right
-      for (let i = 0; i < hTicks; i += 1) {
-        await this.runXdotool(['click', hBtn]);
-      }
+    scroll: async (dx, dy, x, y): Promise<void> => {
+      await this.getPortalInput().scroll(dx, dy, x, y);
     },
-    click: async (x: number, y: number, button: MouseButton): Promise<void> => {
-      await this.ensureXdotool();
-      await this.runXdotool(['mousemove', String(x), String(y)]);
-      await this.runXdotool(['click', XBTN[button]]);
+    click: async (x, y, button): Promise<void> => {
+      await this.getPortalInput().click(x, y, button);
     },
-    doubleClick: async (x: number, y: number, button: MouseButton): Promise<void> => {
-      await this.ensureXdotool();
-      await this.runXdotool(['mousemove', String(x), String(y)]);
-      await this.runXdotool(['click', '--repeat', '2', '--delay', '50', XBTN[button]]);
+    doubleClick: async (x, y, button): Promise<void> => {
+      await this.getPortalInput().doubleClick(x, y, button);
     },
-    drag: async (x1: number, y1: number, x2: number, y2: number, button: MouseButton): Promise<void> => {
-      await this.ensureXdotool();
-      await this.runXdotool(['mousemove', String(x1), String(y1)]);
-      await this.runXdotool(['mousedown', XBTN[button]]);
-      await this.runXdotool(['mousemove', String(x2), String(y2)]);
-      await this.runXdotool(['mouseup', XBTN[button]]);
+    drag: async (x1, y1, x2, y2, button): Promise<void> => {
+      await this.getPortalInput().drag(x1, y1, x2, y2, button);
     },
     type: async (text: string): Promise<void> => {
       await this.ensureXdotool();
