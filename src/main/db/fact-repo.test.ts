@@ -46,3 +46,23 @@ describe('FactRepo.upsert', () => {
     expect(repo.get(id)!.distinctSessions).toBe(2);
   });
 });
+
+describe('FactRepo.search', () => {
+  it('returns FTS hits ranked', () => {
+    repo.upsert({ body: 'Spectacle needs -bnf on multi-monitor' });
+    repo.upsert({ body: 'Browser of choice is Zen' });
+    const hits = repo.search({ query: 'spectacle multi-monitor', limit: 5 });
+    expect(hits.map((h) => h.body)).toEqual(['Spectacle needs -bnf on multi-monitor']);
+  });
+
+  it('sanitizes FTS operator characters', () => {
+    repo.upsert({ body: 'audio device is Focusrite Scarlett' });
+    const hits = repo.search({ query: 'audio "device"', limit: 5 });
+    expect(hits).toHaveLength(1);
+  });
+
+  it('returns empty array when query is blank after sanitize', () => {
+    repo.upsert({ body: 'x' });
+    expect(repo.search({ query: '()*', limit: 5 })).toEqual([]);
+  });
+});

@@ -63,6 +63,16 @@ function rowToFact(r: Row): Fact {
   };
 }
 
+export function sanitizeFtsQuery(q: string): string {
+  const cleaned = q.replace(/["()*:^-]/g, ' ').trim();
+  if (!cleaned) return '';
+  return cleaned
+    .split(/\s+/)
+    .filter((t) => t.length > 0)
+    .map((t) => `${t}*`)
+    .join(' ');
+}
+
 export class FactRepo {
   constructor(
     private readonly db: Database,
@@ -97,5 +107,18 @@ export class FactRepo {
   get(id: string): Fact | null {
     const row = this.db.prepare('SELECT * FROM fact WHERE id = ?').get(id) as Row | undefined;
     return row ? rowToFact(row) : null;
+  }
+
+  search(args: { query: string; limit: number }): Fact[] {
+    const q = sanitizeFtsQuery(args.query);
+    if (!q) return [];
+    const sql = `
+      SELECT fact.* FROM fact_fts
+        JOIN fact ON fact.rowid = fact_fts.rowid
+       WHERE fact_fts MATCH ?
+       ORDER BY rank
+       LIMIT ?
+    `;
+    return (this.db.prepare(sql).all(q, args.limit) as Row[]).map(rowToFact);
   }
 }
