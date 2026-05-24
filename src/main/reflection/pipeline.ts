@@ -1,6 +1,7 @@
 import type { Repo } from '../db/repo';
 import type { ArtifactKind, ArtifactRepo } from '../db/artifact-repo';
 import type { ReflectOutcome } from './reflector';
+import type { ContentBlock } from '@shared/messages';
 import { appendKnowledge, readKnowledge } from '../knowledge/store';
 import { filterNovelFacts } from '../knowledge/dedup';
 import { buildTranscriptSlice } from './transcript';
@@ -15,12 +16,13 @@ export interface PipelineDeps {
   artifactRepo: ArtifactRepo;
   configDir: string;
   runReflector: (prompt: string) => Promise<ReflectOutcome>;
-  notifyLearned: (count: number) => void;
+  appendSystemNote: (sessionId: string, content: ContentBlock) => void;
 }
 
 export interface PipelineResult {
   savedFacts: number;
   savedArtifacts: number;
+  savedByKind: { fact: number; playbook: number; anti_pattern: number; heuristic: number };
   capReached: ArtifactKind[];
   skipped: boolean;
   reason?: string;
@@ -30,11 +32,18 @@ export class ReflectionPipeline {
   constructor(private readonly deps: PipelineDeps) {}
 
   async run(args: { sessionId: string; sinceSeq: number }): Promise<PipelineResult> {
-    const { repo, artifactRepo, configDir, runReflector, notifyLearned } = this.deps;
+    const { repo, artifactRepo, configDir, runReflector, appendSystemNote } = this.deps;
     const allMessages = repo.loadMessages(args.sessionId);
     const slice = allMessages.filter((m) => m.seq > args.sinceSeq);
     if (slice.length === 0) {
-      return { savedFacts: 0, savedArtifacts: 0, capReached: [], skipped: true, reason: 'empty-slice' };
+      return {
+        savedFacts: 0,
+        savedArtifacts: 0,
+        savedByKind: { fact: 0, playbook: 0, anti_pattern: 0, heuristic: 0 },
+        capReached: [],
+        skipped: true,
+        reason: 'empty-slice',
+      };
     }
 
     const knowledgeText = await readKnowledge(configDir).catch(() => '');
@@ -49,7 +58,14 @@ export class ReflectionPipeline {
     const outcome = await runReflector(prompt);
     if (!outcome.ok) {
       logger.warn(`reflector failed: ${outcome.reason}`);
-      return { savedFacts: 0, savedArtifacts: 0, capReached: [], skipped: true, reason: outcome.reason };
+      return {
+        savedFacts: 0,
+        savedArtifacts: 0,
+        savedByKind: { fact: 0, playbook: 0, anti_pattern: 0, heuristic: 0 },
+        capReached: [],
+        skipped: true,
+        reason: outcome.reason,
+      };
     }
 
     const novelFacts = filterNovelFacts(outcome.result.facts, knowledgeText);
@@ -71,6 +87,13 @@ export class ReflectionPipeline {
       ['heuristic', outcome.result.heuristics],
     ];
 
+    const savedByKind: PipelineResult['savedByKind'] = {
+      fact: novelFacts.length,
+      playbook: 0,
+      anti_pattern: 0,
+      heuristic: 0,
+    };
+
     for (const [kind, items] of kindGroups) {
       for (const item of items) {
         const existing = artifactRepo
@@ -89,6 +112,7 @@ export class ReflectionPipeline {
             sourceSessionId: args.sessionId,
           });
           savedArtifacts += 1;
+          savedByKind[kind] += 1;
           if (!existing) counts[kind] += 1;
         } catch (err) {
           logger.error('artifact upsert failed', err);
@@ -97,11 +121,20 @@ export class ReflectionPipeline {
     }
 
     const total = novelFacts.length + savedArtifacts;
-    if (total > 0) notifyLearned(total);
+    if (total > 0) {
+      appendSystemNote(args.sessionId, {
+        type: 'memory-update',
+        facts: savedByKind.fact,
+        playbooks: savedByKind.playbook,
+        antiPatterns: savedByKind.anti_pattern,
+        heuristics: savedByKind.heuristic,
+      });
+    }
 
     return {
       savedFacts: novelFacts.length,
       savedArtifacts,
+      savedByKind,
       capReached,
       skipped: false,
     };

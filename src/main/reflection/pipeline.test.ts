@@ -44,13 +44,13 @@ afterEach(() => {
 
 describe('ReflectionPipeline.run', () => {
   it('appends facts to knowledge.md and inserts new artifacts', async () => {
-    const notify = vi.fn();
+    const appendSystemNote = vi.fn();
     const pipeline = new ReflectionPipeline({
       repo,
       artifactRepo,
       configDir: dir,
       runReflector: async () => REFLECTOR_OK(),
-      notifyLearned: notify,
+      appendSystemNote,
     });
     const out = await pipeline.run({ sessionId: 's1', sinceSeq: -1 });
     expect(out.savedFacts).toBe(1);
@@ -58,11 +58,17 @@ describe('ReflectionPipeline.run', () => {
     const knowledge = readFileSync(path.join(dir, 'knowledge.md'), 'utf8');
     expect(knowledge).toContain('Browser is Zen');
     expect(artifactRepo.list({ kind: 'playbook' })).toHaveLength(1);
-    expect(notify).toHaveBeenCalledWith(2);
+    expect(appendSystemNote).toHaveBeenCalledWith('s1', {
+      type: 'memory-update',
+      facts: 1,
+      playbooks: 1,
+      antiPatterns: 0,
+      heuristics: 0,
+    });
   });
 
   it('does not notify when reflector returns nothing', async () => {
-    const notify = vi.fn();
+    const appendSystemNote = vi.fn();
     const pipeline = new ReflectionPipeline({
       repo,
       artifactRepo,
@@ -72,27 +78,25 @@ describe('ReflectionPipeline.run', () => {
         raw: '{}',
         result: { facts: [], playbooks: [], antiPatterns: [], heuristics: [], skip_reason: 'trivial' },
       }),
-      notifyLearned: notify,
+      appendSystemNote,
     });
     const out = await pipeline.run({ sessionId: 's1', sinceSeq: -1 });
     expect(out.savedFacts).toBe(0);
     expect(out.savedArtifacts).toBe(0);
-    expect(notify).not.toHaveBeenCalled();
+    expect(appendSystemNote).not.toHaveBeenCalled();
   });
 
   it('silently drops on reflector failure', async () => {
-    const notify = vi.fn();
     const pipeline = new ReflectionPipeline({
       repo,
       artifactRepo,
       configDir: dir,
       runReflector: async () => ({ ok: false, reason: 'parse-error', raw: 'junk' }),
-      notifyLearned: notify,
+      appendSystemNote: vi.fn(),
     });
     const out = await pipeline.run({ sessionId: 's1', sinceSeq: -1 });
     expect(out.savedFacts).toBe(0);
     expect(out.savedArtifacts).toBe(0);
-    expect(notify).not.toHaveBeenCalled();
   });
 
   it('skips a fact whose normalized form already lives in knowledge.md', async () => {
@@ -101,7 +105,7 @@ describe('ReflectionPipeline.run', () => {
       artifactRepo,
       configDir: dir,
       runReflector: async () => REFLECTOR_OK({ facts: ['Browser is Zen', 'Browser is Zen'] }),
-      notifyLearned: () => {},
+      appendSystemNote: () => {},
     });
     await pipeline.run({ sessionId: 's1', sinceSeq: -1 });
     await pipeline.run({ sessionId: 's1', sinceSeq: -1 }); // run twice
@@ -114,13 +118,12 @@ describe('ReflectionPipeline.run', () => {
     for (let i = 0; i < 500; i += 1) {
       artifactRepo.upsert({ kind: 'playbook', title: `pb-${i}`, body: 'b', tags: [] });
     }
-    const notify = vi.fn();
     const pipeline = new ReflectionPipeline({
       repo,
       artifactRepo,
       configDir: dir,
       runReflector: async () => REFLECTOR_OK({ facts: [] }),
-      notifyLearned: notify,
+      appendSystemNote: vi.fn(),
     });
     const out = await pipeline.run({ sessionId: 's1', sinceSeq: -1 });
     expect(out.savedArtifacts).toBe(0);
