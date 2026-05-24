@@ -8,6 +8,7 @@ files:
   - public/tray/**
   - public/svg/**
   - package.json
+  - resources/embedding/**
 
 publish:
   provider: github
@@ -54,3 +55,7 @@ asarUnpack:
   # cli.js. asar paths aren't readable by that child process, so unpack the SDK
   # (and its embedded wasm assets) onto the real filesystem.
   - "**/node_modules/@anthropic-ai/claude-agent-sdk/**"
+  - "**/node_modules/onnxruntime-node/**"
+  - "**/node_modules/sqlite-vec/**"
+  - "**/node_modules/@xenova/transformers/**"
+  - "resources/embedding/**"
