@@ -4,7 +4,7 @@ import { logger } from './logger';
 import { isDevInstance } from './instance';
 import { routeExternalLinksToBrowser } from './window';
 
-const WIDTH = 520;
+const WIDTH = 780;
 const HEIGHT = 720;
 
 export class SettingsWindowManager {
