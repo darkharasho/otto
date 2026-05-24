@@ -75,6 +75,7 @@ async function startElectron(): Promise<void> {
   const { CompletionDetector } = await import('./reflection/completion-detector');
   const { FactRepo } = await import('./db/fact-repo');
   const { importLegacyKnowledge } = await import('./knowledge/import-legacy');
+  const { regenerateKnowledgeFile } = await import('./knowledge/store');
 
   const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
 
@@ -186,6 +187,7 @@ async function startElectron(): Promise<void> {
     logger.error('importLegacyKnowledge failed', err);
   }
   factRepo.rerank();
+  void regenerateKnowledgeFile(ottoConfigDir, factRepo);
 
   async function runReflectorSdk(prompt: string): Promise<string> {
     const sdkMod = await import('@anthropic-ai/claude-agent-sdk');
@@ -244,6 +246,7 @@ async function startElectron(): Promise<void> {
           const msgs = repo.loadMessages(sessionId);
           const lastSeq = msgs.length > 0 ? msgs[msgs.length - 1]!.seq : sinceSeq;
           detector.notePersistedSeq(sessionId, lastSeq);
+          await regenerateKnowledgeFile(ottoConfigDir, factRepo);
         } catch (err) {
           logger.error('reflection pipeline threw', err);
         }
@@ -271,21 +274,11 @@ async function startElectron(): Promise<void> {
       });
       for (const row of artifactRows) artifactRepo.bumpUse(row.id);
 
-      const { readKnowledge } = await import('./knowledge/store');
       let facts: string[] = [];
       if (wantsFacts) {
-        const text = await readKnowledge(ottoConfigDir).catch(() => '');
-        const tokens = args.query
-          .toLowerCase()
-          .split(/\s+/)
-          .filter((t) => t.length > 0);
-        facts = text
-          .split('\n')
-          .filter((line) => {
-            const l = line.toLowerCase();
-            return tokens.some((tok) => l.includes(tok));
-          })
-          .slice(0, limit);
+        const hits = factRepo.search({ query: args.query, limit });
+        if (hits.length > 0) factRepo.bumpUse(hits.map((h) => h.id), 'recall');
+        facts = hits.map((h) => h.body);
       }
       return {
         facts,
