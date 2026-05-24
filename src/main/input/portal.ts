@@ -1,4 +1,4 @@
-import dbus, { type MessageBus } from 'dbus-next';
+import dbus, { Variant, type MessageBus } from 'dbus-next';
 import { screen } from 'electron';
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
@@ -47,10 +47,13 @@ type AnyIface = {
 
 type VariantLike = { value: unknown };
 function v(signature: string, value: unknown): VariantLike {
-  const Variant = (dbus as unknown as { Variant?: new (s: string, v: unknown) => VariantLike }).Variant;
-  if (Variant) return new Variant(signature, value);
+  // dbus-next's Variant marshals correctly on the real session bus; the
+  // plain `{ value }` fallback only exists so the test stubs (which read
+  // `.value` directly) don't need to import dbus-next.
+  if (typeof Variant === 'function') return new Variant(signature, value);
   return { value };
 }
+void dbus;
 
 function randomToken(): string {
   return `t${randomBytes(8).toString('hex')}`;
