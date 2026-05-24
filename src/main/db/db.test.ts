@@ -21,7 +21,7 @@ describe('openDatabase', () => {
     const dir = freshDir();
     const db = openDatabase(path.join(dir, 'otto.db'));
     const row = db.prepare('SELECT MAX(version) AS v FROM schema_version').get() as { v: number };
-    expect(row.v).toBe(4);
+    expect(row.v).toBe(5);
     db.close();
   });
 
@@ -34,7 +34,7 @@ describe('openDatabase', () => {
       .prepare('SELECT version FROM schema_version ORDER BY version')
       .all() as { version: number }[];
     // Each migration should have been applied exactly once.
-    expect(rows.map((r) => r.version)).toEqual([1, 2, 3, 4]);
+    expect(rows.map((r) => r.version)).toEqual([1, 2, 3, 4, 5]);
     db.close();
   });
 
@@ -70,6 +70,20 @@ describe('migration 004 (fact + fact_session + fact_fts)', () => {
     expect(tables).toContain('fact');
     expect(tables).toContain('fact_session');
     expect(tables).toContain('fact_fts');
+    db.close();
+  });
+});
+
+describe('migration 005 (memory_vec + sqlite-vec)', () => {
+  it('runs migration 005 creating memory_vec', () => {
+    const db = openDatabase(path.join(freshDir(), 'otto.db'));
+    const version = (db.prepare('SELECT MAX(version) AS v FROM schema_version').get() as { v: number }).v;
+    expect(version).toBeGreaterThanOrEqual(5);
+    const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as { name: string }[]).map((r) => r.name);
+    expect(tables).toContain('memory_vec');
+    const v = (db.prepare('SELECT vec_version() AS v').get() as { v: string }).v;
+    expect(typeof v).toBe('string');
+    expect(v.length).toBeGreaterThan(0);
     db.close();
   });
 });
