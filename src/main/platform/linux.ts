@@ -146,7 +146,7 @@ export class LinuxAdapter implements PlatformAdapter {
         const fullBytes = await fsp.readFile(tmp);
         if (!region) {
           const { width, height } = this.readPngDims(fullBytes);
-          return { bytes: fullBytes, width, height, monitors };
+          return { bytes: fullBytes, width, height, monitors, origin: { x: bounds.x, y: bounds.y } };
         }
         const r = region;
         // Region is given in virtual-desktop coords. Translate to image coords
@@ -161,7 +161,7 @@ export class LinuxAdapter implements PlatformAdapter {
         });
         const croppedBytes = cropped.toPNG();
         const { width, height } = cropped.getSize();
-        return { bytes: croppedBytes, width, height, monitors };
+        return { bytes: croppedBytes, width, height, monitors, origin: { x: r.x, y: r.y } };
       } finally {
         await fsp.unlink(tmp).catch(() => {});
       }

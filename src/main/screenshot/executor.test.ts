@@ -21,6 +21,7 @@ describe('capture', () => {
       width: 100,
       height: 50,
       monitors: [{ id: '1', x: 0, y: 0, w: 1920, h: 1080, scale: 1 }],
+      origin: { x: 0, y: 0 },
     };
     const adapter = fakeAdapter(fixture);
     const r = await capture({ region: undefined }, adapter);
@@ -34,6 +35,7 @@ describe('capture', () => {
       width: 100,
       height: 50,
       monitors: [{ id: '1', x: 0, y: 0, w: 1920, h: 1080, scale: 1 }],
+      origin: { x: 0, y: 0 },
     };
     const adapter = fakeAdapter(fixture);
     const region = { x: 10, y: 20, w: 30, h: 40 };

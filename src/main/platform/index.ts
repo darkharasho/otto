@@ -31,6 +31,13 @@ export interface CaptureResult {
   height: number;
   /** All monitors with their virtual-desktop bounds. Coordinates in input tool args are virtual-desktop absolute. */
   monitors: MonitorInfo[];
+  /**
+   * Top-left of the captured image in virtual-desktop coords.
+   * For full-desktop captures this is the virtual-desktop bounds origin (usually 0,0).
+   * For region or window captures it is the region's top-left.
+   * Consumers add this to image-local pixel offsets to get virtual coords.
+   */
+  origin: { x: number; y: number };
 }
 
 export type MouseButton = 'left' | 'right' | 'middle';
