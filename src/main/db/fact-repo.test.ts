@@ -74,3 +74,26 @@ describe('FactRepo.search', () => {
     expect(hits).toHaveLength(1);
   });
 });
+
+describe('FactRepo.bumpUse', () => {
+  it('increments use_count and last_used_at; first time in session increments distinct_sessions', () => {
+    const { id } = repo.upsert({ body: 'fact A' });
+    repo.bumpUse([id], 's1');
+    let row = repo.get(id)!;
+    expect(row.useCount).toBe(1);
+    expect(row.distinctSessions).toBe(1);
+    expect(row.lastUsedAt).toBe(NOW);
+    repo.bumpUse([id], 's1');
+    row = repo.get(id)!;
+    expect(row.useCount).toBe(2);
+    expect(row.distinctSessions).toBe(1); // same session, no bump
+    repo.bumpUse([id], 's2');
+    row = repo.get(id)!;
+    expect(row.useCount).toBe(3);
+    expect(row.distinctSessions).toBe(2);
+  });
+
+  it('is a no-op for empty list', () => {
+    expect(() => repo.bumpUse([], 's1')).not.toThrow();
+  });
+});

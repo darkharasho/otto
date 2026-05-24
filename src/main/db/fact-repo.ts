@@ -102,6 +102,29 @@ export class FactRepo {
     return row ? rowToFact(row) : null;
   }
 
+  bumpUse(factIds: string[], sessionId: string): void {
+    if (factIds.length === 0) return;
+    const t = this.now();
+    const tryInsertSession = this.db.prepare(
+      'INSERT OR IGNORE INTO fact_session (fact_id, session_id) VALUES (?, ?)'
+    );
+    const bumpRow = this.db.prepare(
+      `UPDATE fact
+          SET use_count = use_count + 1,
+              last_used_at = ?,
+              distinct_sessions = distinct_sessions + ?
+        WHERE id = ?`
+    );
+    const txn = this.db.transaction(() => {
+      for (const id of factIds) {
+        const info = tryInsertSession.run(id, sessionId);
+        const sessionInc = info.changes === 1 ? 1 : 0;
+        bumpRow.run(t, sessionInc, id);
+      }
+    });
+    txn();
+  }
+
   search(args: { query: string; limit: number }): Fact[] {
     const q = sanitizeFtsQuery(args.query);
     if (!q) return [];
