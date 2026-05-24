@@ -13,6 +13,8 @@ export interface InputHandle {
   doubleClick(x: number, y: number, button: MouseButton): Promise<void>;
   drag(x1: number, y1: number, x2: number, y2: number, button: MouseButton): Promise<void>;
   scroll(dx: number, dy: number, x?: number, y?: number): Promise<void>;
+  type(text: string): Promise<void>;
+  key(combo: string): Promise<void>;
 }
 
 export interface PortalDeps {
@@ -36,6 +38,44 @@ const BTN_CODE: Record<MouseButton, number> = {
 };
 const SCROLL_NOTCH = 10;
 const DOUBLE_CLICK_DELAY_MS = 50;
+const KEY_DELAY_MS = 12;
+
+// XKB keysyms. ASCII printables use their char code directly. Named keys
+// follow the standard X11 names (XK_*). See <X11/keysymdef.h>.
+const NAMED_KEYSYM: Record<string, number> = {
+  // modifiers
+  control: 0xffe3, ctrl: 0xffe3, shift: 0xffe1, alt: 0xffe9,
+  super: 0xffeb, meta: 0xffe7,
+  // navigation
+  return: 0xff0d, enter: 0xff0d, tab: 0xff09, escape: 0xff1b, esc: 0xff1b,
+  backspace: 0xff08, delete: 0xffff, insert: 0xff63, space: 0x0020,
+  home: 0xff50, end: 0xff57, page_up: 0xff55, pageup: 0xff55,
+  page_down: 0xff56, pagedown: 0xff56,
+  left: 0xff51, up: 0xff52, right: 0xff53, down: 0xff54,
+  // function
+  f1: 0xffbe, f2: 0xffbf, f3: 0xffc0, f4: 0xffc1, f5: 0xffc2, f6: 0xffc3,
+  f7: 0xffc4, f8: 0xffc5, f9: 0xffc6, f10: 0xffc7, f11: 0xffc8, f12: 0xffc9,
+};
+
+function lookupKeysym(name: string): number | null {
+  const lower = name.toLowerCase();
+  const named = NAMED_KEYSYM[lower];
+  if (named !== undefined) return named;
+  // Single ASCII character → its code point.
+  if (name.length === 1) {
+    const code = name.charCodeAt(0);
+    if (code > 0 && code < 0x80) return code;
+  }
+  return null;
+}
+
+const MODIFIER_KEYSYMS = new Set([
+  0xffe1, 0xffe2, // Shift_L, Shift_R
+  0xffe3, 0xffe4, // Control_L, Control_R
+  0xffe7, 0xffe8, // Meta_L, Meta_R
+  0xffe9, 0xffea, // Alt_L, Alt_R
+  0xffeb, 0xffec, // Super_L, Super_R
+]);
 
 type AnyIface = {
   call?: (member: string, ...args: unknown[]) => Promise<unknown>;
@@ -236,7 +276,7 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
       const restore = await readTokenFile();
       const opts: Record<string, unknown> = {
         handle_token: v('s', handleToken),
-        types: v('u', 2),
+        types: v('u', 3), // bitmask: keyboard=1 | pointer=2
         persist_mode: v('u', 2),
       };
       if (restore) opts.restore_token = v('s', restore);
@@ -311,6 +351,50 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
     );
   }
 
+  async function rawKeysym(keysym: number, state: 0 | 1): Promise<void> {
+    const rd = await getRemoteDesktop();
+    await callMember(rd, 'NotifyKeyboardKeysym', sessionPath!, {}, keysym, state);
+  }
+
+  async function tapKeysym(keysym: number): Promise<void> {
+    await rawKeysym(keysym, 1);
+    if (KEY_DELAY_MS > 0) await new Promise<void>((r) => setTimeout(r, KEY_DELAY_MS));
+    await rawKeysym(keysym, 0);
+  }
+
+  async function typeText(text: string): Promise<void> {
+    for (const ch of text) {
+      const code = ch.codePointAt(0);
+      if (code === undefined || code === 0) continue;
+      // Map the char's keysym directly. XKB resolves modifiers for the
+      // current layout — e.g. sending '!' (0x21) is interpreted correctly
+      // on US layouts even though it lives on Shift+1.
+      await tapKeysym(code);
+    }
+  }
+
+  async function pressCombo(combo: string): Promise<void> {
+    const parts = combo
+      .split('+')
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+    if (parts.length === 0) return;
+    const keysyms: number[] = [];
+    for (const p of parts) {
+      const ks = lookupKeysym(p);
+      if (ks === null) {
+        throw new Error(`portal key: unknown key name "${p}" in combo "${combo}"`);
+      }
+      keysyms.push(ks);
+    }
+    // Press modifiers first (in left-to-right order), then the terminal key
+    // (last token in the combo). Release in reverse order. Standard pattern.
+    for (const ks of keysyms) await rawKeysym(ks, 1);
+    if (KEY_DELAY_MS > 0) await new Promise<void>((r) => setTimeout(r, KEY_DELAY_MS));
+    for (let i = keysyms.length - 1; i >= 0; i -= 1) await rawKeysym(keysyms[i]!, 0);
+  }
+  void MODIFIER_KEYSYMS; // reserved for future modifier-state tracking
+
   return {
     move(x, y) {
       return serialize(async () => {
@@ -351,6 +435,18 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
         await ensureSession();
         if (x !== undefined && y !== undefined) await rawMove(x, y);
         await rawAxis(dx, dy);
+      });
+    },
+    type(text) {
+      return serialize(async () => {
+        await ensureSession();
+        await typeText(text);
+      });
+    },
+    key(combo) {
+      return serialize(async () => {
+        await ensureSession();
+        await pressCombo(combo);
       });
     },
   };

@@ -19,21 +19,6 @@ import { isDevInstance } from '../instance';
 import { createPortalInput, type InputHandle } from '../input/portal';
 import { ottoConfigDir } from '../logger';
 
-/** Translate Otto's xdotool-style combo to xdotool's lowercase-modifier form. */
-function toXdotoolCombo(combo: string): string {
-  return combo
-    .split('+')
-    .map((tok) => {
-      const lower = tok.toLowerCase();
-      if (lower === 'control' || lower === 'ctrl') return 'ctrl';
-      if (lower === 'alt') return 'alt';
-      if (lower === 'shift') return 'shift';
-      if (lower === 'super' || lower === 'meta') return 'super';
-      return tok;
-    })
-    .join('+');
-}
-
 function virtualDesktopBounds(monitors: MonitorInfo[]): { x: number; y: number; w: number; h: number } {
   if (monitors.length === 0) return { x: 0, y: 0, w: 0, h: 0 };
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -180,12 +165,10 @@ export class LinuxAdapter implements PlatformAdapter {
       await this.getPortalInput().drag(x1, y1, x2, y2, button);
     },
     type: async (text: string): Promise<void> => {
-      await this.ensureXdotool();
-      await this.runXdotool(['type', '--delay', '20', '--', text]);
+      await this.getPortalInput().type(text);
     },
     key: async (combo: string): Promise<void> => {
-      await this.ensureXdotool();
-      await this.runXdotool(['key', toXdotoolCombo(combo)]);
+      await this.getPortalInput().key(combo);
     },
   };
 
@@ -245,34 +228,6 @@ export class LinuxAdapter implements PlatformAdapter {
       });
     });
   }
-
-  private async ensureXdotool(): Promise<void> {
-    const r = await checkBinary({
-      name: 'xdotool',
-      purpose: 'GUI input injection (works for XWayland windows on KDE Wayland)',
-      hints: {
-        fedora: 'sudo dnf install xdotool',
-        debian: 'sudo apt install xdotool',
-        arch: 'sudo pacman -S xdotool',
-        fallback: 'install xdotool from your package manager',
-      },
-    });
-    if (!r.ok) throw new Error(`${r.reason}\n\n${r.hint}`);
-  }
-
-  private runXdotool(args: string[]): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const child = nodeSpawn('xdotool', args, { stdio: ['ignore', 'pipe', 'pipe'] });
-      let stderr = '';
-      child.stderr.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8'); });
-      child.once('error', reject);
-      child.once('exit', (code) => {
-        if (code === 0) return resolve();
-        reject(new Error(`xdotool failed: ${stderr.trim() || `exit ${code}`}`));
-      });
-    });
-  }
-
 
   private async runSpectacle(args: string[], timeoutMs: number): Promise<void> {
     const check = await checkBinary({
