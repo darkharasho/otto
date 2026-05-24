@@ -89,7 +89,14 @@ export class ArtifactRepo {
       .get(input.kind, input.title) as { id: string } | undefined;
 
     const embeddingInput = `${input.title}\n${input.body}`;
-    const vec = await this.embedder.embed(embeddingInput);
+    let vec: Float32Array | null = null;
+    if (this.embedder.isAvailable) {
+      try {
+        vec = await this.embedder.embed(embeddingInput);
+      } catch {
+        vec = null;
+      }
+    }
 
     const t = this.now();
     if (existing) {
@@ -101,9 +108,11 @@ export class ArtifactRepo {
               WHERE id = ?`
           )
           .run(input.title, input.body, JSON.stringify(input.tags), t, input.sourceSessionId ?? null, existing.id);
-        this.db.prepare(`DELETE FROM memory_vec WHERE ref_id = ?`).run(existing.id);
-        this.db.prepare(`INSERT INTO memory_vec(embedding, kind, ref_id) VALUES (?, ?, ?)`)
-          .run(Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength), input.kind, existing.id);
+        if (vec) {
+          this.db.prepare(`DELETE FROM memory_vec WHERE ref_id = ?`).run(existing.id);
+          this.db.prepare(`INSERT INTO memory_vec(embedding, kind, ref_id) VALUES (?, ?, ?)`)
+            .run(Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength), input.kind, existing.id);
+        }
       });
       txn();
       return existing.id;
@@ -118,8 +127,10 @@ export class ArtifactRepo {
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0)`
         )
         .run(id, input.kind, input.title, input.body, JSON.stringify(input.tags), t, t, input.sourceSessionId ?? null);
-      this.db.prepare(`INSERT INTO memory_vec(embedding, kind, ref_id) VALUES (?, ?, ?)`)
-        .run(Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength), input.kind, id);
+      if (vec) {
+        this.db.prepare(`INSERT INTO memory_vec(embedding, kind, ref_id) VALUES (?, ?, ?)`)
+          .run(Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength), input.kind, id);
+      }
     });
     txn();
     return id;
@@ -174,10 +185,10 @@ export class ArtifactRepo {
       .run(this.now(), id);
   }
 
-  update(
+  async update(
     id: string,
     patch: { title?: string; body?: string; tags?: string[]; archived?: boolean }
-  ): void {
+  ): Promise<void> {
     const sets: string[] = [];
     const params: unknown[] = [];
     if (patch.title !== undefined) {
@@ -200,7 +211,34 @@ export class ArtifactRepo {
     sets.push('updated_at = ?');
     params.push(this.now());
     params.push(id);
-    this.db.prepare(`UPDATE artifact SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+
+    const needsReEmbed = (patch.title !== undefined || patch.body !== undefined) && this.embedder.isAvailable;
+    let vec: Float32Array | null = null;
+    if (needsReEmbed) {
+      const current = this.get(id);
+      if (current) {
+        const newTitle = patch.title ?? current.title;
+        const newBody = patch.body ?? current.body;
+        try {
+          vec = await this.embedder.embed(`${newTitle}\n${newBody}`);
+        } catch {
+          vec = null;
+        }
+      }
+    }
+
+    const txn = this.db.transaction(() => {
+      this.db.prepare(`UPDATE artifact SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+      if (vec) {
+        this.db.prepare(`DELETE FROM memory_vec WHERE ref_id = ?`).run(id);
+        this.db
+          .prepare(
+            `INSERT INTO memory_vec(embedding, kind, ref_id) VALUES (?, (SELECT kind FROM artifact WHERE id = ?), ?)`
+          )
+          .run(Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength), id, id);
+      }
+    });
+    txn();
   }
 
   delete(id: string): void {

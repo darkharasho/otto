@@ -83,7 +83,7 @@ describe('ArtifactRepo', () => {
       body: 'deprecated',
       tags: [],
     });
-    repo.update(archived, { archived: true });
+    await repo.update(archived, { archived: true });
 
     const hits = repo.search({ query: 'pipewire', limit: 5 });
     expect(hits.map((h) => h.id)).toEqual([a]);
@@ -102,7 +102,7 @@ describe('ArtifactRepo', () => {
     await repo.upsert({ kind: 'playbook', title: 'p1', body: '', tags: [] });
     await repo.upsert({ kind: 'playbook', title: 'p2', body: '', tags: [] });
     const aId = await repo.upsert({ kind: 'anti_pattern', title: 'a1', body: '', tags: [] });
-    repo.update(aId, { archived: true });
+    await repo.update(aId, { archived: true });
     const c = repo.counts();
     expect(c).toEqual({ playbook: 2, anti_pattern: 0, heuristic: 0 });
   });
@@ -148,5 +148,33 @@ describe('ArtifactRepo embedding integration', () => {
     r.delete(id);
     const row = db.prepare("SELECT ref_id FROM memory_vec WHERE ref_id=?").get(id);
     expect(row).toBeUndefined();
+  });
+
+  it('update re-embeds when body changes and embedding in memory_vec changes', async () => {
+    const embedder = createStubEmbedder();
+    const r = new ArtifactRepo(db, () => 1000, embedder);
+    const id = await r.upsert({ kind: 'playbook', title: 'T', body: 'original body', tags: [] });
+
+    const before = db.prepare("SELECT embedding FROM memory_vec WHERE ref_id=?").get(id) as { embedding: Buffer } | undefined;
+    expect(before).toBeDefined();
+
+    await r.update(id, { body: 'completely different body text' });
+
+    const after = db.prepare("SELECT embedding FROM memory_vec WHERE ref_id=?").get(id) as { embedding: Buffer } | undefined;
+    expect(after).toBeDefined();
+    // The embedding bytes must differ since the text changed
+    expect(Buffer.compare(before!.embedding, after!.embedding)).not.toBe(0);
+  });
+
+  it('update with only archived flag does not change memory_vec embedding', async () => {
+    const embedder = createStubEmbedder();
+    const r = new ArtifactRepo(db, () => 1000, embedder);
+    const id = await r.upsert({ kind: 'playbook', title: 'T', body: 'body', tags: [] });
+
+    const before = db.prepare("SELECT embedding FROM memory_vec WHERE ref_id=?").get(id) as { embedding: Buffer } | undefined;
+    await r.update(id, { archived: true });
+    const after = db.prepare("SELECT embedding FROM memory_vec WHERE ref_id=?").get(id) as { embedding: Buffer } | undefined;
+
+    expect(Buffer.compare(before!.embedding, after!.embedding)).toBe(0);
   });
 });

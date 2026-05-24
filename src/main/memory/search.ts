@@ -45,7 +45,7 @@ export class MemorySearch {
     const artifactKinds = kinds.filter((k) => k !== 'fact') as ArtifactKind[];
 
     let queryVec: Float32Array | null = null;
-    if (!this.vectorDisabled) {
+    if (!this.vectorDisabled && this.deps.embedder.isAvailable) {
       try {
         queryVec = await this.deps.embedder.embed(query);
       } catch (err) {

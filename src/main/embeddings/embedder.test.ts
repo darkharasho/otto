@@ -33,6 +33,30 @@ describe('createStubEmbedder', () => {
   });
 });
 
+describe('isAvailable flag', () => {
+  let originalEnv: string | undefined;
+  beforeEach(() => {
+    originalEnv = process.env.OTTO_DISABLE_EMBEDDINGS;
+    vi.resetModules();
+  });
+  afterEach(() => {
+    if (originalEnv === undefined) delete process.env.OTTO_DISABLE_EMBEDDINGS;
+    else process.env.OTTO_DISABLE_EMBEDDINGS = originalEnv;
+  });
+
+  it('no-op embedder has isAvailable === false', async () => {
+    process.env.OTTO_DISABLE_EMBEDDINGS = '1';
+    const { getEmbedder } = await import('./embedder');
+    const e = getEmbedder();
+    expect(e.isAvailable).toBe(false);
+  });
+
+  it('stub embedder has isAvailable === true', () => {
+    const e = createStubEmbedder();
+    expect(e.isAvailable).toBe(true);
+  });
+});
+
 describe('getEmbedder() singleton + disable env', () => {
   let originalEnv: string | undefined;
   beforeEach(() => {

@@ -259,7 +259,7 @@ export function registerIpcHandlers(deps: {
         patch: { title?: string; body?: string; tags?: string[]; archived?: boolean };
       }
     ) => {
-      deps.artifactRepo.update(args.id, args.patch);
+      await deps.artifactRepo.update(args.id, args.patch);
     }
   );
 

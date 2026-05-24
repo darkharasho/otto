@@ -6,6 +6,7 @@ export interface Embedder {
   embed(text: string): Promise<Float32Array>;
   embedBatch(texts: string[]): Promise<Float32Array[]>;
   readonly dim: number;
+  readonly isAvailable: boolean;
 }
 
 const DIM = 384;
@@ -15,6 +16,7 @@ function noopEmbedder(): Embedder {
   const zero = new Float32Array(DIM);
   return {
     dim: DIM,
+    isAvailable: false,
     async embed() {
       return zero;
     },
@@ -56,6 +58,7 @@ async function loadRealEmbedder(): Promise<Embedder> {
 
   return {
     dim: DIM,
+    isAvailable: true,
     async embed(text) {
       const out = await pipe(text, { pooling: 'mean', normalize: true });
       return new Float32Array(out.data);
@@ -90,19 +93,23 @@ export function getEmbedder(): Embedder {
     return cachedInstance;
   }
 
+  let isAvailableFlag = true;
   let loadPromise: Promise<Embedder> | null = null;
   function loadOnce(): Promise<Embedder> {
     if (!loadPromise) {
       loadPromise = loadRealEmbedder().catch((err) => {
         initFailed = true;
+        isAvailableFlag = false;
         logger.error('embedder init failed; falling back to no-op', err);
-        return noopEmbedder();
+        cachedInstance = noopEmbedder();
+        return cachedInstance;
       });
     }
     return loadPromise;
   }
   cachedInstance = {
     dim: DIM,
+    get isAvailable() { return isAvailableFlag; },
     async embed(text) {
       const real = await loadOnce();
       return real.embed(text);

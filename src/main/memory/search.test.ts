@@ -71,6 +71,7 @@ describe('MemorySearch', () => {
   it('falls back to FTS-only when embedder throws', async () => {
     const bad = {
       dim: 384,
+      isAvailable: true,
       embed: async () => { throw new Error('boom'); },
       embedBatch: async () => { throw new Error('boom'); },
     };

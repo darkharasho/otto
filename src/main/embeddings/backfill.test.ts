@@ -16,6 +16,7 @@ let artifactRepo: ArtifactRepo;
 
 const NO_VEC_EMBEDDER = {
   dim: 384,
+  isAvailable: true,
   embed: async () => new Float32Array(384),
   embedBatch: async (ts: string[]) => ts.map(() => new Float32Array(384)),
 };

@@ -10,6 +10,10 @@ export interface BackfillDeps {
 }
 
 export async function backfillEmbeddings(deps: BackfillDeps): Promise<{ embedded: number; ms: number }> {
+  if (!deps.embedder.isAvailable) {
+    logger.info('embeddings: backfill skipped, embedder unavailable');
+    return { embedded: 0, ms: 0 };
+  }
   const start = Date.now();
   let embedded = 0;
   try {

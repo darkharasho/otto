@@ -91,7 +91,14 @@ export class FactRepo {
 
     // Embed BEFORE the transaction so we don't hold a write lock across the
     // (~10ms) embed call.
-    const vec = await this.embedder.embed(bodyTrimmed);
+    let vec: Float32Array | null = null;
+    if (this.embedder.isAvailable) {
+      try {
+        vec = await this.embedder.embed(bodyTrimmed);
+      } catch {
+        vec = null;
+      }
+    }
 
     const insertFact = this.db.prepare(
       `INSERT INTO fact
@@ -104,7 +111,7 @@ export class FactRepo {
     );
     const txn = this.db.transaction(() => {
       insertFact.run(id, bodyTrimmed, bodyNorm, pinned, distinctSessions, createdAt, input.sourceSessionId ?? null);
-      insertVec.run(Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength), id);
+      if (vec) insertVec.run(Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength), id);
     });
     txn();
     return { id, inserted: true };

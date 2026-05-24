@@ -33,6 +33,7 @@ export function createStubEmbedder(overrides: Record<string, Float32Array> = {})
   }
   return {
     dim: 384,
+    isAvailable: true,
     async embed(text) {
       return makeVec(text);
     },
