@@ -31,6 +31,8 @@ export type ContentBlock =
       playbooks: number;
       antiPatterns: number;
       heuristics: number;
+      promoted: number;
+      demoted: number;
     };
 
 export interface BaseMessage {

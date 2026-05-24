@@ -4,7 +4,6 @@ import {
   buildRecallTool, buildMarkTaskCompleteTool,
   type OttoTool,
 } from './tools';
-import { appendKnowledge, readKnowledge } from '../knowledge/store';
 import { exec as execInput, type InputAction } from '../input/executor';
 import type { DecisionBroker } from '../autonomy/decision-broker';
 import type { ProcessRegistry } from '../shell/process-registry';
@@ -104,7 +103,7 @@ const SYSTEM_PROMPT = [
   '- key(combo, delay_ms?): send a key combo (xdotool-style: "Control+S", "F5", "Return").',
   '- WebSearch(query): search the web; returns titles, urls, and snippets you can cite.',
   '- WebFetch(url, prompt): fetch a URL and extract readable content based on the prompt.',
-  '- knowledge_append(note): save a durable fact/preference to Otto\'s per-machine knowledge file. Current contents are injected into your prompt every turn (see "Known about this machine and user" below, if present). Use sparingly — only things worth remembering next session.',
+  '- knowledge_append(note): save a durable fact or preference to Otto\'s memory. Stable preferences are prioritized for inclusion in future prompts. Use sparingly.',
   '- recall(query, kinds?, limit?): search Otto\'s durable memory from prior sessions on this machine. Returns matching facts and structured artifacts (playbooks, anti-patterns, heuristics). Call this at the START of any task that resembles past work before deciding on an approach.',
   '- mark_task_complete(summary): call ONCE when you believe the user\'s request is fully addressed. Triggers a silent background reflection pass; does not affect the chat. Do not call between sub-steps.',
   '- echo(msg), fake-mutate(target), fake-wipe(target): test stubs; ignore unless explicitly asked.',
@@ -160,7 +159,10 @@ export interface RealSdkClientDeps {
       updated_at: number;
     }>;
   }>;
-  memoryCounts(): { playbook: number; anti_pattern: number; heuristic: number };
+  memoryCounts(): { playbook: number; anti_pattern: number; heuristic: number; factsPinned: number; factsTotal: number };
+  factsForPrompt(): { markdown: string; ids: string[] };
+  bumpFactUse(ids: string[], sessionId: string): void;
+  appendKnowledge(note: string, sessionId: string): Promise<void>;
   onMarkTaskComplete(sessionId: string, summary: string): void;
 }
 
@@ -171,6 +173,9 @@ interface ToolCtx {
   getRegistry: () => ProcessRegistry;
   getConfigDir: () => string;
   recall: RealSdkClientDeps['recall'];
+  factsForPrompt: RealSdkClientDeps['factsForPrompt'];
+  bumpFactUse: RealSdkClientDeps['bumpFactUse'];
+  appendKnowledge: RealSdkClientDeps['appendKnowledge'];
   onMarkTaskComplete: RealSdkClientDeps['onMarkTaskComplete'];
 }
 
@@ -319,7 +324,7 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
 
         if (t.name === 'knowledge_append') {
           const { note } = args as { note: string };
-          await appendKnowledge(ctx.getConfigDir(), note);
+          await ctx.appendKnowledge(note, ctx.sessionId);
           return { content: [{ type: 'text' as const, text: 'noted' }] };
         }
 
@@ -388,6 +393,9 @@ function createFakeSdkClient(deps?: {
   getConfigDir?: () => string;
   recall?: RealSdkClientDeps['recall'];
   memoryCounts?: RealSdkClientDeps['memoryCounts'];
+  factsForPrompt?: RealSdkClientDeps['factsForPrompt'];
+  bumpFactUse?: RealSdkClientDeps['bumpFactUse'];
+  appendKnowledge?: RealSdkClientDeps['appendKnowledge'];
   onMarkTaskComplete?: RealSdkClientDeps['onMarkTaskComplete'];
 }): SdkClient {
   let counter = 0;
@@ -577,15 +585,19 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
           getRegistry: deps.getRegistry,
           getConfigDir: deps.getConfigDir,
           recall: deps.recall,
+          factsForPrompt: deps.factsForPrompt,
+          bumpFactUse: deps.bumpFactUse,
+          appendKnowledge: deps.appendKnowledge,
           onMarkTaskComplete: deps.onMarkTaskComplete,
         });
         const spawnOverrides = getSdkSpawnOverrides();
-        const knowledge = await readKnowledge(deps.getConfigDir()).catch(() => '');
+        const { markdown: knowledge, ids: pinnedIds } = deps.factsForPrompt();
+        if (pinnedIds.length > 0) deps.bumpFactUse(pinnedIds, sessionId);
         const memCounts = deps.memoryCounts();
-        const memLine = `Memory currently holds ${memCounts.playbook} playbooks, ${memCounts.anti_pattern} anti-patterns, ${memCounts.heuristic} heuristics.`;
+        const memLine = `Memory currently holds ${memCounts.factsPinned} pinned facts (of ${memCounts.factsTotal} learned), ${memCounts.playbook} playbooks, ${memCounts.anti_pattern} anti-patterns, ${memCounts.heuristic} heuristics.`;
         const parts = [SYSTEM_PROMPT, '', '---', memLine];
         if (knowledge.trim().length > 0) {
-          parts.push('Known about this machine and user (from knowledge_append in prior sessions):');
+          parts.push('Known about this machine and user (pinned facts):');
           parts.push(knowledge.trim());
         }
         const systemPrompt = parts.join('\n');

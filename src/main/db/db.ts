@@ -77,10 +77,53 @@ CREATE TRIGGER IF NOT EXISTS artifact_au AFTER UPDATE ON artifact BEGIN
 END;
 `;
 
+const MIGRATION_004_FACTS = `
+CREATE TABLE IF NOT EXISTS fact (
+  id                 TEXT PRIMARY KEY,
+  body               TEXT NOT NULL,
+  body_norm          TEXT NOT NULL,
+  pinned             INTEGER NOT NULL DEFAULT 0,
+  use_count          INTEGER NOT NULL DEFAULT 0,
+  distinct_sessions  INTEGER NOT NULL DEFAULT 0,
+  score              REAL NOT NULL DEFAULT 0,
+  created_at         INTEGER NOT NULL,
+  last_used_at       INTEGER,
+  source_session_id  TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS fact_body_norm_idx ON fact(body_norm);
+CREATE INDEX IF NOT EXISTS fact_pinned_idx ON fact(pinned);
+
+CREATE TABLE IF NOT EXISTS fact_session (
+  fact_id    TEXT NOT NULL REFERENCES fact(id) ON DELETE CASCADE,
+  session_id TEXT NOT NULL,
+  PRIMARY KEY (fact_id, session_id)
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS fact_fts USING fts5(
+  body,
+  content='fact',
+  content_rowid='rowid'
+);
+
+CREATE TRIGGER IF NOT EXISTS fact_ai AFTER INSERT ON fact BEGIN
+  INSERT INTO fact_fts(rowid, body) VALUES (new.rowid, new.body);
+END;
+
+CREATE TRIGGER IF NOT EXISTS fact_ad AFTER DELETE ON fact BEGIN
+  INSERT INTO fact_fts(fact_fts, rowid, body) VALUES ('delete', old.rowid, old.body);
+END;
+
+CREATE TRIGGER IF NOT EXISTS fact_au AFTER UPDATE ON fact BEGIN
+  INSERT INTO fact_fts(fact_fts, rowid, body) VALUES ('delete', old.rowid, old.body);
+  INSERT INTO fact_fts(rowid, body) VALUES (new.rowid, new.body);
+END;
+`;
+
 const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 1, sql: MIGRATION_001_INIT },
   { version: 2, sql: MIGRATION_002_SDK_SESSION_ID },
   { version: 3, sql: MIGRATION_003_ARTIFACTS },
+  { version: 4, sql: MIGRATION_004_FACTS },
 ];
 
 export function openDatabase(dbPath: string): DB {

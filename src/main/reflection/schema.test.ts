@@ -4,7 +4,7 @@ import { ReflectionResultSchema } from './schema';
 describe('ReflectionResultSchema', () => {
   it('accepts a fully populated result', () => {
     const parsed = ReflectionResultSchema.parse({
-      facts: ['Browser of choice is Zen'],
+      facts: [{ body: 'Browser of choice is Zen' }],
       playbooks: [
         { title: 'Restart audio', body: '## Steps\n1. systemctl --user restart pipewire', tags: ['audio'] },
       ],
@@ -41,10 +41,24 @@ describe('ReflectionResultSchema', () => {
     ).toThrow();
   });
 
+  it('accepts facts as objects with optional preference flag', () => {
+    const parsed = ReflectionResultSchema.parse({
+      facts: [
+        { body: 'Browser of choice is Zen', preference: true },
+        { body: 'audio glitched during render' },
+      ],
+      playbooks: [],
+      antiPatterns: [],
+      heuristics: [],
+    });
+    expect(parsed.facts[0]).toEqual({ body: 'Browser of choice is Zen', preference: true });
+    expect(parsed.facts[1]).toEqual({ body: 'audio glitched during render' });
+  });
+
   it('rejects facts longer than 280 chars', () => {
     expect(() =>
       ReflectionResultSchema.parse({
-        facts: ['x'.repeat(281)],
+        facts: [{ body: 'x'.repeat(281) }],
         playbooks: [],
         antiPatterns: [],
         heuristics: [],

@@ -5,7 +5,10 @@ const tagsSchema = z
   .max(8)
   .transform((tags) => tags.map((t) => t.toLowerCase()));
 
-const factSchema = z.string().min(1).max(280);
+const factSchema = z.object({
+  body: z.string().min(1).max(280),
+  preference: z.boolean().optional(),
+});
 
 const artifactSchema = z.object({
   title: z.string().min(1).max(120),

@@ -155,7 +155,7 @@ export function buildKnowledgeTool(): OttoTool {
   return {
     name: 'knowledge_append',
     description:
-      'Append a durable fact or preference to Otto\'s knowledge file (a per-machine markdown file Otto reads at the start of every turn). Use for things worth remembering across sessions: user preferences (e.g., "browser of choice is Zen"), machine quirks (e.g., "spectacle needs -bnf on multi-monitor"), or stable identifiers. Do NOT use for ephemeral task state. One short line per call.',
+      'Save a durable fact or preference to Otto\'s memory. Stable preferences (browser of choice, hardware quirks, always-do rules) get prioritized for inclusion in future system prompts. Use sparingly — one short line per call. Do NOT use for ephemeral task state.',
     actionClass: 'reversible',
     schema: z.object({ note: z.string().min(1) }),
     async run(_input) {
@@ -275,7 +275,7 @@ export function buildRecallTool(): OttoTool {
   return {
     name: 'recall',
     description:
-      "Search Otto's durable memory from prior sessions on this machine. Returns matching facts (lines from knowledge.md) and structured artifacts (playbooks, anti-patterns, heuristics). Call this at the START of any task that resembles past work — fixing a recurring problem, automating a familiar app, dealing with a known quirk of this machine — before deciding on an approach. Returns empty arrays when nothing matches; that is fine, proceed normally.",
+      "Search Otto's durable memory from prior sessions on this machine. Returns matching facts (short standalone notes about the machine or user) and structured artifacts (playbooks, anti-patterns, heuristics). Call this at the START of any task that resembles past work — fixing a recurring problem, automating a familiar app, dealing with a known quirk of this machine — before deciding on an approach. Returns empty arrays when nothing matches; that is fine, proceed normally.",
     actionClass: 'read',
     schema: z.object({
       query: z.string().min(1),

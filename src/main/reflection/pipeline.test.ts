@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { Database } from 'better-sqlite3';
 import { openDatabase } from '../db/db';
 import { ArtifactRepo } from '../db/artifact-repo';
+import { FactRepo } from '../db/fact-repo';
 import { Repo } from '../db/repo';
 import { ReflectionPipeline } from './pipeline';
 import { newAssistantMessage, newUserMessage } from '@shared/messages';
@@ -14,11 +15,12 @@ let dir: string;
 let db: Database;
 let repo: Repo;
 let artifactRepo: ArtifactRepo;
-const REFLECTOR_OK = (overrides: Partial<{ facts: string[] }> = {}): ReflectOutcome => ({
+let factRepo: FactRepo;
+const REFLECTOR_OK = (overrides: Partial<{ facts: { body: string; preference?: boolean }[] }> = {}): ReflectOutcome => ({
   ok: true,
   raw: '{}',
   result: {
-    facts: overrides.facts ?? ['Browser is Zen'],
+    facts: overrides.facts ?? [{ body: 'Browser is Zen' }],
     playbooks: [
       { title: 'Restart audio', body: '## Steps\n1. restart pipewire', tags: ['audio'] },
     ],
@@ -32,6 +34,7 @@ beforeEach(() => {
   db = openDatabase(path.join(dir, 'otto.db'));
   repo = new Repo(db);
   artifactRepo = new ArtifactRepo(db, () => 1000);
+  factRepo = new FactRepo(db, () => 1000);
   repo.createSession({ id: 's1', model: 'm', createdAt: 0, lastActive: 0 });
   repo.appendMessage({ ...newUserMessage('please fix audio'), sessionId: 's1' });
   repo.appendMessage({ ...newAssistantMessage(), sessionId: 's1' });
@@ -43,11 +46,12 @@ afterEach(() => {
 });
 
 describe('ReflectionPipeline.run', () => {
-  it('appends facts to knowledge.md and inserts new artifacts', async () => {
+  it('stores facts via FactRepo and inserts new artifacts', async () => {
     const appendSystemNote = vi.fn();
     const pipeline = new ReflectionPipeline({
       repo,
       artifactRepo,
+      factRepo,
       configDir: dir,
       runReflector: async () => REFLECTOR_OK(),
       appendSystemNote,
@@ -55,8 +59,8 @@ describe('ReflectionPipeline.run', () => {
     const out = await pipeline.run({ sessionId: 's1', sinceSeq: -1 });
     expect(out.savedFacts).toBe(1);
     expect(out.savedArtifacts).toBe(1);
-    const knowledge = readFileSync(path.join(dir, 'knowledge.md'), 'utf8');
-    expect(knowledge).toContain('Browser is Zen');
+    const facts = factRepo.list({});
+    expect(facts.map((f) => f.body)).toContain('Browser is Zen');
     expect(artifactRepo.list({ kind: 'playbook' })).toHaveLength(1);
     expect(appendSystemNote).toHaveBeenCalledWith('s1', {
       type: 'memory-update',
@@ -64,6 +68,8 @@ describe('ReflectionPipeline.run', () => {
       playbooks: 1,
       antiPatterns: 0,
       heuristics: 0,
+      promoted: expect.any(Number),
+      demoted: expect.any(Number),
     });
   });
 
@@ -72,6 +78,7 @@ describe('ReflectionPipeline.run', () => {
     const pipeline = new ReflectionPipeline({
       repo,
       artifactRepo,
+      factRepo,
       configDir: dir,
       runReflector: async () => ({
         ok: true,
@@ -90,6 +97,7 @@ describe('ReflectionPipeline.run', () => {
     const pipeline = new ReflectionPipeline({
       repo,
       artifactRepo,
+      factRepo,
       configDir: dir,
       runReflector: async () => ({ ok: false, reason: 'parse-error', raw: 'junk' }),
       appendSystemNote: vi.fn(),
@@ -99,19 +107,18 @@ describe('ReflectionPipeline.run', () => {
     expect(out.savedArtifacts).toBe(0);
   });
 
-  it('skips a fact whose normalized form already lives in knowledge.md', async () => {
+  it('dedups facts by normalized body via FactRepo', async () => {
     const pipeline = new ReflectionPipeline({
       repo,
       artifactRepo,
+      factRepo,
       configDir: dir,
-      runReflector: async () => REFLECTOR_OK({ facts: ['Browser is Zen', 'Browser is Zen'] }),
+      runReflector: async () => REFLECTOR_OK({ facts: [{ body: 'Browser is Zen' }, { body: 'Browser is Zen' }] }),
       appendSystemNote: () => {},
     });
     await pipeline.run({ sessionId: 's1', sinceSeq: -1 });
-    await pipeline.run({ sessionId: 's1', sinceSeq: -1 }); // run twice
-    const knowledge = readFileSync(path.join(dir, 'knowledge.md'), 'utf8');
-    const occurrences = knowledge.split('Browser is Zen').length - 1;
-    expect(occurrences).toBe(1);
+    await pipeline.run({ sessionId: 's1', sinceSeq: -1 });
+    expect(factRepo.counts().total).toBe(1);
   });
 
   it('refuses to insert new artifacts once a kind hits the 500 hard cap', async () => {
@@ -121,6 +128,7 @@ describe('ReflectionPipeline.run', () => {
     const pipeline = new ReflectionPipeline({
       repo,
       artifactRepo,
+      factRepo,
       configDir: dir,
       runReflector: async () => REFLECTOR_OK({ facts: [] }),
       appendSystemNote: vi.fn(),

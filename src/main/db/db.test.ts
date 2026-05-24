@@ -21,7 +21,7 @@ describe('openDatabase', () => {
     const dir = freshDir();
     const db = openDatabase(path.join(dir, 'otto.db'));
     const row = db.prepare('SELECT MAX(version) AS v FROM schema_version').get() as { v: number };
-    expect(row.v).toBe(3);
+    expect(row.v).toBe(4);
     db.close();
   });
 
@@ -34,7 +34,7 @@ describe('openDatabase', () => {
       .prepare('SELECT version FROM schema_version ORDER BY version')
       .all() as { version: number }[];
     // Each migration should have been applied exactly once.
-    expect(rows.map((r) => r.version)).toEqual([1, 2, 3]);
+    expect(rows.map((r) => r.version)).toEqual([1, 2, 3, 4]);
     db.close();
   });
 
@@ -60,12 +60,26 @@ describe('openDatabase', () => {
   });
 });
 
+describe('migration 004 (fact + fact_session + fact_fts)', () => {
+  it('runs migration 004 creating fact, fact_session, fact_fts', () => {
+    const dir = freshDir();
+    const db = openDatabase(path.join(dir, 'otto.db'));
+    const version = (db.prepare('SELECT MAX(version) AS v FROM schema_version').get() as { v: number }).v;
+    expect(version).toBeGreaterThanOrEqual(4);
+    const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as { name: string }[]).map((r) => r.name);
+    expect(tables).toContain('fact');
+    expect(tables).toContain('fact_session');
+    expect(tables).toContain('fact_fts');
+    db.close();
+  });
+});
+
 describe('migration 003 (artifact + FTS)', () => {
-  it('bumps schema version to 3', () => {
+  it('bumps schema version to at least 3', () => {
     const dir = freshDir();
     const db = openDatabase(path.join(dir, 'otto.db'));
     const row = db.prepare('SELECT MAX(version) AS v FROM schema_version').get() as { v: number };
-    expect(row.v).toBe(3);
+    expect(row.v).toBeGreaterThanOrEqual(3);
     db.close();
   });
 

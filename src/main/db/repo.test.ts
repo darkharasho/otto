@@ -90,7 +90,7 @@ describe('Repo.messages system role', () => {
     repo.createSession({ id: 's1', model: 'm', createdAt: 1, lastActive: 1 });
     const sys = {
       ...newSystemMessage([
-        { type: 'memory-update' as const, facts: 1, playbooks: 2, antiPatterns: 0, heuristics: 1 },
+        { type: 'memory-update' as const, facts: 1, playbooks: 2, antiPatterns: 0, heuristics: 1, promoted: 0, demoted: 0 },
       ]),
       sessionId: 's1',
     };
@@ -99,7 +99,7 @@ describe('Repo.messages system role', () => {
     expect(loaded).toHaveLength(1);
     expect(loaded[0]!.role).toBe('system');
     expect(loaded[0]!.content).toEqual([
-      { type: 'memory-update', facts: 1, playbooks: 2, antiPatterns: 0, heuristics: 1 },
+      { type: 'memory-update', facts: 1, playbooks: 2, antiPatterns: 0, heuristics: 1, promoted: 0, demoted: 0 },
     ]);
   });
 });

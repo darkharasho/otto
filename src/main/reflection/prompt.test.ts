@@ -37,4 +37,15 @@ describe('buildReflectorPrompt', () => {
     });
     expect(out.toLowerCase()).toContain('empty');
   });
+
+  it('documents the preference flag on facts', () => {
+    const out = buildReflectorPrompt({
+      originalRequest: '',
+      transcript: '',
+      knowledgeText: '',
+      existingTitles: [],
+    });
+    expect(out).toContain('Fact = ');
+    expect(out).toContain('preference');
+  });
 });

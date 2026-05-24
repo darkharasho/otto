@@ -6,7 +6,7 @@ import type { DecisionBroker } from '../autonomy/decision-broker';
 import type { Settings } from '../autonomy/settings';
 import type { ProcessRegistry } from '../shell/process-registry';
 import type { ArtifactRepo } from '../db/artifact-repo';
-import { readKnowledge } from '../knowledge/store';
+import type { FactRepo } from '../db/fact-repo';
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import type {
@@ -37,6 +37,7 @@ export function registerIpcHandlers(deps: {
   recommendedChord: string;
   hotkey: HotkeyManager;
   artifactRepo: ArtifactRepo;
+  factRepo: FactRepo;
   configDir: string;
   applyStartAtLogin(enabled: boolean): void;
   openLogsDir(): void;
@@ -200,11 +201,19 @@ export function registerIpcHandlers(deps: {
       }
     ) => {
       if (args.kind === 'fact') {
-        const text = await readKnowledge(deps.configDir).catch(() => '');
-        const lines = text.split('\n').filter((l) => l.trim().startsWith('- ('));
-        const q = (args.query ?? '').toLowerCase().trim();
-        const filtered = q ? lines.filter((l) => l.toLowerCase().includes(q)) : lines;
-        return { artifacts: [], facts: filtered };
+        const hits = args.query
+          ? deps.factRepo.search({ query: args.query, limit: 100 })
+          : deps.factRepo.list({ limit: 200 });
+        return {
+          artifacts: [],
+          facts: hits.map((f) => ({
+            id: f.id,
+            body: f.body,
+            pinned: f.pinned,
+            useCount: f.useCount,
+            lastUsedAt: f.lastUsedAt,
+          })),
+        };
       }
       const rows = args.query
         ? deps.artifactRepo.search({ query: args.query, kinds: [args.kind], limit: 200 })
@@ -259,14 +268,6 @@ export function registerIpcHandlers(deps: {
 
   ipcMain.handle('memory.delete', async (_e, args: { id: string }) => {
     deps.artifactRepo.delete(args.id);
-  });
-
-  ipcMain.handle('memory.readFacts', async () => {
-    return readKnowledge(deps.configDir).catch(() => '');
-  });
-
-  ipcMain.handle('memory.writeFacts', async (_e, args: { text: string }) => {
-    await fsp.writeFile(path.join(deps.configDir, 'knowledge.md'), args.text, 'utf8');
   });
 
   ipcMain.handle('remoteDesktop.status', async (): Promise<{ granted: boolean }> => {

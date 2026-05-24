@@ -73,6 +73,9 @@ async function startElectron(): Promise<void> {
   const { ArtifactRepo } = await import('./db/artifact-repo');
   const { ReflectionPipeline } = await import('./reflection/pipeline');
   const { CompletionDetector } = await import('./reflection/completion-detector');
+  const { FactRepo } = await import('./db/fact-repo');
+  const { importLegacyKnowledge } = await import('./knowledge/import-legacy');
+  const { regenerateKnowledgeFile, renderPinnedAsMarkdown } = await import('./knowledge/store');
 
   const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
 
@@ -177,6 +180,15 @@ async function startElectron(): Promise<void> {
 
   const artifactRepo = new ArtifactRepo(db);
 
+  const factRepo = new FactRepo(db);
+  try {
+    await importLegacyKnowledge(ottoConfigDir, factRepo);
+  } catch (err) {
+    logger.error('importLegacyKnowledge failed', err);
+  }
+  factRepo.rerank();
+  void regenerateKnowledgeFile(ottoConfigDir, factRepo);
+
   async function runReflectorSdk(prompt: string): Promise<string> {
     const sdkMod = await import('@anthropic-ai/claude-agent-sdk');
     const ac = new AbortController();
@@ -208,6 +220,7 @@ async function startElectron(): Promise<void> {
   const pipeline = new ReflectionPipeline({
     repo,
     artifactRepo,
+    factRepo,
     configDir: ottoConfigDir,
     runReflector: (prompt) =>
       reflect({
@@ -233,6 +246,7 @@ async function startElectron(): Promise<void> {
           const msgs = repo.loadMessages(sessionId);
           const lastSeq = msgs.length > 0 ? msgs[msgs.length - 1]!.seq : sinceSeq;
           detector.notePersistedSeq(sessionId, lastSeq);
+          await regenerateKnowledgeFile(ottoConfigDir, factRepo);
         } catch (err) {
           logger.error('reflection pipeline threw', err);
         }
@@ -260,21 +274,12 @@ async function startElectron(): Promise<void> {
       });
       for (const row of artifactRows) artifactRepo.bumpUse(row.id);
 
-      const { readKnowledge } = await import('./knowledge/store');
       let facts: string[] = [];
       if (wantsFacts) {
-        const text = await readKnowledge(ottoConfigDir).catch(() => '');
-        const tokens = args.query
-          .toLowerCase()
-          .split(/\s+/)
-          .filter((t) => t.length > 0);
-        facts = text
-          .split('\n')
-          .filter((line) => {
-            const l = line.toLowerCase();
-            return tokens.some((tok) => l.includes(tok));
-          })
-          .slice(0, limit);
+        const hits = factRepo.search({ query: args.query, limit });
+        // Use a fixed pseudo-session id so all recall-tool hits in this process count once each toward distinct_sessions, regardless of which real session triggered them.
+      if (hits.length > 0) factRepo.bumpUse(hits.map((h) => h.id), 'recall');
+        facts = hits.map((h) => h.body);
       }
       return {
         facts,
@@ -288,7 +293,20 @@ async function startElectron(): Promise<void> {
         })),
       };
     },
-    memoryCounts: () => artifactRepo.counts(),
+    memoryCounts: () => ({ ...artifactRepo.counts(), factsPinned: factRepo.counts().pinned, factsTotal: factRepo.counts().total }),
+    factsForPrompt: () => {
+      const pinned = factRepo.listPinned();
+      return {
+        markdown: renderPinnedAsMarkdown(factRepo),
+        ids: pinned.map((f) => f.id),
+      };
+    },
+    bumpFactUse: (ids, sessionId) => factRepo.bumpUse(ids, sessionId),
+    appendKnowledge: async (note, sessionId) => {
+      factRepo.upsert({ body: note, preference: true, sourceSessionId: sessionId });
+      factRepo.rerank();
+      await regenerateKnowledgeFile(ottoConfigDir, factRepo);
+    },
     onMarkTaskComplete: (sessionId, _summary) => {
       detector.onMarkComplete(sessionId);
     },
@@ -334,6 +352,7 @@ async function startElectron(): Promise<void> {
     recommendedChord: platform.defaultHotkey(),
     hotkey,
     artifactRepo,
+    factRepo,
     configDir: ottoConfigDir,
     applyStartAtLogin,
     openLogsDir: () => {

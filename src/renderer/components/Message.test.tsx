@@ -61,10 +61,12 @@ describe('MessageView system memory-update', () => {
     playbooks: number;
     antiPatterns: number;
     heuristics: number;
+    promoted?: number;
+    demoted?: number;
   }) {
     const msg = {
       ...newSystemMessage([
-        { type: 'memory-update' as const, ...counts },
+        { type: 'memory-update' as const, promoted: 0, demoted: 0, ...counts },
       ]),
       sessionId: 's1',
     };
