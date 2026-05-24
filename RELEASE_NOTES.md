@@ -1,3 +1,19 @@
+Version v0.3.0
+
+New features:
+- **Memory & learning loop.** When a task finishes, Otto silently reflects on the transcript and saves what it learned for future sessions. Four kinds of artifact: short facts in the existing per-machine `knowledge.md`, plus *playbooks* (named procedures), *anti-patterns* (failure modes to avoid), and *heuristics* (meta-rules about Otto's own tools) in a new SQLite FTS5 store. A new `recall` tool lets Otto search past learnings at the start of a task. Reflection runs ~90s after the last assistant turn or when Otto calls `mark_task_complete`. A subtle one-line note in the conversation announces what was saved (e.g., `2 playbooks, 1 fact created/updated`).
+- **Memory browser in Settings.** New Memory tab lists facts, playbooks, anti-patterns, and heuristics with full-text search, edit modal, archive, and delete. The knowledge file is editable from the same panel.
+- **Wayland-native mouse + keyboard input via the XDG Desktop Portal.** Otto can now control native Wayland windows for the first time — clicks, drags, scrolls, typing, and key combos all flow through `org.freedesktop.portal.RemoteDesktop`. One KDE permission dialog on first use; the grant persists across launches. xdotool (which only worked on XWayland surfaces) is no longer used for input.
+- **Screenshot tiling for wide monitors.** Captures larger than the Anthropic 2000-pixel per-edge cap split into a row-major grid of native-resolution tiles, each carrying its virtual-desktop offset so click coords stay accurate. 3440×1440 and dual-monitor setups no longer lose detail to downscaling.
+- **Cursor visible in screenshots.** Spectacle now captures the pointer (`-p`), so Otto can see where its previous click landed and self-correct on the next attempt.
+
+UI refresh:
+- **Settings window redesigned.** Wider (780px), top tabs (General · Behavior · Memory · About), left sidebar of subsections within each tab, real heading-style page header per subsection. Stacked toggles get subtle row dividers. Type sizes bumped to give the heading hierarchy actual hierarchy.
+
+Behind the scenes:
+- **Platform adapter is now a singleton** so per-instance state (like the portal session and tracked cursor position) survives across the many call sites that ask for an adapter.
+- **Reflector logs its raw output on schema failures** to help iterate on the prompt.
+
 Version v0.2.4
 
 Bug fixes:
