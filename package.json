@@ -1,6 +1,6 @@
 {
   "name": "otto",
-  "version": "0.4.4",
+  "version": "0.4.5",
   "description": "General-purpose computer coworking agent",
   "main": "out/main/index.js",
   "private": true,
@@ -23,7 +23,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "lint": "eslint . --ext .ts,.tsx",
     "tray-icon": "node scripts/generate-tray-icon.mjs",
-    "postinstall": "electron-builder install-app-deps && node scripts/fetch-embedding-model.mjs"
+    "postinstall": "node scripts/postinstall.mjs"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.0",
