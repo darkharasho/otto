@@ -16,6 +16,8 @@ import type {
   ShellChild,
 } from './index';
 import { isDevInstance } from '../instance';
+import { createPortalInput, type InputHandle } from '../input/portal';
+import { ottoConfigDir } from '../logger';
 
 /** Translate Otto's xdotool-style combo to xdotool's lowercase-modifier form. */
 function toXdotoolCombo(combo: string): string {
@@ -47,15 +49,10 @@ function virtualDesktopBounds(monitors: MonitorInfo[]): { x: number; y: number; 
 export class LinuxAdapter implements PlatformAdapter {
   readonly name = 'linux';
 
-  private portalInput: import('../input/portal').InputHandle | null = null;
+  private portalInput: InputHandle | null = null;
 
-  private getPortalInput(): import('../input/portal').InputHandle {
+  private getPortalInput(): InputHandle {
     if (!this.portalInput) {
-      // Lazy require so dbus-next isn't pulled into the bundle until first use.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { createPortalInput } = require('../input/portal') as typeof import('../input/portal');
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { ottoConfigDir } = require('../logger') as typeof import('../logger');
       this.portalInput = createPortalInput({ configDir: ottoConfigDir });
     }
     return this.portalInput;
