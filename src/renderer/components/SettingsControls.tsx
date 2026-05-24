@@ -50,6 +50,9 @@ export function Toggle({
         disabled={disabled}
         onClick={() => !disabled && onChange(!checked)}
         className={[
+          // Track. box-content + explicit padding so the knob's geometry
+          // doesn't depend on border arithmetic — the inset 2px on every
+          // side is the "gutter" the 14px knob slides within.
           'group/toggle mt-0.5 box-content relative w-[28px] h-[14px] p-[2px] rounded-full',
           'border transition-colors flex-shrink-0',
           checked
