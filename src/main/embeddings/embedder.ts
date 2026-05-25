@@ -27,10 +27,12 @@ function noopEmbedder(): Embedder {
 }
 
 function modelDir(): string {
-  const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
-  if (resourcesPath) {
-    const packaged = path.join(resourcesPath, 'embedding');
-    return packaged;
+  // process.resourcesPath is *always* set in Electron — in packaged mode it's
+  // the app's resources/, in dev it's Electron's own dist/resources/ under
+  // node_modules. Only trust it when the app is actually packaged.
+  if (app.isPackaged) {
+    const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
+    if (resourcesPath) return path.join(resourcesPath, 'embedding');
   }
   try {
     return path.join(app.getAppPath(), 'resources', 'embedding');

@@ -8,28 +8,32 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = join(__dirname, '..');
-const DIR = join(ROOT, 'resources', 'embedding');
-mkdirSync(DIR, { recursive: true });
+// transformers.js resolves model files at ${localModelPath}/${modelName}/...
+// (and ${modelName}/onnx/... for the ONNX weights). Mirror that layout so
+// pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2') finds everything.
+const MODEL_DIR = join(ROOT, 'resources', 'embedding', 'Xenova', 'all-MiniLM-L6-v2');
+const ONNX_DIR = join(MODEL_DIR, 'onnx');
+mkdirSync(ONNX_DIR, { recursive: true });
 
 const FILES = [
   {
     url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model_quantized.onnx',
-    dest: join(DIR, 'model_quantized.onnx'),
+    dest: join(ONNX_DIR, 'model_quantized.onnx'),
     minBytes: 20_000_000,
   },
   {
     url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/tokenizer.json',
-    dest: join(DIR, 'tokenizer.json'),
+    dest: join(MODEL_DIR, 'tokenizer.json'),
     minBytes: 400_000,
   },
   {
     url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/tokenizer_config.json',
-    dest: join(DIR, 'tokenizer_config.json'),
+    dest: join(MODEL_DIR, 'tokenizer_config.json'),
     minBytes: 100,
   },
   {
     url: 'https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/config.json',
-    dest: join(DIR, 'config.json'),
+    dest: join(MODEL_DIR, 'config.json'),
     minBytes: 100,
   },
 ];
