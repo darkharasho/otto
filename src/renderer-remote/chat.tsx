@@ -258,6 +258,11 @@ export function Chat(): JSX.Element {
       case 'tool-call-start': {
         const callId = String(msg.callId ?? newId());
         const name = String(msg.name ?? '');
+        // End the current text bubble — any subsequent text-deltas should
+        // start a new bubble *below* this tool card so the transcript
+        // reads in chronological order instead of accreting text above
+        // earlier tool calls.
+        currentTextIdRef.current = null;
         setItems((prev) => [...prev, { kind: 'tool', id: newId(), callId, name, input: msg.input, status: 'pending' }]);
         return;
       }
