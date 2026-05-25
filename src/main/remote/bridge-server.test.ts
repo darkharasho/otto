@@ -148,6 +148,37 @@ describe('BridgeServer WS auth', () => {
     expect(messages).toContainEqual(expect.objectContaining({ type: 'event', kind: 'text-delta', text: 'hello' }));
   });
 
+  it('forwards events for sessions that did not yet exist at WS auth time', async () => {
+    // Regression: bridge previously subscribed only to activeSessionId() at
+    // auth time, so a phone that connected before any session existed would
+    // never receive events for the session subsequently started.
+    const pairing = makeStore();
+    const bus = new SessionBus();
+    server = new BridgeServer({
+      tailnetIp: '127.0.0.1', pairing, bus, pwaDir: null,
+      screenshotSecret: 'x', loadScreenshot: async () => null,
+      activeSessionId: () => null, // no active session at auth time
+    });
+    const { port } = await server.start();
+    const { token } = await pairing.issue('iPhone');
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    const messages: Array<Record<string, unknown>> = [];
+    await new Promise<void>((resolve) => {
+      ws.on('open', () => ws.send(JSON.stringify({ v: 1, type: 'auth', token })));
+      ws.on('message', (data) => {
+        const m = JSON.parse(data.toString()) as Record<string, unknown>;
+        messages.push(m);
+        if (m.type === 'auth_ok') {
+          // Now simulate a brand-new session starting and publishing.
+          bus.publish('s-late', { type: 'event', kind: 'text-delta', text: 'after-auth' });
+          setTimeout(resolve, 50);
+        }
+      });
+    });
+    ws.close();
+    expect(messages.some((m) => m.type === 'event' && m.kind === 'text-delta' && m.text === 'after-auth' && m.sessionId === 's-late')).toBe(true);
+  });
+
   it('routes inbound prompt to sendPrompt callback', async () => {
     const pairing = makeStore();
     const bus = new SessionBus();

@@ -35,6 +35,39 @@ describe('SessionBus broadcast', () => {
   });
 });
 
+describe('SessionBus subscribeAll', () => {
+  it('fires for publishes across all sessionIds with the sessionId attached', () => {
+    const got: Array<{ sid: string; event: RemoteOutbound }> = [];
+    bus.subscribeAll((sid, e) => got.push({ sid, event: e }));
+    bus.publish('s1', { type: 'event', kind: 'text-delta', text: 'a' });
+    bus.publish('s2', { type: 'event', kind: 'text-delta', text: 'b' });
+    expect(got).toHaveLength(2);
+    expect(got[0]!.sid).toBe('s1');
+    expect(got[1]!.sid).toBe('s2');
+  });
+
+  it('returned unsubscribe stops further delivery', () => {
+    const got: Array<{ sid: string; event: RemoteOutbound }> = [];
+    const off = bus.subscribeAll((sid, e) => got.push({ sid, event: e }));
+    bus.publish('s1', { type: 'event', kind: 'x' } as RemoteOutbound);
+    off();
+    bus.publish('s1', { type: 'event', kind: 'y' } as RemoteOutbound);
+    bus.publish('s2', { type: 'event', kind: 'z' } as RemoteOutbound);
+    expect(got).toHaveLength(1);
+  });
+
+  it('coexists with per-session subscribe (both fire)', () => {
+    const all: string[] = [];
+    const per: string[] = [];
+    bus.subscribeAll((_sid, e) => { if (e.type === 'event') all.push(String((e as { kind: string }).kind)); });
+    bus.subscribe('s1', (e) => { if (e.type === 'event') per.push(String((e as { kind: string }).kind)); });
+    bus.publish('s1', { type: 'event', kind: 'k1' } as RemoteOutbound);
+    bus.publish('s2', { type: 'event', kind: 'k2' } as RemoteOutbound);
+    expect(per).toEqual(['k1']);
+    expect(all).toEqual(['k1', 'k2']);
+  });
+});
+
 describe('SessionBus ring/history', () => {
   it('history returns events newer than sinceSeq', () => {
     bus.publish('s1', { type: 'event', kind: 'a' } as RemoteOutbound);

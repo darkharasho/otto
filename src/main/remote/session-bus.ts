@@ -11,6 +11,7 @@ export type RemoteInbound =
   | { type: 'interrupt'; sessionId: string };
 
 type Subscriber = (e: RemoteOutbound) => void;
+type AllSubscriber = (sessionId: string, e: RemoteOutbound) => void;
 type InputHandler = (m: RemoteInbound) => Promise<void>;
 
 interface RingEntry { seq: number; event: RemoteOutbound; t: number }
@@ -19,6 +20,7 @@ export interface SessionBusOpts { ringSize?: number; now?: () => number }
 
 export class SessionBus {
   private readonly subs = new Map<string, Set<Subscriber>>();
+  private readonly allSubs = new Set<AllSubscriber>();
   private readonly ring = new Map<string, RingEntry[]>();
   private readonly seqs = new Map<string, number>();
   private readonly inputQueue = new Map<string, Array<RemoteInbound & { resolve: () => void }>>();
@@ -39,6 +41,17 @@ export class SessionBus {
     return () => { set!.delete(sub); };
   }
 
+  /**
+   * Subscribe to publishes across ALL sessions. The callback receives the
+   * sessionId alongside the event. Used by the bridge WS so a phone can
+   * connect before any session exists and still receive events for whatever
+   * session subsequently starts (or for multiple sessions concurrently).
+   */
+  subscribeAll(sub: AllSubscriber): () => void {
+    this.allSubs.add(sub);
+    return () => { this.allSubs.delete(sub); };
+  }
+
   publish(sessionId: string, event: RemoteOutbound): void {
     const seq = (this.seqs.get(sessionId) ?? 0) + 1;
     this.seqs.set(sessionId, seq);
@@ -48,9 +61,13 @@ export class SessionBus {
     ring.push(entry);
     if (ring.length > this.ringSize) ring.shift();
     const subs = this.subs.get(sessionId);
-    if (!subs) return;
-    for (const s of subs) {
-      try { s(event); } catch { /* a single bad subscriber must not break the others */ }
+    if (subs) {
+      for (const s of subs) {
+        try { s(event); } catch { /* a single bad subscriber must not break the others */ }
+      }
+    }
+    for (const s of this.allSubs) {
+      try { s(sessionId, event); } catch { /* a single bad subscriber must not break the others */ }
     }
   }
 

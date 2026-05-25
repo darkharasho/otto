@@ -104,6 +104,43 @@ export const useOttoStore = create<OttoState>((set, get) => ({
     if (!session || event.sessionId !== session.id) return;
 
     switch (event.type) {
+      case 'user-message': {
+        // The desktop optimistically appends a user bubble when YOU submit
+        // (handleSubmit -> appendUserMessage with a random UUID). For
+        // remote-originated prompts (from the phone), no optimistic add
+        // happens, so we must append from the event. Dedupe by:
+        //   (1) exact messageId match, or
+        //   (2) the immediately-prior message is a user msg with the same
+        //       text — covers the desktop's optimistic add (different id).
+        const messages = session.messages;
+        if (messages.some((m) => m.id === event.messageId)) return;
+        const last = messages[messages.length - 1];
+        if (
+          last &&
+          last.role === 'user' &&
+          last.content.length === 1 &&
+          last.content[0]!.type === 'text' &&
+          (last.content[0] as { type: 'text'; text: string }).text === event.text
+        ) {
+          return;
+        }
+        const msg: UserMessage = {
+          id: event.messageId,
+          sessionId: session.id,
+          seq: session.messages.length,
+          createdAt: Date.now(),
+          role: 'user',
+          content: [{ type: 'text', text: event.text }],
+        };
+        set({
+          activeSession: {
+            ...session,
+            messages: [...session.messages, msg],
+            error: null,
+          },
+        });
+        return;
+      }
       case 'message-start': {
         const placeholder: AssistantMessage = {
           id: event.messageId,

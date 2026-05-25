@@ -9,7 +9,8 @@ type ToolStatus = 'pending' | 'resolved' | 'denied';
 interface TextItem { kind: 'text'; id: string; text: string; done: boolean }
 interface ToolItem { kind: 'tool'; id: string; callId: string; name: string; input: unknown; status: ToolStatus; result?: unknown; isError?: boolean }
 interface ScreenshotItem { kind: 'screenshot'; id: string; shotId: string; signedUrl: string }
-type TranscriptItem = TextItem | ToolItem | ScreenshotItem;
+interface UserItem { kind: 'user'; id: string; text: string }
+type TranscriptItem = TextItem | ToolItem | ScreenshotItem | UserItem;
 
 interface PendingApproval { decisionId: string; tool: string; actionClass: string; summary: string }
 
@@ -71,6 +72,12 @@ export function Chat(): JSX.Element {
     }
 
     switch (kind) {
+      case 'user-message': {
+        const id = String(msg.messageId ?? newId());
+        const text = String(msg.text ?? '');
+        setItems((prev) => prev.some((it) => it.id === id) ? prev : [...prev, { kind: 'user', id, text }]);
+        return;
+      }
       case 'message-start': {
         const id = newId();
         currentTextIdRef.current = id;
@@ -262,6 +269,15 @@ export function Chat(): JSX.Element {
           </div>
         )}
         {items.map((it) => {
+          if (it.kind === 'user') {
+            return (
+              <div key={it.id} className="flex justify-end">
+                <div className="rounded-md bg-accent/15 text-text px-3 py-2 text-sm whitespace-pre-wrap break-words max-w-[85%]">
+                  {it.text}
+                </div>
+              </div>
+            );
+          }
           if (it.kind === 'text') {
             return (
               <div key={it.id} className="rounded-md bg-surface px-3 py-2 text-sm whitespace-pre-wrap break-words">

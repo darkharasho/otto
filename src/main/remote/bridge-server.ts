@@ -121,12 +121,13 @@ export class BridgeServer {
         authed = true;
         device = { id: found.id, label: found.label };
         ws.send(JSON.stringify({ v: 1, type: 'auth_ok', deviceLabel: found.label }));
-        const sid = this.opts.activeSessionId?.() ?? null;
-        if (sid) {
-          unsub = this.opts.bus.subscribe(sid, (e) => {
-            try { ws.send(JSON.stringify({ v: 1, ...e })); } catch { /* ws may be closed */ }
-          });
-        }
+        // Subscribe to events for ALL sessions: the phone may connect before
+        // any session exists, and we want to receive whichever sessions are
+        // currently or subsequently active. We include `sessionId` on every
+        // outbound frame so the PWA can route by session.
+        unsub = this.opts.bus.subscribeAll((sid, e) => {
+          try { ws.send(JSON.stringify({ v: 1, sessionId: sid, ...e })); } catch { /* ws may be closed */ }
+        });
         return;
       }
       if (msg.type === 'prompt' && typeof msg.text === 'string') {
