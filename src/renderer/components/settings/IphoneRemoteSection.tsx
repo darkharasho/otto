@@ -132,7 +132,14 @@ export function IphoneRemoteSection() {
     await refreshStatus();
   }
 
-  const pairDisabled = !status || !status.enabled;
+  const pairDisabled = !status || !status.running;
+  const pairDisabledReason = !status
+    ? 'Loading…'
+    : !status.enabled
+    ? 'Enable Remote access first'
+    : !status.running
+    ? (status.reason ?? 'Bridge not running')
+    : undefined;
 
   return (
     <SubsectionPage
@@ -224,7 +231,7 @@ export function IphoneRemoteSection() {
             type="button"
             onClick={() => setShowPair(true)}
             disabled={pairDisabled}
-            title={pairDisabled ? 'Enable Remote access first' : undefined}
+            title={pairDisabledReason}
             className={[
               'px-3 py-1.5 text-xs rounded-md border transition-colors',
               pairDisabled
