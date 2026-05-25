@@ -80,6 +80,7 @@ async function startElectron(): Promise<void> {
   const { getEmbedder } = await import('./embeddings/embedder');
   const { backfillEmbeddings } = await import('./embeddings/backfill');
   const { MemorySearch } = await import('./memory/search');
+  const { SessionBus } = await import('./remote/session-bus');
 
   const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
 
@@ -163,7 +164,8 @@ async function startElectron(): Promise<void> {
     rendererEntry(),
     () => window.isVisible()
   );
-  const emitWithNotify: typeof emitSessionEvent = (event) => {
+  const sessionBus = new SessionBus();
+  const baseEmit: typeof emitSessionEvent = (event) => {
     notifier.handle(event);
     overlay.handleSessionEvent(event);
     emitSessionEvent(event);
@@ -172,6 +174,17 @@ async function startElectron(): Promise<void> {
     // the window. Cleared as soon as the main window becomes visible.
     if (event.type === 'done' && !window.isVisible()) {
       tray.setBadged(true);
+    }
+  };
+  // Fan out to the SessionBus so remote subscribers (iPhone bridge) see the
+  // same events as the renderer. Additive — preserves existing behavior.
+  const emitWithNotify: typeof emitSessionEvent = (event) => {
+    baseEmit(event);
+    if ('sessionId' in event && typeof (event as { sessionId?: unknown }).sessionId === 'string') {
+      sessionBus.publish(
+        (event as { sessionId: string }).sessionId,
+        { ...event, type: 'event', kind: event.type } as unknown as import('./remote/session-bus').RemoteOutbound
+      );
     }
   };
 
@@ -317,6 +330,15 @@ async function startElectron(): Promise<void> {
 
   sessions.onDoneListener((sessionId) => detector.onDone(sessionId));
   sessions.onUserActiveListener((sessionId) => detector.onUserActive(sessionId));
+  // Register a per-session input handler on the bus so remote (iPhone) inputs
+  // can drive the same session. Approval handling is wired in a later task.
+  sessions.onUserActiveListener((sessionId) => {
+    sessionBus.setInputHandler(sessionId, async (m) => {
+      if (m.type === 'prompt') await sessions.send({ sessionId, text: m.text });
+      else if (m.type === 'interrupt') sessions.cancel({ sessionId });
+      // approval handled separately in a later task
+    });
+  });
 
   const preloadPath = path.join(app.getAppPath(), 'out', 'preload', 'index.js');
   window.create(preloadPath, rendererEntry());

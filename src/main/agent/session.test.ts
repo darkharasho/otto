@@ -6,6 +6,7 @@ import { openDatabase } from '../db/db';
 import { Repo } from '../db/repo';
 import { SessionManager, type SdkClient, type SdkStreamEvent, type SdkTurn } from './session';
 import type { SessionEvent } from '@shared/ipc-contract';
+import { SessionBus, type RemoteOutbound } from '../remote/session-bus';
 
 let dir: string;
 let repo: Repo;
@@ -159,5 +160,26 @@ describe('SessionManager listeners', () => {
     const { sessionId } = await manager.start({});
     await manager.send({ sessionId, text: 'hi' });
     expect(calls).toEqual([sessionId]);
+  });
+});
+
+describe('SessionManager + SessionBus fan-out', () => {
+  it('an emit wrapper can publish each event to both renderer and the SessionBus', async () => {
+    const rendererCalls: SessionEvent[] = [];
+    const bus = new SessionBus();
+    const busCalls: RemoteOutbound[] = [];
+    const fanout = (e: SessionEvent) => {
+      rendererCalls.push(e);
+      if ('sessionId' in e && typeof e.sessionId === 'string') {
+        bus.publish(e.sessionId, { ...e, type: 'event', kind: e.type } as unknown as RemoteOutbound);
+      }
+    };
+    const mgr = new SessionManager(repo, fakeSdk, 'claude-sonnet-4-6', fanout);
+    const { sessionId } = await mgr.start({});
+    bus.subscribe(sessionId, (e) => busCalls.push(e));
+    await mgr.send({ sessionId, text: 'go' });
+
+    expect(rendererCalls.some((e) => e.type === 'text-delta')).toBe(true);
+    expect(busCalls.some((e) => e.type === 'event' && (e as { kind?: string }).kind === 'text-delta')).toBe(true);
   });
 });
