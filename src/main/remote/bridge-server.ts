@@ -20,6 +20,8 @@ export interface BridgeServerOpts {
   resolveApproval?: (decisionId: string, choice: 'approve' | 'deny') => boolean;
   sendPrompt?: (text: string, origin: 'desktop' | 'remote') => Promise<void>;
   interruptTurn?: (sessionId?: string) => void;
+  /** Preferred TCP port to bind. Falls back to an ephemeral port if in use. Default: 17829. */
+  port?: number;
 }
 
 interface PairingCode {
@@ -46,6 +48,8 @@ export class BridgeServer {
     return false;
   }
 
+  private static readonly DEFAULT_PORT = 17829;
+
   private readonly signer: ScreenshotUrlSigner;
 
   constructor(private readonly opts: BridgeServerOpts) {
@@ -61,10 +65,29 @@ export class BridgeServer {
     const server = http.createServer((req, res) => {
       void this.handle(req, res);
     });
-    await new Promise<void>((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(0, this.opts.tailnetIp!, () => resolve());
+    const desiredPort = this.opts.port ?? BridgeServer.DEFAULT_PORT;
+    const tryListen = (p: number) => new Promise<void>((resolve, reject) => {
+      const onError = (err: Error & { code?: string }) => {
+        server.removeListener('error', onError);
+        reject(err);
+      };
+      server.once('error', onError);
+      server.listen(p, this.opts.tailnetIp!, () => {
+        server.removeListener('error', onError);
+        resolve();
+      });
     });
+    try {
+      await tryListen(desiredPort);
+    } catch (err) {
+      const e = err as NodeJS.ErrnoException;
+      if (e.code === 'EADDRINUSE' && desiredPort !== 0) {
+        logger.warn(`bridge: port ${desiredPort} in use, falling back to ephemeral`);
+        await tryListen(0);
+      } else {
+        throw err;
+      }
+    }
     this.server = server;
     const { port } = server.address() as AddressInfo;
     this.wss = new WebSocketServer({ server, path: '/ws' });

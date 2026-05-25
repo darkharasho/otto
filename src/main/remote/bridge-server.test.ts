@@ -36,6 +36,16 @@ describe('BridgeServer HTTP', () => {
     const res = await fetch(`http://127.0.0.1:${port}/nope`);
     expect(res.status).toBe(404);
   });
+
+  it('binds to the requested port when specified', async () => {
+    server = new BridgeServer({
+      tailnetIp: '127.0.0.1', pairing: makeStore(), bus: new SessionBus(), pwaDir: null,
+      screenshotSecret: 'x', loadScreenshot: async () => null,
+      port: 17900,
+    });
+    const { port } = await server.start();
+    expect(port).toBe(17900);
+  });
 });
 
 describe('BridgeServer /pair', () => {

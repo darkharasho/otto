@@ -351,6 +351,7 @@ async function startElectron(): Promise<void> {
     resolveTailnetEndpoint,
     makeBridge: (tailnetIp) => new BridgeServer({
       tailnetIp,
+      port: 17829,
       pairing: pairingStore,
       bus: sessionBus,
       pwaDir: path.join(app.getAppPath(), 'out', 'renderer-remote'),
