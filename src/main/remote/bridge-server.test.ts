@@ -26,12 +26,12 @@ function makeStore() {
 
 describe('BridgeServer HTTP', () => {
   it('refuses to start when no tailnet IP is provided', async () => {
-    server = new BridgeServer({ tailnetIp: null, pairing: makeStore(), bus: new SessionBus(), pwaDir: null });
+    server = new BridgeServer({ tailnetIp: null, pairing: makeStore(), bus: new SessionBus(), pwaDir: null, screenshotSecret: 'test-secret', loadScreenshot: async () => null });
     await expect(server.start()).rejects.toThrow(/tailnet/i);
   });
 
   it('binds to the provided IP and serves a 404 for unknown paths', async () => {
-    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing: makeStore(), bus: new SessionBus(), pwaDir: null });
+    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing: makeStore(), bus: new SessionBus(), pwaDir: null, screenshotSecret: 'test-secret', loadScreenshot: async () => null });
     const { port } = await server.start();
     const res = await fetch(`http://127.0.0.1:${port}/nope`);
     expect(res.status).toBe(404);
@@ -41,7 +41,7 @@ describe('BridgeServer HTTP', () => {
 describe('BridgeServer /pair', () => {
   it('mints a code, accepts /pair with that code, returns a token', async () => {
     const pairing = makeStore();
-    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing, bus: new SessionBus(), pwaDir: null });
+    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing, bus: new SessionBus(), pwaDir: null, screenshotSecret: 'test-secret', loadScreenshot: async () => null });
     const { port } = await server.start();
     const code = server.mintPairingCode();
     const res = await fetch(`http://127.0.0.1:${port}/pair`, {
@@ -57,7 +57,7 @@ describe('BridgeServer /pair', () => {
   });
 
   it('rejects unknown pairing codes with 401', async () => {
-    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing: makeStore(), bus: new SessionBus(), pwaDir: null });
+    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing: makeStore(), bus: new SessionBus(), pwaDir: null, screenshotSecret: 'test-secret', loadScreenshot: async () => null });
     const { port } = await server.start();
     const res = await fetch(`http://127.0.0.1:${port}/pair`, {
       method: 'POST',
@@ -68,7 +68,7 @@ describe('BridgeServer /pair', () => {
   });
 
   it('a pairing code is single-use', async () => {
-    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing: makeStore(), bus: new SessionBus(), pwaDir: null });
+    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing: makeStore(), bus: new SessionBus(), pwaDir: null, screenshotSecret: 'test-secret', loadScreenshot: async () => null });
     const { port } = await server.start();
     const code = server.mintPairingCode();
     const ok = await fetch(`http://127.0.0.1:${port}/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, deviceLabel: 'A' }) });
@@ -78,7 +78,7 @@ describe('BridgeServer /pair', () => {
   });
 
   it('rate-limits /pair to 10 requests per minute per IP', async () => {
-    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing: makeStore(), bus: new SessionBus(), pwaDir: null });
+    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing: makeStore(), bus: new SessionBus(), pwaDir: null, screenshotSecret: 'test-secret', loadScreenshot: async () => null });
     const { port } = await server.start();
     for (let i = 0; i < 10; i++) {
       await fetch(`http://127.0.0.1:${port}/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: 'bogus', deviceLabel: 'x' }) });
@@ -90,7 +90,7 @@ describe('BridgeServer /pair', () => {
 
 describe('BridgeServer WS auth', () => {
   it('WS closes with auth_failed when first frame is not a valid auth', async () => {
-    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing: makeStore(), bus: new SessionBus(), pwaDir: null });
+    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing: makeStore(), bus: new SessionBus(), pwaDir: null, screenshotSecret: 'test-secret', loadScreenshot: async () => null });
     const { port } = await server.start();
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
     const closed = new Promise<{ code: number; reason: string }>((r) => ws.on('close', (code, reason) => r({ code, reason: reason.toString() })));
@@ -102,7 +102,7 @@ describe('BridgeServer WS auth', () => {
   it('WS accepts a valid token and replies auth_ok', async () => {
     const pairing = makeStore();
     const bus = new SessionBus();
-    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing, bus, pwaDir: null });
+    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing, bus, pwaDir: null, screenshotSecret: 'test-secret', loadScreenshot: async () => null });
     const { port } = await server.start();
     const { token } = await pairing.issue('iPhone');
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
@@ -118,7 +118,7 @@ describe('BridgeServer WS auth', () => {
   it('forwards SessionBus events for the active session to the WS', async () => {
     const pairing = makeStore();
     const bus = new SessionBus();
-    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing, bus, pwaDir: null, activeSessionId: () => 's1' });
+    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing, bus, pwaDir: null, activeSessionId: () => 's1', screenshotSecret: 'test-secret', loadScreenshot: async () => null });
     const { port } = await server.start();
     const { token } = await pairing.issue('iPhone');
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
@@ -143,7 +143,7 @@ describe('BridgeServer WS auth', () => {
     const bus = new SessionBus();
     const seen: unknown[] = [];
     bus.setInputHandler('s1', async (m) => { seen.push(m); });
-    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing, bus, pwaDir: null, activeSessionId: () => 's1' });
+    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing, bus, pwaDir: null, activeSessionId: () => 's1', screenshotSecret: 'test-secret', loadScreenshot: async () => null });
     const { port } = await server.start();
     const { token } = await pairing.issue('iPhone');
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
@@ -162,11 +162,29 @@ describe('BridgeServer WS auth', () => {
   });
 });
 
+describe('BridgeServer /screenshot', () => {
+  it('serves a signed screenshot URL once, then 401', async () => {
+    const pairing = makeStore();
+    const bus = new SessionBus();
+    server = new BridgeServer({
+      tailnetIp: '127.0.0.1', pairing, bus, pwaDir: null,
+      screenshotSecret: 'unit-test-secret',
+      loadScreenshot: async () => Buffer.from([137, 80, 78, 71]),
+    });
+    const { port } = await server.start();
+    const url = server.signScreenshotUrl('shot-1');
+    const ok = await fetch(`http://127.0.0.1:${port}${url}`);
+    expect(ok.status).toBe(200);
+    const dup = await fetch(`http://127.0.0.1:${port}${url}`);
+    expect(dup.status).toBe(401);
+  });
+});
+
 describe('BridgeServer /history', () => {
   it('GET /history requires auth token and returns events from the ring', async () => {
     const pairing = makeStore();
     const bus = new SessionBus();
-    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing, bus, pwaDir: null });
+    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing, bus, pwaDir: null, screenshotSecret: 'test-secret', loadScreenshot: async () => null });
     const { port } = await server.start();
     const { token } = await pairing.issue('iPhone');
     bus.publish('s1', { type: 'event', kind: 'a' });

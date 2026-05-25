@@ -5,6 +5,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { logger } from '../logger';
 import type { PairingStore } from './pairing-store';
 import type { SessionBus } from './session-bus';
+import { ScreenshotUrlSigner } from './screenshot-urls';
 
 export interface BridgeServerOpts {
   tailnetIp: string | null;
@@ -12,6 +13,8 @@ export interface BridgeServerOpts {
   bus: SessionBus;
   pwaDir: string | null;
   activeSessionId?: () => string | null;
+  screenshotSecret: string;
+  loadScreenshot: (id: string) => Promise<Buffer | null>;
 }
 
 interface PairingCode {
@@ -38,7 +41,13 @@ export class BridgeServer {
     return false;
   }
 
-  constructor(private readonly opts: BridgeServerOpts) {}
+  private readonly signer: ScreenshotUrlSigner;
+
+  constructor(private readonly opts: BridgeServerOpts) {
+    this.signer = new ScreenshotUrlSigner(opts.screenshotSecret);
+  }
+
+  signScreenshotUrl(id: string): string { return this.signer.sign(id); }
 
   async start(): Promise<{ port: number }> {
     if (!this.opts.tailnetIp) {
@@ -126,6 +135,7 @@ export class BridgeServer {
     try {
       if (req.method === 'POST' && req.url === '/pair') return await this.handlePair(req, res);
       if (req.method === 'GET' && req.url?.startsWith('/history')) return await this.handleHistory(req, res);
+      if (req.method === 'GET' && req.url?.startsWith('/screenshot/')) return await this.handleScreenshot(req, res);
       res.statusCode = 404;
       res.end('not found');
     } catch (err) {
@@ -150,6 +160,16 @@ export class BridgeServer {
     res.statusCode = 200;
     res.setHeader('content-type', 'application/json');
     res.end(JSON.stringify({ token, deviceId, wsUrl: `/ws` }));
+  }
+
+  private async handleScreenshot(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const result = this.signer.verify(req.url!);
+    if (!result.ok || !result.id) { res.statusCode = 401; res.end('bad url'); return; }
+    const buf = await this.opts.loadScreenshot(result.id);
+    if (!buf) { res.statusCode = 404; res.end('not found'); return; }
+    res.statusCode = 200;
+    res.setHeader('content-type', 'image/png');
+    res.end(buf);
   }
 
   private async handleHistory(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
