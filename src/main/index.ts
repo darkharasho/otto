@@ -358,9 +358,14 @@ async function startElectron(): Promise<void> {
       tailnetIp,
       pairing: pairingStore,
       bus: sessionBus,
-      pwaDir: null, // wired in Task 25
+      pwaDir: path.join(app.getAppPath(), 'out', 'renderer-remote'),
       screenshotSecret,
-      loadScreenshot: async () => null, // wired in Task 29
+      // Screenshot fan-out into the remote bus isn't wired yet (no caller
+      // currently emits `screenshot-captured` events with a stable id), so the
+      // /screenshot/<id> route has no source of truth to read from. Leaving as
+      // a null stub means the route returns 404 if hit early; once the bus
+      // fan-out lands, this becomes a read from src/main/screenshot/store.
+      loadScreenshot: async () => null,
       activeSessionId: () => sessions.getActiveSessionId(),
       resolveApproval: (id, choice) => { broker.resolve(id, choice); return true; },
     }),

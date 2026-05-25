@@ -17,5 +17,5 @@
       "@renderer/*": ["src/renderer/*"]
     }
   },
-  "include": ["src/renderer/**/*", "src/shared/**/*", "src/preload/**/*"]
+  "include": ["src/renderer/**/*", "src/renderer-remote/**/*", "src/shared/**/*", "src/preload/**/*"]
 }

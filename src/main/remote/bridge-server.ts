@@ -1,6 +1,8 @@
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
 import { randomBytes } from 'node:crypto';
+import { promises as fsp } from 'node:fs';
+import nodePath from 'node:path';
 import { WebSocketServer, WebSocket } from 'ws';
 import { logger } from '../logger';
 import type { PairingStore } from './pairing-store';
@@ -140,6 +142,10 @@ export class BridgeServer {
       if (req.method === 'POST' && req.url === '/pair') return await this.handlePair(req, res);
       if (req.method === 'GET' && req.url?.startsWith('/history')) return await this.handleHistory(req, res);
       if (req.method === 'GET' && req.url?.startsWith('/screenshot/')) return await this.handleScreenshot(req, res);
+      // Fall through to PWA static serving for any unmatched GET when a pwaDir
+      // is configured. Reserved API prefixes above are matched first so the
+      // bridge wire still works even if a static file happens to share a name.
+      if (req.method === 'GET' && this.opts.pwaDir) return await this.handleStatic(req, res);
       res.statusCode = 404;
       res.end('not found');
     } catch (err) {
@@ -174,6 +180,56 @@ export class BridgeServer {
     res.statusCode = 200;
     res.setHeader('content-type', 'image/png');
     res.end(buf);
+  }
+
+  private static readonly MIME: Record<string, string> = {
+    '.html': 'text/html; charset=utf-8',
+    '.js':   'application/javascript; charset=utf-8',
+    '.mjs':  'application/javascript; charset=utf-8',
+    '.css':  'text/css; charset=utf-8',
+    '.json': 'application/json; charset=utf-8',
+    '.webmanifest': 'application/manifest+json; charset=utf-8',
+    '.png':  'image/png',
+    '.jpg':  'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.svg':  'image/svg+xml',
+    '.ico':  'image/x-icon',
+    '.woff': 'font/woff',
+    '.woff2': 'font/woff2',
+    '.map':  'application/json; charset=utf-8',
+    '.txt':  'text/plain; charset=utf-8',
+  };
+
+  private async handleStatic(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const root = this.opts.pwaDir!;
+    const url = new URL(req.url ?? '/', 'http://x');
+    let rel = decodeURIComponent(url.pathname).replace(/^\/+/, '');
+    if (rel === '' || rel.endsWith('/')) rel = nodePath.join(rel, 'index.html');
+    const resolved = nodePath.resolve(root, rel);
+    // Prevent path traversal.
+    if (!resolved.startsWith(nodePath.resolve(root) + nodePath.sep) && resolved !== nodePath.resolve(root, 'index.html')) {
+      // Still allow files directly inside root (no sep when root === resolved).
+      if (nodePath.dirname(resolved) !== nodePath.resolve(root) && !resolved.startsWith(nodePath.resolve(root) + nodePath.sep)) {
+        res.statusCode = 403; res.end('forbidden'); return;
+      }
+    }
+    try {
+      const buf = await fsp.readFile(resolved);
+      const ext = nodePath.extname(resolved).toLowerCase();
+      res.statusCode = 200;
+      res.setHeader('content-type', BridgeServer.MIME[ext] ?? 'application/octet-stream');
+      res.end(buf);
+    } catch {
+      // SPA fallback: serve index.html for routes that don't map to a file.
+      try {
+        const buf = await fsp.readFile(nodePath.join(root, 'index.html'));
+        res.statusCode = 200;
+        res.setHeader('content-type', 'text/html; charset=utf-8');
+        res.end(buf);
+      } catch {
+        res.statusCode = 404; res.end('not found');
+      }
+    }
   }
 
   private async handleHistory(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {

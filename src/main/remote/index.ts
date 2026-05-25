@@ -6,6 +6,7 @@ export interface RemoteModuleBridge {
   start(): Promise<{ port: number }>;
   stop(): Promise<void>;
   mintPairingCode(): string;
+  signScreenshotUrl(id: string): string;
 }
 
 export interface RemoteModuleStatus {
@@ -50,6 +51,15 @@ export class RemoteModule {
     this.stopping = true;
     if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; }
     await this.tearDown();
+  }
+
+  // Returns a signed `/screenshot/<id>?...sig=...` URL routed through the
+  // active bridge, or null when the bridge isn't running. Used by the
+  // SessionBus fan-out to inject signedUrl onto screenshot-captured events so
+  // remote clients (PWA) can fetch the image.
+  signScreenshotUrl(id: string): string | null {
+    if (!this.bridge) return null;
+    try { return this.bridge.signScreenshotUrl(id); } catch { return null; }
   }
 
   mintPairingCode(): { code: string; url: string; expiresAt: number } {

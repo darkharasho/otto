@@ -1,0 +1,9 @@
+{
+  "name": "Otto",
+  "short_name": "Otto",
+  "display": "standalone",
+  "start_url": "/",
+  "background_color": "#0d0d0e",
+  "theme_color": "#0d0d0e",
+  "orientation": "portrait"
+}
