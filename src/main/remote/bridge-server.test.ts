@@ -36,3 +36,43 @@ describe('BridgeServer HTTP', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('BridgeServer /pair', () => {
+  it('mints a code, accepts /pair with that code, returns a token', async () => {
+    const pairing = makeStore();
+    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing, bus: new SessionBus(), pwaDir: null });
+    const { port } = await server.start();
+    const code = server.mintPairingCode();
+    const res = await fetch(`http://127.0.0.1:${port}/pair`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code, deviceLabel: 'iPhone' }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { token: string; deviceId: string };
+    expect(body.token).toMatch(/.{40,}/);
+    expect(body.deviceId).toBeTruthy();
+    expect(pairing.list()).toHaveLength(1);
+  });
+
+  it('rejects unknown pairing codes with 401', async () => {
+    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing: makeStore(), bus: new SessionBus(), pwaDir: null });
+    const { port } = await server.start();
+    const res = await fetch(`http://127.0.0.1:${port}/pair`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ code: 'bogus', deviceLabel: 'iPhone' }),
+    });
+    expect(res.status).toBe(401);
+  });
+
+  it('a pairing code is single-use', async () => {
+    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing: makeStore(), bus: new SessionBus(), pwaDir: null });
+    const { port } = await server.start();
+    const code = server.mintPairingCode();
+    const ok = await fetch(`http://127.0.0.1:${port}/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, deviceLabel: 'A' }) });
+    expect(ok.status).toBe(200);
+    const dup = await fetch(`http://127.0.0.1:${port}/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, deviceLabel: 'B' }) });
+    expect(dup.status).toBe(401);
+  });
+});
