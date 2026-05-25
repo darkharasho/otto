@@ -161,3 +161,22 @@ describe('BridgeServer WS auth', () => {
     expect(seen).toContainEqual(expect.objectContaining({ type: 'prompt', text: 'hi from phone' }));
   });
 });
+
+describe('BridgeServer /history', () => {
+  it('GET /history requires auth token and returns events from the ring', async () => {
+    const pairing = makeStore();
+    const bus = new SessionBus();
+    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing, bus, pwaDir: null });
+    const { port } = await server.start();
+    const { token } = await pairing.issue('iPhone');
+    bus.publish('s1', { type: 'event', kind: 'a' });
+    bus.publish('s1', { type: 'event', kind: 'b' });
+    const noauth = await fetch(`http://127.0.0.1:${port}/history?session_id=s1&since=0`);
+    expect(noauth.status).toBe(401);
+    const ok = await fetch(`http://127.0.0.1:${port}/history?session_id=s1&since=0`, { headers: { authorization: `Bearer ${token}` } });
+    expect(ok.status).toBe(200);
+    const body = (await ok.json()) as { events: Array<{ seq: number }>; truncated: boolean };
+    expect(body.events).toHaveLength(2);
+    expect(body.truncated).toBe(false);
+  });
+});

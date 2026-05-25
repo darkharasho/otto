@@ -125,6 +125,7 @@ export class BridgeServer {
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     try {
       if (req.method === 'POST' && req.url === '/pair') return await this.handlePair(req, res);
+      if (req.method === 'GET' && req.url?.startsWith('/history')) return await this.handleHistory(req, res);
       res.statusCode = 404;
       res.end('not found');
     } catch (err) {
@@ -149,5 +150,17 @@ export class BridgeServer {
     res.statusCode = 200;
     res.setHeader('content-type', 'application/json');
     res.end(JSON.stringify({ token, deviceId, wsUrl: `/ws` }));
+  }
+
+  private async handleHistory(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const token = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
+    if (!token || !(await this.opts.pairing.verify(token))) { res.statusCode = 401; res.end('unauthorized'); return; }
+    const url = new URL(req.url!, 'http://x');
+    const sid = url.searchParams.get('session_id') ?? '';
+    const since = Number(url.searchParams.get('since') ?? '0');
+    const out = this.opts.bus.history(sid, isFinite(since) ? since : 0);
+    res.statusCode = 200;
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify(out));
   }
 }
