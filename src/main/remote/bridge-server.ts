@@ -25,7 +25,7 @@ export interface BridgeServerOpts {
   loadMessages?: (sessionId: string) => Promise<Message[]>;
   switchSession?: (sessionId: string) => Promise<void>;
   newSession?: () => Promise<string>;
-  /** Preferred TCP port to bind. Falls back to an ephemeral port if in use. Default: 17829. */
+  /** Preferred TCP port to bind. Falls back to an ephemeral port if in use. Default: ephemeral (0); production callers pass 17829. */
   port?: number;
 }
 
@@ -53,7 +53,7 @@ export class BridgeServer {
     return false;
   }
 
-  private static readonly DEFAULT_PORT = 17829;
+  private static readonly DEFAULT_PORT = 0;
 
   private readonly signer: ScreenshotUrlSigner;
 
