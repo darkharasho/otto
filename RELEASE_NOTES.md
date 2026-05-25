@@ -1,3 +1,14 @@
+Version v0.5.2
+
+UI polish:
+- **Tool call cards are friendlier on every surface.** MCP names like `mcp__github__create_pull_request` now render as "GitHub · Create Pull Request" with an icon and a one-line param summary; results render as inline images (including base64 data URLs from MCP screenshot tools), terminal-style stdout with exit code, key/value tables, markdown, or red error boxes — replacing the raw JSON blobs everywhere. The same humanization flows through the desktop chat, the mobile remote, and the unfocused overlay feed.
+- **Overlay feed renders markdown.** Streaming assistant text in the unfocused HUD now respects bold, italic, inline code, and links instead of showing literal markdown syntax. Each row still clamps to two lines.
+- **Mobile remote: emoji render as line-icon SVGs.** Same shim the desktop renderer already uses — Lucide for the common ones (✅ 💡 🔧 🚀), Fluent Emoji High Contrast for everything else, all painted in the accent color so they read as one coherent set.
+
+Bug fixes:
+- **Mobile remote: iOS PWA chrome respects safe-area insets.** The status bar no longer collides with the header in black-translucent mode, and the input no longer sits on a tall grey strip above the home indicator.
+- **Mobile remote: surface a banner when the bridge can't be reached.** After ~7s of failed WebSocket reconnects, the chat screen shows an amber notice naming the host being attempted and a one-line hint about Tailscale / re-pairing — instead of silently looping forever.
+
 Version v0.5.1
 
 Bug fixes:
