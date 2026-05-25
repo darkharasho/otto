@@ -39,7 +39,7 @@ const ICON_BY_SUBSTRING: Array<[RegExp, IconName]> = [
   [/(^|_)(fetch|navigate|http)/i,       'globe'],
   [/(^|_)(click|hover|drag|move)/i,     'mouse'],
   [/(^|_)(type|press_key|fill)/i,       'keyboard'],
-  [/(^|_)(github|pull_request|issues?|branch)($|_)/i, 'github'],
+  [/(^|_)(github|pull_request|issues?|branch(es)?|commits?|releases?|tags?|repo)($|_)/i, 'github'],
   [/(^|_)(sql|query|db|database)/i,     'database'],
   [/(image|png|jpg)/i,                  'image'],
 ];
