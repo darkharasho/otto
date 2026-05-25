@@ -39,7 +39,7 @@ const ICON_BY_SUBSTRING: Array<[RegExp, IconName]> = [
   [/(^|_)(fetch|navigate|http)/i,       'globe'],
   [/(^|_)(click|hover|drag|move)/i,     'mouse'],
   [/(^|_)(type|press_key|fill)/i,       'keyboard'],
-  [/github|pull_request|issue|branch/i, 'github'],
+  [/(^|_)(github|pull_request|issues?|branch)($|_)/i, 'github'],
   [/(^|_)(sql|query|db|database)/i,     'database'],
   [/(image|png|jpg)/i,                  'image'],
 ];
@@ -62,7 +62,8 @@ function pickIcon(toolName: string, fallback: IconName): IconName {
 }
 
 function parseMcpName(name: string): { server: string; tool: string } | null {
-  // mcp__<server>__<tool>  (server and tool may themselves contain underscores; first '__' is the split)
+  // mcp__<server>__<tool>. Server and tool may contain underscores;
+  // the lazy `+?` ensures we split on the FIRST '__' (server stays minimal).
   const m = /^mcp__(.+?)__(.+)$/.exec(name);
   if (!m) return null;
   let server = m[1];
