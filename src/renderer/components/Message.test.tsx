@@ -73,25 +73,42 @@ describe('MessageView system memory-update', () => {
     return render(<MessageView message={msg} isStreamingTarget={false} />);
   }
 
-  it('renders a single muted line with kinds joined by commas', () => {
+  it('renders a Memory updated tool card with a summary of counts', () => {
     renderSystem({ facts: 1, playbooks: 2, antiPatterns: 0, heuristics: 0 });
-    expect(screen.getByText('2 playbooks, 1 fact created/updated')).toBeTruthy();
+    expect(screen.getByTestId('message-memory-update')).toBeInTheDocument();
+    expect(screen.getByText('Memory updated')).toBeInTheDocument();
+    expect(screen.getByText('2 playbooks, 1 fact')).toBeInTheDocument();
   });
 
-  it('omits zero-count kinds', () => {
+  it('omits zero-count kinds from the summary', () => {
     renderSystem({ facts: 0, playbooks: 0, antiPatterns: 1, heuristics: 0 });
-    expect(screen.getByText('1 anti-pattern created/updated')).toBeTruthy();
+    expect(screen.getByText('1 anti-pattern')).toBeInTheDocument();
   });
 
   it('pluralizes correctly', () => {
     renderSystem({ facts: 3, playbooks: 1, antiPatterns: 2, heuristics: 4 });
-    expect(
-      screen.getByText('1 playbook, 3 facts, 2 anti-patterns, 4 heuristics created/updated')
-    ).toBeTruthy();
+    expect(screen.getByText('1 playbook, 3 facts, 2 anti-patterns, 4 heuristics')).toBeInTheDocument();
   });
 
   it('renders nothing when all counts are zero', () => {
     const { container } = renderSystem({ facts: 0, playbooks: 0, antiPatterns: 0, heuristics: 0 });
     expect(container.textContent ?? '').toBe('');
+  });
+});
+
+describe('MessageView mark_task_complete suppression', () => {
+  it('hides mark_task_complete tool_use and its result', () => {
+    const m: Message = {
+      ...baseAssistant,
+      content: [
+        { type: 'text', text: 'all done' },
+        { type: 'tool_use', callId: 'c1', name: 'mcp__otto-tools__mark_task_complete', input: { summary: 'x' } },
+        { type: 'tool_result', callId: 'c1', result: 'noted', isError: false },
+      ],
+    };
+    render(<MessageView message={m} />);
+    expect(screen.getByText('all done')).toBeInTheDocument();
+    expect(screen.queryByText(/mark task complete/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('noted')).not.toBeInTheDocument();
   });
 });

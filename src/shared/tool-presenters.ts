@@ -20,6 +20,7 @@ const BUILTIN: Record<string, ToolDescriptor> = {
   key:               { label: 'Press key', group: 'Input', icon: 'keyboard' },
   knowledge_append:  { label: 'Append knowledge', group: 'Memory', icon: 'brain' },
   knowledge_search:  { label: 'Search knowledge', group: 'Memory', icon: 'brain' },
+  memory_save:       { label: 'Memory updated', group: 'Memory', icon: 'brain' },
   web_search:        { label: 'Search', group: 'Web', icon: 'search' },
   web_fetch:         { label: 'Fetch page', group: 'Web', icon: 'globe' },
 };
@@ -106,6 +107,18 @@ const SUMMARIZERS: Record<string, Summarizer> = {
   screenshot:   (o)    => o['window'] ? String(o['window']) : o['region'] ? 'region' : 'full',
   knowledge_append: (o, m) => truncate(String(o['note'] ?? ''), m) || null,
   web_search:   (o, m) => o['query'] != null ? `"${truncate(String(o['query']), Math.max(8, m - 2))}"` : null,
+  memory_save:  (o) => {
+    const parts: string[] = [];
+    const p = Number(o['playbooks'] ?? 0);
+    const f = Number(o['facts'] ?? 0);
+    const a = Number(o['anti_patterns'] ?? 0);
+    const h = Number(o['heuristics'] ?? 0);
+    if (p > 0) parts.push(`${p} playbook${p === 1 ? '' : 's'}`);
+    if (f > 0) parts.push(`${f} fact${f === 1 ? '' : 's'}`);
+    if (a > 0) parts.push(`${a} anti-pattern${a === 1 ? '' : 's'}`);
+    if (h > 0) parts.push(`${h} heuristic${h === 1 ? '' : 's'}`);
+    return parts.length > 0 ? parts.join(', ') : null;
+  },
   web_fetch:    (o)    => {
     const u = asString(o['url']);
     if (!u) return null;
