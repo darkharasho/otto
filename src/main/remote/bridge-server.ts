@@ -11,6 +11,7 @@ export interface BridgeServerOpts {
   pairing: PairingStore;
   bus: SessionBus;
   pwaDir: string | null;
+  activeSessionId?: () => string | null;
 }
 
 interface PairingCode {
@@ -83,6 +84,12 @@ export class BridgeServer {
         authed = true;
         device = { id: found.id, label: found.label };
         ws.send(JSON.stringify({ v: 1, type: 'auth_ok', deviceLabel: found.label }));
+        const sid = this.opts.activeSessionId?.() ?? null;
+        if (sid) {
+          unsub = this.opts.bus.subscribe(sid, (e) => {
+            try { ws.send(JSON.stringify({ v: 1, ...e })); } catch { /* ws may be closed */ }
+          });
+        }
         return;
       }
       // post-auth message handling fills in subsequent tasks (13, 14, 17).

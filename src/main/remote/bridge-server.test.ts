@@ -114,4 +114,27 @@ describe('BridgeServer WS auth', () => {
     ws.close();
     expect(ok).toMatchObject({ type: 'auth_ok' });
   });
+
+  it('forwards SessionBus events for the active session to the WS', async () => {
+    const pairing = makeStore();
+    const bus = new SessionBus();
+    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing, bus, pwaDir: null, activeSessionId: () => 's1' });
+    const { port } = await server.start();
+    const { token } = await pairing.issue('iPhone');
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    const messages: unknown[] = [];
+    await new Promise<void>((resolve) => {
+      ws.on('open', () => ws.send(JSON.stringify({ v: 1, type: 'auth', token })));
+      ws.on('message', (data) => {
+        const m = JSON.parse(data.toString());
+        messages.push(m);
+        if (m.type === 'auth_ok') {
+          bus.publish('s1', { type: 'event', kind: 'text-delta', text: 'hello' });
+          setTimeout(resolve, 50);
+        }
+      });
+    });
+    ws.close();
+    expect(messages).toContainEqual(expect.objectContaining({ type: 'event', kind: 'text-delta', text: 'hello' }));
+  });
 });
