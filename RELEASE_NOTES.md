@@ -1,3 +1,10 @@
+Version v0.5.5
+
+Memory:
+- **`mark_task_complete` no longer surfaces in the chat.** That tool just kicks off a background reflection pass — its "noted" reply was misleading, suggesting memory had been written even when the reflector skipped the session. It's now hidden from the renderer entirely.
+- **Reflection saves show up as a "Memory updated" tool card.** When the reflector actually writes facts/playbooks/anti-patterns/heuristics, you get a brain-icon card with a one-line count summary ("2 playbooks, 1 fact"); expand it for the full breakdown. No card means nothing was saved — matching reality.
+- **Reflector prompt broadened so it stops skipping real lessons.** Named-context facts about apps/games/services the user uses ("user plays Librarian: Tidy Up") are now valid priors, and playbooks explicitly cover any reusable recipe — apps, games, external services — anchored with a narrow, well-tagged example so the bar stays specific.
+
 Version v0.5.4
 
 Bug fixes:
