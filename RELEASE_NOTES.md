@@ -1,3 +1,8 @@
+Version v0.5.3
+
+Bug fixes:
+- **Mobile remote: home-screen icon is now the Otto purple mark.** iOS Add-to-Home-Screen and Android PWA installs were falling back to a page screenshot because no `apple-touch-icon` or manifest `icons` entry was set. Both are wired up now.
+
 Version v0.5.2
 
 UI polish:
