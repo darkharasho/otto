@@ -21,7 +21,7 @@ afterEach(async () => {
   for (const d of dirs) rmSync(d, { recursive: true, force: true });
 });
 
-function setup(opts: { pwaDir?: string | null } = {}) {
+function setup(opts: { pwaDir?: string | null; sendPrompt?: (text: string, origin: 'desktop' | 'remote') => Promise<void> } = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), 'otto-e2e-'));
   dirs.push(dir);
   const db = openDatabase(path.join(dir, 'otto.db'));
@@ -41,6 +41,7 @@ function setup(opts: { pwaDir?: string | null } = {}) {
       loadScreenshot: async () => null,
       activeSessionId: () => 's1',
       resolveApproval: (id, choice) => { resolved.push({ decisionId: id, choice }); return true; },
+      sendPrompt: opts.sendPrompt,
     }),
   };
 }
@@ -61,7 +62,8 @@ function openAuthedWs(port: number, token: string): Promise<{ ws: WebSocket; mes
 
 describe('Remote bridge end-to-end', () => {
   it('full flow: pair -> auth -> live event -> prompt -> approval -> reconnect backfill', async () => {
-    const { bus, resolved, makeServer } = setup();
+    const promptsSeen: Array<{ text: string; origin: string }> = [];
+    const { bus, resolved, makeServer } = setup({ sendPrompt: async (text, origin) => { promptsSeen.push({ text, origin }); } });
     server = makeServer();
     const { port } = await server.start();
 
@@ -83,12 +85,10 @@ describe('Remote bridge end-to-end', () => {
     await new Promise((r) => setTimeout(r, 30));
     expect(messages.some((m) => m.type === 'event' && m.kind === 'text-delta' && m.text === 'hello')).toBe(true);
 
-    // 4. Phone sends a prompt -> bus input handler observes it.
-    const promptsSeen: unknown[] = [];
-    bus.setInputHandler('s1', async (m) => { promptsSeen.push(m); });
-    ws.send(JSON.stringify({ v: 1, type: 'prompt', sessionId: 's1', text: 'hi from phone' }));
+    // 4. Phone sends a prompt -> sendPrompt callback observes it.
+    ws.send(JSON.stringify({ v: 1, type: 'prompt', text: 'hi from phone' }));
     await new Promise((r) => setTimeout(r, 30));
-    expect(promptsSeen).toContainEqual(expect.objectContaining({ type: 'prompt', text: 'hi from phone', origin: 'remote' }));
+    expect(promptsSeen).toEqual([{ text: 'hi from phone', origin: 'remote' }]);
 
     // 5. Phone resolves an approval.
     ws.send(JSON.stringify({ v: 1, type: 'approval', decisionId: 'd-7', decision: 'approve' }));

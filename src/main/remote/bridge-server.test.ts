@@ -138,12 +138,16 @@ describe('BridgeServer WS auth', () => {
     expect(messages).toContainEqual(expect.objectContaining({ type: 'event', kind: 'text-delta', text: 'hello' }));
   });
 
-  it('routes inbound prompt to bus.enqueueInput', async () => {
+  it('routes inbound prompt to sendPrompt callback', async () => {
     const pairing = makeStore();
     const bus = new SessionBus();
-    const seen: unknown[] = [];
-    bus.setInputHandler('s1', async (m) => { seen.push(m); });
-    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing, bus, pwaDir: null, activeSessionId: () => 's1', screenshotSecret: 'test-secret', loadScreenshot: async () => null });
+    const seen: Array<{ text: string; origin: string }> = [];
+    server = new BridgeServer({
+      tailnetIp: '127.0.0.1', pairing, bus, pwaDir: null,
+      screenshotSecret: 'x', loadScreenshot: async () => null,
+      activeSessionId: () => 's1',
+      sendPrompt: async (text, origin) => { seen.push({ text, origin }); },
+    });
     const { port } = await server.start();
     const { token } = await pairing.issue('iPhone');
     const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
@@ -152,13 +156,13 @@ describe('BridgeServer WS auth', () => {
       ws.on('message', (data) => {
         const m = JSON.parse(data.toString());
         if (m.type === 'auth_ok') {
-          ws.send(JSON.stringify({ v: 1, type: 'prompt', sessionId: 's1', text: 'hi from phone' }));
+          ws.send(JSON.stringify({ v: 1, type: 'prompt', text: 'hi from phone' }));
           setTimeout(resolve, 50);
         }
       });
     });
     ws.close();
-    expect(seen).toContainEqual(expect.objectContaining({ type: 'prompt', text: 'hi from phone' }));
+    expect(seen).toEqual([{ text: 'hi from phone', origin: 'remote' }]);
   });
 });
 

@@ -18,6 +18,8 @@ export interface BridgeServerOpts {
   screenshotSecret: string;
   loadScreenshot: (id: string) => Promise<Buffer | null>;
   resolveApproval?: (decisionId: string, choice: 'approve' | 'deny') => boolean;
+  sendPrompt?: (text: string, origin: 'desktop' | 'remote') => Promise<void>;
+  interruptTurn?: (sessionId?: string) => void;
 }
 
 interface PairingCode {
@@ -104,12 +106,13 @@ export class BridgeServer {
         }
         return;
       }
-      if (msg.type === 'prompt' && typeof msg.sessionId === 'string' && typeof msg.text === 'string') {
-        void this.opts.bus.enqueueInput(msg.sessionId, { type: 'prompt', sessionId: msg.sessionId, text: msg.text, origin: 'remote' });
+      if (msg.type === 'prompt' && typeof msg.text === 'string') {
+        void this.opts.sendPrompt?.(msg.text, 'remote');
         return;
       }
-      if (msg.type === 'interrupt' && typeof msg.sessionId === 'string') {
-        void this.opts.bus.enqueueInput(msg.sessionId, { type: 'interrupt', sessionId: msg.sessionId });
+      if (msg.type === 'interrupt') {
+        const sid = typeof msg.sessionId === 'string' ? msg.sessionId : undefined;
+        this.opts.interruptTurn?.(sid);
         return;
       }
       if (msg.type === 'ping') { ws.send(JSON.stringify({ v: 1, type: 'pong' })); return; }

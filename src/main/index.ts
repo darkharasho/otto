@@ -336,15 +336,10 @@ async function startElectron(): Promise<void> {
 
   sessions.onDoneListener((sessionId) => detector.onDone(sessionId));
   sessions.onUserActiveListener((sessionId) => detector.onUserActive(sessionId));
-  // Register a per-session input handler on the bus so remote (iPhone) inputs
-  // can drive the same session. Approval handling is wired in a later task.
-  sessions.onUserActiveListener((sessionId) => {
-    sessionBus.setInputHandler(sessionId, async (m) => {
-      if (m.type === 'prompt') await sessions.send({ sessionId, text: m.text });
-      else if (m.type === 'interrupt') sessions.cancel({ sessionId });
-      // approval handled separately in a later task
-    });
-  });
+  // Remote (iPhone) inputs no longer route through the bus input queue —
+  // BridgeServer now invokes sendPrompt/interruptTurn callbacks directly
+  // (see the makeBridge factory below). The bus stays as the output fan-out
+  // channel only.
 
   // Remote (iPhone) bridge supervisor. Always starts in Task 19; conditional
   // gating on settings lands in Task 22. Stays dormant until Tailscale is up.
@@ -368,6 +363,18 @@ async function startElectron(): Promise<void> {
       loadScreenshot: async () => null,
       activeSessionId: () => sessions.getActiveSessionId(),
       resolveApproval: (id, choice) => { broker.resolve(id, choice); return true; },
+      sendPrompt: async (text, _origin) => {
+        let sid = sessions.getActiveSessionId();
+        if (!sid) {
+          const started = await sessions.start({});
+          sid = started.sessionId;
+        }
+        await sessions.send({ sessionId: sid, text });
+      },
+      interruptTurn: (sid) => {
+        const target = sid ?? sessions.getActiveSessionId();
+        if (target) sessions.cancel({ sessionId: target });
+      },
     }),
   });
   // Load remote (iPhone bridge) settings from disk. Conditional start replaces
