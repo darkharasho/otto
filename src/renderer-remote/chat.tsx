@@ -7,6 +7,9 @@ import { openWs, getHistory, loadMessages, type WsHandle } from './wire';
 import { ApprovalCard } from './approval-card';
 import { Screenshot } from './screenshot';
 import { SessionDrawer } from './SessionDrawer';
+import { describeTool, summarizeInput, classifyResult } from '../shared/tool-presenters';
+import { ToolIcon } from './tool-icon';
+import { ToolResultRenderer } from './tool-result-renderer';
 
 type ToolStatus = 'pending' | 'resolved' | 'denied';
 
@@ -17,16 +20,6 @@ interface UserItem { kind: 'user'; id: string; text: string }
 type TranscriptItem = TextItem | ToolItem | ScreenshotItem | UserItem;
 
 interface PendingApproval { decisionId: string; tool: string; actionClass: string; summary: string }
-
-function summarizeInput(input: unknown): string {
-  if (input == null) return '';
-  try {
-    const s = typeof input === 'string' ? input : JSON.stringify(input);
-    return s.length > 200 ? s.slice(0, 200) + '…' : s;
-  } catch {
-    return String(input);
-  }
-}
 
 function AddToHomeScreenBanner(): JSX.Element | null {
   const [dismissed, setDismissed] = useState(() => {
@@ -78,44 +71,59 @@ function ToolCard({ item }: { item: ToolItem }): JSX.Element {
     : status === 'done' ? 'text-emerald-500'
     : 'text-danger';
 
+  const desc = describeTool(item.name);
+  const summary = summarizeInput(item.name, item.input);
+  const view = item.result === undefined ? null : classifyResult(item.name, item.result, Boolean(item.isError));
+
   return (
     <div className="rounded-md border border-border bg-surface overflow-hidden">
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-3 py-2 text-xs hover:bg-bg/40"
+        className="w-full flex items-center justify-between gap-2 px-2.5 py-2 text-xs min-h-[44px] hover:bg-bg/40"
       >
-        <span className="flex items-center gap-2">
-          <span className="font-semibold">{item.name}</span>
+        <span className="flex items-center gap-2 min-w-0 flex-1">
+          <span className="w-5 h-5 rounded bg-accent/10 text-accent flex items-center justify-center flex-shrink-0">
+            <ToolIcon name={desc.icon} className="w-3 h-3" />
+          </span>
+          <span className="flex flex-col min-w-0 text-left">
+            <span className="flex items-baseline gap-1.5">
+              {desc.group && (
+                <span className="text-[9px] uppercase tracking-wide text-muted font-semibold">{desc.group}</span>
+              )}
+              <span className="font-semibold truncate">{desc.label}</span>
+            </span>
+            {summary && (
+              <span className="font-mono text-[10px] text-muted truncate">{summary}</span>
+            )}
+          </span>
         </span>
-        <span className="flex items-center gap-2">
+        <span className="flex items-center gap-1.5 flex-shrink-0">
           <span className={`uppercase tracking-wide text-[10px] ${statusClass}`}>{statusLabel}</span>
           <svg
             viewBox="0 0 24 24"
             className={`w-3 h-3 text-muted transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
+            fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
           >
             <path d="M6 9l6 6 6-6" />
           </svg>
         </span>
       </button>
       {open && (
-        <div className="px-3 pb-3 text-[11px] font-mono space-y-2">
-          <div>
-            <div className="text-muted mb-1">input</div>
-            <pre className="bg-bg/60 rounded p-2 overflow-x-auto whitespace-pre-wrap break-words">{JSON.stringify(item.input, null, 2)}</pre>
-          </div>
-          {item.result !== undefined && item.result !== null && (
+        <div className="px-2.5 pb-2.5 space-y-2 border-t border-border/40 pt-2 text-[11px]">
+          {item.input !== undefined && item.input !== null && (
             <div>
-              <div className="text-muted mb-1">result</div>
-              <pre className="bg-bg/60 rounded p-2 overflow-x-auto whitespace-pre-wrap break-words">{
-                typeof item.result === 'string' ? item.result : JSON.stringify(item.result, null, 2)
-              }</pre>
+              <div className="text-muted mb-1 text-[9px] uppercase tracking-wide">Input</div>
+              <pre className="bg-bg/60 rounded p-2 overflow-x-auto whitespace-pre-wrap break-words font-mono text-[10px]">
+                {JSON.stringify(item.input, null, 2)}
+              </pre>
+            </div>
+          )}
+          {view && view.kind !== 'empty' && (
+            <div>
+              <div className="text-muted mb-1 text-[9px] uppercase tracking-wide">Result</div>
+              <ToolResultRenderer view={view} />
             </div>
           )}
         </div>
@@ -373,7 +381,7 @@ export function Chat(): JSX.Element {
         if (!decisionId) return;
         const tool = String(msg.name ?? '');
         const actionClass = String(msg.actionClass ?? 'reversible');
-        const summary = summarizeInput(msg.input);
+        const summary = summarizeInput(tool, msg.input) ?? '';
         setApprovals((prev) => prev.some((p) => p.decisionId === decisionId) ? prev : [...prev, { decisionId, tool, actionClass, summary }]);
         return;
       }

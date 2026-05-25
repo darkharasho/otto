@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { ipc } from './ipc';
 import type { SessionEvent } from '@shared/ipc-contract';
 import { OttoMark } from './components/OttoMark';
+import { describeTool, summarizeInput, type IconName } from '@shared/tool-presenters';
+import { ToolIcon } from './components/ToolIcon';
 
 type StepKind = 'say' | 'tool' | 'pending' | 'denied' | 'process' | 'error';
 
@@ -10,41 +12,15 @@ interface Step {
   kind: StepKind;
   label: string;
   detail?: string;
+  group?: string;
+  icon?: IconName;
 }
 
 const MAX_STEPS = 8;
 
-function stripToolPrefix(name: string): string {
-  return name.replace(/^mcp__otto-tools__/, '');
-}
-
 function truncate(s: string, n: number): string {
   const flat = s.replace(/\s+/g, ' ').trim();
   return flat.length > n ? `${flat.slice(0, n - 1)}…` : flat;
-}
-
-function toolDetail(name: string, input: unknown): string | undefined {
-  if (!input || typeof input !== 'object') return undefined;
-  const o = input as Record<string, unknown>;
-  switch (name) {
-    case 'shell_exec':
-    case 'shell_spawn':
-      return truncate(String(o.command ?? ''), 60);
-    case 'click':
-    case 'double_click':
-    case 'move':
-      return `${o.x}, ${o.y}`;
-    case 'type':
-      return `"${truncate(String(o.text ?? ''), 50)}"`;
-    case 'key':
-      return String(o.combo ?? '');
-    case 'screenshot':
-      return o.window ? String(o.window) : o.region ? 'region' : 'full';
-    case 'knowledge_append':
-      return truncate(String(o.note ?? ''), 60);
-    default:
-      return undefined;
-  }
 }
 
 function toStep(ev: SessionEvent, idSeed: number): Step | null {
@@ -55,16 +31,28 @@ function toStep(ev: SessionEvent, idSeed: number): Step | null {
       return { id: `t${idSeed}`, kind: 'say', label: text };
     }
     case 'tool-call-start': {
-      const name = stripToolPrefix(ev.name);
-      return { id: `c${idSeed}`, kind: 'tool', label: name, detail: toolDetail(name, ev.input) };
+      const desc = describeTool(ev.name);
+      return {
+        id: `c${idSeed}`, kind: 'tool',
+        label: desc.label,
+        group: desc.group,
+        icon: desc.icon,
+        detail: summarizeInput(ev.name, ev.input) ?? undefined,
+      };
     }
     case 'tool-call-pending': {
-      const name = stripToolPrefix(ev.name);
-      return { id: `p${idSeed}`, kind: 'pending', label: `awaiting approval`, detail: name };
+      const desc = describeTool(ev.name);
+      return {
+        id: `p${idSeed}`, kind: 'pending', label: 'awaiting approval',
+        detail: desc.group ? `${desc.group} · ${desc.label}` : desc.label,
+      };
     }
     case 'tool-call-denied': {
-      const name = stripToolPrefix(ev.name);
-      return { id: `d${idSeed}`, kind: 'denied', label: `denied`, detail: name };
+      const desc = describeTool(ev.name);
+      return {
+        id: `d${idSeed}`, kind: 'denied', label: 'denied',
+        detail: desc.group ? `${desc.group} · ${desc.label}` : desc.label,
+      };
     }
     case 'process-spawned':
       return { id: `s${idSeed}`, kind: 'process', label: `pid ${ev.pid}`, detail: truncate(ev.command, 60) };
@@ -103,8 +91,12 @@ function StepRow({ step }: { step: Step }) {
     );
   }
   return (
-    <div className="otto-step-enter flex gap-2 items-center py-1">
-      <span className="font-mono text-[11px] text-muted shrink-0">{step.label}</span>
+    <div className="otto-step-enter flex gap-2 items-center py-1 min-w-0">
+      {step.icon && <ToolIcon name={step.icon} className="w-3 h-3 text-muted shrink-0" />}
+      {step.group && (
+        <span className="text-[10px] uppercase tracking-wide text-muted shrink-0">{step.group}</span>
+      )}
+      <span className="font-medium text-[11.5px] text-text shrink-0">{step.label}</span>
       {step.detail && <span className="font-mono text-[11px] text-text/60 truncate">{step.detail}</span>}
     </div>
   );
