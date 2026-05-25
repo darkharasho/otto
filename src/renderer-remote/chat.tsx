@@ -26,6 +26,16 @@ function summarizeInput(input: unknown): string {
   }
 }
 
+function TypingDots(): JSX.Element {
+  return (
+    <span className="otto-typing inline-flex" aria-label="Otto is typing">
+      <span />
+      <span />
+      <span />
+    </span>
+  );
+}
+
 function newId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
@@ -351,12 +361,24 @@ export function Chat(): JSX.Element {
             );
           }
           if (it.kind === 'text') {
+            // Bubble-less typing indicator until the first text-delta arrives.
+            if (!it.text && !it.done) {
+              return (
+                <div key={it.id} className="px-3 py-1 text-accent">
+                  <TypingDots />
+                </div>
+              );
+            }
             return (
               <div key={it.id} className="rounded-md bg-surface px-3 py-2 text-sm break-words">
                 <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
                   {it.text}
                 </ReactMarkdown>
-                {!it.done && <span className="inline-block w-1 h-4 align-middle ml-1 bg-accent animate-pulse" />}
+                {!it.done && (
+                  <span className="inline-flex align-middle ml-1 text-accent">
+                    <TypingDots />
+                  </span>
+                )}
               </div>
             );
           }
