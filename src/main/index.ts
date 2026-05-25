@@ -365,12 +365,25 @@ async function startElectron(): Promise<void> {
       activeSessionId: () => sessions.getActiveSessionId(),
       resolveApproval: (id, choice) => { broker.resolve(id, choice); return true; },
       sendPrompt: async (text, _origin) => {
-        let sid = sessions.getActiveSessionId();
-        if (!sid) {
-          const started = await sessions.start({});
-          sid = started.sessionId;
+        // Errors here used to be swallowed by the bridge's fire-and-forget
+        // `void sendPrompt(...)`. The PWA had already optimistically flipped
+        // streaming=true and would wait forever for a 'done' event that never
+        // arrived. Surface failures via the bus so the phone can unjam and
+        // show a useful error.
+        let sid: string | null = sessions.getActiveSessionId();
+        try {
+          if (!sid) {
+            const started = await sessions.start({});
+            sid = started.sessionId;
+          }
+          await sessions.send({ sessionId: sid, text });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.error(`remote sendPrompt failed: ${msg}`);
+          const target = sid ?? 'no-session';
+          sessionBus.publish(target, { type: 'event', kind: 'done', sessionId: target } as unknown as import('./remote/session-bus').RemoteOutbound);
+          sessionBus.publish(target, { type: 'error', code: 'send-failed', message: msg, fatal: false });
         }
-        await sessions.send({ sessionId: sid, text });
       },
       interruptTurn: (sid) => {
         const target = sid ?? sessions.getActiveSessionId();

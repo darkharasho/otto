@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useRemoteStore } from './store';
 import { openWs, getHistory, type WsHandle } from './wire';
 import { ApprovalCard } from './approval-card';
@@ -28,6 +30,38 @@ function newId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+// Tailwind doesn't have @tailwindcss/typography installed, so we map the
+// common markdown elements to explicit classes here. Keep this list small —
+// it's just enough to make AI responses readable on the phone (paragraphs,
+// headings, code, lists, links).
+const MD_COMPONENTS = {
+  p: (props: { children?: ReactNode }) => <p className="my-1 first:mt-0 last:mb-0">{props.children}</p>,
+  h1: (props: { children?: ReactNode }) => <h1 className="text-base font-semibold mt-2 mb-1">{props.children}</h1>,
+  h2: (props: { children?: ReactNode }) => <h2 className="text-sm font-semibold mt-2 mb-1">{props.children}</h2>,
+  h3: (props: { children?: ReactNode }) => <h3 className="text-sm font-semibold mt-2 mb-1">{props.children}</h3>,
+  h4: (props: { children?: ReactNode }) => <h4 className="text-sm font-semibold mt-2 mb-1">{props.children}</h4>,
+  ul: (props: { children?: ReactNode }) => <ul className="list-disc pl-5 my-1 space-y-0.5">{props.children}</ul>,
+  ol: (props: { children?: ReactNode }) => <ol className="list-decimal pl-5 my-1 space-y-0.5">{props.children}</ol>,
+  li: (props: { children?: ReactNode }) => <li>{props.children}</li>,
+  a: (props: { href?: string; children?: ReactNode }) => (
+    <a href={props.href} target="_blank" rel="noreferrer noopener" className="text-accent underline break-words">{props.children}</a>
+  ),
+  code: (props: { inline?: boolean; children?: ReactNode }) =>
+    props.inline
+      ? <code className="rounded bg-bg/60 px-1 py-0.5 font-mono text-[0.85em]">{props.children}</code>
+      : <code className="font-mono text-[0.85em]">{props.children}</code>,
+  pre: (props: { children?: ReactNode }) => (
+    <pre className="my-1 rounded bg-bg/60 p-2 overflow-x-auto text-xs">{props.children}</pre>
+  ),
+  blockquote: (props: { children?: ReactNode }) => (
+    <blockquote className="border-l-2 border-border pl-2 my-1 text-muted">{props.children}</blockquote>
+  ),
+  hr: () => <hr className="my-2 border-border" />,
+  table: (props: { children?: ReactNode }) => <table className="my-1 border-collapse text-xs">{props.children}</table>,
+  th: (props: { children?: ReactNode }) => <th className="border border-border px-2 py-1 text-left font-semibold">{props.children}</th>,
+  td: (props: { children?: ReactNode }) => <td className="border border-border px-2 py-1">{props.children}</td>,
+} as const;
+
 export function Chat(): JSX.Element {
   const token = useRemoteStore((s) => s.token);
   const sessionId = useRemoteStore((s) => s.sessionId);
@@ -41,6 +75,26 @@ export function Chat(): JSX.Element {
   const [streaming, setStreaming] = useState(false);
   const [connected, setConnected] = useState(false);
   const [input, setInput] = useState('');
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const streamWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearWatchdog = (): void => {
+    if (streamWatchdogRef.current) {
+      clearTimeout(streamWatchdogRef.current);
+      streamWatchdogRef.current = null;
+    }
+  };
+
+  const armWatchdog = (): void => {
+    clearWatchdog();
+    // If 30s passes after a send with no event from the backend, unjam the
+    // UI so the user can try again. The bridge swallows fire-and-forget
+    // sendPrompt failures in some paths; this is the client-side safety net.
+    streamWatchdogRef.current = setTimeout(() => {
+      setStreaming(false);
+      setErrorMsg('No response from Otto — try again.');
+    }, 30_000);
+  };
 
   const wsRef = useRef<WsHandle | null>(null);
   const backoffRef = useRef(1000);
@@ -61,8 +115,16 @@ export function Chat(): JSX.Element {
   }, [items, approvals]);
 
   const handleEvent = (msg: { type: string; [k: string]: unknown }): void => {
-    // Bridge wraps agent events as {type:'event', kind, ...origEvent}.
     if (msg.type === 'pong') return;
+    // Surface non-fatal errors (e.g. failed sendPrompt) inline.
+    if (msg.type === 'error') {
+      clearWatchdog();
+      setStreaming(false);
+      const m = typeof msg.message === 'string' ? msg.message : 'error';
+      setErrorMsg(m);
+      return;
+    }
+    // Bridge wraps agent events as {type:'event', kind, ...origEvent}.
     if (msg.type !== 'event') return;
     const kind = msg.kind as string;
     const sid = msg.sessionId as string | undefined;
@@ -70,6 +132,8 @@ export function Chat(): JSX.Element {
       sessionIdRef.current = sid;
       setSessionId(sid);
     }
+    // Any event for our session means the backend is alive — disarm watchdog.
+    clearWatchdog();
 
     switch (kind) {
       case 'user-message': {
@@ -154,7 +218,10 @@ export function Chat(): JSX.Element {
         return;
       }
       case 'error': {
+        clearWatchdog();
         setStreaming(false);
+        const errObj = msg.error as { message?: string } | undefined;
+        if (errObj && typeof errObj.message === 'string') setErrorMsg(errObj.message);
         return;
       }
       default:
@@ -209,6 +276,7 @@ export function Chat(): JSX.Element {
     return () => {
       if (pingTimerRef.current) clearInterval(pingTimerRef.current);
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      clearWatchdog();
       wsRef.current?.close();
       wsRef.current = null;
     };
@@ -222,8 +290,10 @@ export function Chat(): JSX.Element {
     const sid = sessionIdRef.current ?? '';
     wsRef.current?.send({ v: 1, type: 'prompt', sessionId: sid, text });
     setInput('');
+    setErrorMsg(null);
     // Treat as streaming until the next 'done' event.
     setStreaming(true);
+    armWatchdog();
   };
 
   const resolveApproval = (decisionId: string, decision: 'approve' | 'deny'): void => {
@@ -272,16 +342,20 @@ export function Chat(): JSX.Element {
           if (it.kind === 'user') {
             return (
               <div key={it.id} className="flex justify-end">
-                <div className="rounded-md bg-accent/15 text-text px-3 py-2 text-sm whitespace-pre-wrap break-words max-w-[85%]">
-                  {it.text}
+                <div className="rounded-md bg-accent/15 text-text px-3 py-2 text-sm break-words max-w-[85%]">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+                    {it.text}
+                  </ReactMarkdown>
                 </div>
               </div>
             );
           }
           if (it.kind === 'text') {
             return (
-              <div key={it.id} className="rounded-md bg-surface px-3 py-2 text-sm whitespace-pre-wrap break-words">
-                {it.text}
+              <div key={it.id} className="rounded-md bg-surface px-3 py-2 text-sm break-words">
+                <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+                  {it.text}
+                </ReactMarkdown>
                 {!it.done && <span className="inline-block w-1 h-4 align-middle ml-1 bg-accent animate-pulse" />}
               </div>
             );
@@ -317,6 +391,13 @@ export function Chat(): JSX.Element {
         })}
         <div ref={transcriptEndRef} />
       </main>
+
+      {errorMsg && (
+        <div className="px-3 py-2 text-xs bg-danger/15 text-danger border-t border-danger/40 flex items-center justify-between gap-2">
+          <span className="break-words">{errorMsg}</span>
+          <button onClick={() => setErrorMsg(null)} className="text-muted hover:text-text">dismiss</button>
+        </div>
+      )}
 
       <footer className="border-t border-border bg-surface p-2 flex items-end gap-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
         <textarea
