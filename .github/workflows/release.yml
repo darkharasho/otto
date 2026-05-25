@@ -132,9 +132,9 @@ jobs:
             ' RELEASE_NOTES.md > /tmp/release-notes-section.md
             if [ -s /tmp/release-notes-section.md ]; then
               gh release edit "$tag" --notes-file /tmp/release-notes-section.md
-            else
-              gh release edit "$tag" --notes-file RELEASE_NOTES.md
             fi
+            # If the tag has no matching section, leave release notes empty
+            # rather than dumping the entire RELEASE_NOTES.md file.
           fi
 
       - name: Publish release
