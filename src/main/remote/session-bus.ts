@@ -11,6 +11,7 @@ export type RemoteInbound =
   | { type: 'interrupt'; sessionId: string };
 
 type Subscriber = (e: RemoteOutbound) => void;
+type InputHandler = (m: RemoteInbound) => Promise<void>;
 
 interface RingEntry { seq: number; event: RemoteOutbound; t: number }
 
@@ -22,6 +23,7 @@ export class SessionBus {
   private readonly seqs = new Map<string, number>();
   private readonly inputQueue = new Map<string, Array<RemoteInbound & { resolve: () => void }>>();
   private readonly inputRunning = new Map<string, boolean>();
+  private readonly handlers = new Map<string, InputHandler>();
   private readonly ringSize: number;
   private readonly now: () => number;
 
@@ -49,6 +51,35 @@ export class SessionBus {
     if (!subs) return;
     for (const s of subs) {
       try { s(event); } catch { /* a single bad subscriber must not break the others */ }
+    }
+  }
+
+  setInputHandler(sessionId: string, handler: InputHandler): void {
+    this.handlers.set(sessionId, handler);
+  }
+
+  async enqueueInput(sessionId: string, message: RemoteInbound): Promise<void> {
+    return new Promise<void>((resolve) => {
+      let q = this.inputQueue.get(sessionId);
+      if (!q) { q = []; this.inputQueue.set(sessionId, q); }
+      q.push({ ...(message as RemoteInbound & { resolve: () => void }), resolve });
+      void this.drain(sessionId);
+    });
+  }
+
+  private async drain(sessionId: string): Promise<void> {
+    if (this.inputRunning.get(sessionId)) return;
+    this.inputRunning.set(sessionId, true);
+    try {
+      const q = this.inputQueue.get(sessionId)!;
+      while (q.length > 0) {
+        const m = q.shift()!;
+        const handler = this.handlers.get(sessionId);
+        try { if (handler) await handler(m); } catch { /* surfaced via published events */ }
+        m.resolve();
+      }
+    } finally {
+      this.inputRunning.set(sessionId, false);
     }
   }
 

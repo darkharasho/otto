@@ -61,3 +61,33 @@ describe('SessionBus ring/history', () => {
     expect(truncated).toBe(false);
   });
 });
+
+describe('SessionBus input queue', () => {
+  it('serializes concurrent enqueues per session', async () => {
+    const order: string[] = [];
+    const runner = async (m: { type: 'prompt'; sessionId: string; text: string; origin: 'desktop' | 'remote' } | { type: 'approval'; decisionId: string; decision: 'approve' | 'deny' } | { type: 'interrupt'; sessionId: string }) => {
+      if (m.type === 'prompt') {
+        order.push(`start:${m.text}`);
+        await new Promise((r) => setTimeout(r, 20));
+        order.push(`end:${m.text}`);
+      }
+    };
+    bus.setInputHandler('s1', runner);
+    await Promise.all([
+      bus.enqueueInput('s1', { type: 'prompt', sessionId: 's1', text: 'A', origin: 'desktop' }),
+      bus.enqueueInput('s1', { type: 'prompt', sessionId: 's1', text: 'B', origin: 'desktop' }),
+    ]);
+    expect(order).toEqual(['start:A', 'end:A', 'start:B', 'end:B']);
+  });
+
+  it('independent sessions run in parallel', async () => {
+    const events: string[] = [];
+    bus.setInputHandler('s1', async () => { events.push('s1-start'); await new Promise((r) => setTimeout(r, 30)); events.push('s1-end'); });
+    bus.setInputHandler('s2', async () => { events.push('s2-start'); await new Promise((r) => setTimeout(r, 10)); events.push('s2-end'); });
+    await Promise.all([
+      bus.enqueueInput('s1', { type: 'prompt', sessionId: 's1', text: 'x', origin: 'desktop' }),
+      bus.enqueueInput('s2', { type: 'prompt', sessionId: 's2', text: 'y', origin: 'desktop' }),
+    ]);
+    expect(events.indexOf('s2-end')).toBeLessThan(events.indexOf('s1-end'));
+  });
+});
