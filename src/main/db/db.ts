@@ -141,7 +141,11 @@ export function openDatabase(dbPath: string): DB {
   const db = new Database(dbPath);
   // sqlite-vec ships per-platform loadable extensions. Load before migrations so
   // migration 005 can use the vec0 virtual table.
-  db.loadExtension(sqliteVec.getLoadablePath());
+  // In a packaged app, getLoadablePath() returns a path inside app.asar.
+  // Electron's fs shim redirects normal reads to app.asar.unpacked, but
+  // db.loadExtension shells through to SQLite's native dlopen, which doesn't
+  // know about that redirect — so rewrite the path ourselves.
+  db.loadExtension(sqliteVec.getLoadablePath().replace(`${path.sep}app.asar${path.sep}`, `${path.sep}app.asar.unpacked${path.sep}`));
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   runMigrations(db);
