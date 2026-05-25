@@ -91,8 +91,12 @@ export class WindowManager {
   show(mode: WindowMode = 'bar'): void {
     if (!this.window) return;
     this.applyMode(mode);
-    this.repositionBottomCenter();
     this.window.show();
+    // Re-apply position after show: Wayland compositors (Plasma in particular)
+    // often ignore setBounds on hidden windows but honor it once the surface
+    // is visible. Without this we land on the wrong monitor when the cursor
+    // is on a non-primary display.
+    this.repositionBottomCenter();
     this.window.focus();
   }
 
