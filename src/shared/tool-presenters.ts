@@ -50,7 +50,11 @@ function titleCase(s: string): string {
     .replace(/\s+/g, ' ')
     .trim()
     .split(' ')
-    .map((w) => w ? w[0].toUpperCase() + w.slice(1) : '')
+    .map((w) => {
+      if (!w) return '';
+      const first = w[0];
+      return first ? first.toUpperCase() + w.slice(1) : '';
+    })
     .join(' ');
 }
 
@@ -66,14 +70,16 @@ function parseMcpName(name: string): { server: string; tool: string } | null {
   // the lazy `+?` ensures we split on the FIRST '__' (server stays minimal).
   const m = /^mcp__(.+?)__(.+)$/.exec(name);
   if (!m) return null;
-  let server = m[1];
+  const rawServer = m[1];
   const tool = m[2];
+  if (rawServer === undefined || tool === undefined) return null;
+  let server = rawServer;
   // Strip leading 'plugin_' from server name when present.
   if (server.startsWith('plugin_')) {
     const rest = server.slice('plugin_'.length);
     // 'plugin_github_github' → 'github' (collapse duplicate).
     const parts = rest.split('_');
-    server = parts.length >= 2 && parts[0] === parts[parts.length - 1] ? parts[0] : rest;
+    server = parts.length >= 2 && parts[0] === parts[parts.length - 1] ? parts[0]! : rest;
   }
   return { server, tool };
 }
@@ -85,8 +91,9 @@ export function describeTool(name: string): ToolDescriptor {
   const parsed = parseMcpName(name);
   if (parsed) {
     // Otto's bundled tools land here as 'mcp__otto-tools__<name>' — fall through to the built-in table.
-    if (parsed.server === 'otto-tools' && BUILTIN[parsed.tool]) {
-      return BUILTIN[parsed.tool];
+    if (parsed.server === 'otto-tools') {
+      const builtinFallback = BUILTIN[parsed.tool];
+      if (builtinFallback) return builtinFallback;
     }
     const groupKey = parsed.server.toLowerCase();
     const group = GROUP_OVERRIDES[groupKey] ?? titleCase(groupKey.replace(/[-_]mcp$/, ''));
