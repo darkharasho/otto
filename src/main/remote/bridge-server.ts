@@ -21,6 +21,19 @@ export class BridgeServer {
   private server: http.Server | null = null;
   private readonly codes = new Map<string, PairingCode>();
   private readonly PAIR_TTL_MS = 120_000;
+  private readonly pairHits = new Map<string, number[]>();
+  private readonly PAIR_WINDOW_MS = 60_000;
+  private readonly PAIR_MAX = 10;
+
+  private rateLimited(req: http.IncomingMessage): boolean {
+    const ip = req.socket.remoteAddress ?? 'unknown';
+    const now = Date.now();
+    const arr = (this.pairHits.get(ip) ?? []).filter((t) => now - t < this.PAIR_WINDOW_MS);
+    if (arr.length >= this.PAIR_MAX) { this.pairHits.set(ip, arr); return true; }
+    arr.push(now);
+    this.pairHits.set(ip, arr);
+    return false;
+  }
 
   constructor(private readonly opts: BridgeServerOpts) {}
 
@@ -73,6 +86,7 @@ export class BridgeServer {
   }
 
   private async handlePair(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    if (this.rateLimited(req)) { res.statusCode = 429; res.end('too many requests'); return; }
     const body = await this.readJson<{ code: string; deviceLabel?: string }>(req);
     const entry = this.codes.get(body.code);
     const now = Date.now();

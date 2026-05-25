@@ -75,4 +75,14 @@ describe('BridgeServer /pair', () => {
     const dup = await fetch(`http://127.0.0.1:${port}/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code, deviceLabel: 'B' }) });
     expect(dup.status).toBe(401);
   });
+
+  it('rate-limits /pair to 10 requests per minute per IP', async () => {
+    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing: makeStore(), bus: new SessionBus(), pwaDir: null });
+    const { port } = await server.start();
+    for (let i = 0; i < 10; i++) {
+      await fetch(`http://127.0.0.1:${port}/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: 'bogus', deviceLabel: 'x' }) });
+    }
+    const blocked = await fetch(`http://127.0.0.1:${port}/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: 'bogus', deviceLabel: 'x' }) });
+    expect(blocked.status).toBe(429);
+  });
 });
