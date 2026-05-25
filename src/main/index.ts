@@ -84,7 +84,7 @@ async function startElectron(): Promise<void> {
   const { RemoteModule } = await import('./remote');
   const { BridgeServer } = await import('./remote/bridge-server');
   const { PairingStore } = await import('./remote/pairing-store');
-  const { resolveTailnetIp } = await import('./remote/tailnet');
+  const { resolveTailnetEndpoint } = await import('./remote/tailnet');
   const { loadRemoteSettings, saveRemoteSettings } = await import('./remote/settings');
   const { randomBytes } = await import('node:crypto');
 
@@ -353,7 +353,7 @@ async function startElectron(): Promise<void> {
   const remoteModule = new RemoteModule({
     pairing: pairingStore,
     bus: sessionBus,
-    resolveTailnetIp,
+    resolveTailnetEndpoint,
     makeBridge: (tailnetIp) => new BridgeServer({
       tailnetIp,
       pairing: pairingStore,

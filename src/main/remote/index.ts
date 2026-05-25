@@ -1,6 +1,7 @@
 import { logger } from '../logger';
 import type { PairingStore } from './pairing-store';
 import type { SessionBus } from './session-bus';
+import type { TailnetEndpoint } from './tailnet';
 
 export interface RemoteModuleBridge {
   start(): Promise<{ port: number }>;
@@ -19,7 +20,7 @@ export interface RemoteModuleStatus {
 export interface RemoteModuleOpts {
   pairing: PairingStore;
   bus: SessionBus;
-  resolveTailnetIp: () => Promise<string | null>;
+  resolveTailnetEndpoint: () => Promise<TailnetEndpoint>;
   makeBridge: (tailnetIp: string) => RemoteModuleBridge;
   pollMs?: number;         // default 60_000
   restartDelayMs?: number; // default 1_000
@@ -31,6 +32,7 @@ const DEFAULT_RESTART = 1_000;
 export class RemoteModule {
   private bridge: RemoteModuleBridge | null = null;
   private currentIp: string | null = null;
+  private currentHost: string | null = null;
   private currentPort: number | null = null;
   private reason: string | null = null;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -67,33 +69,36 @@ export class RemoteModule {
       throw new Error('remote bridge not running');
     }
     const code = this.bridge.mintPairingCode();
+    const displayHost = this.currentHost ?? this.currentIp;
     return {
       code,
-      url: `otto-pair://${this.currentIp}:${this.currentPort}?code=${code}`,
+      url: `otto-pair://${displayHost}:${this.currentPort}?code=${code}`,
       expiresAt: Date.now() + 120_000,
     };
   }
 
   status(): RemoteModuleStatus {
+    const displayHost = this.currentHost ?? this.currentIp;
     return {
       running: this.bridge !== null && this.currentPort !== null,
-      url: this.currentIp && this.currentPort ? `http://${this.currentIp}:${this.currentPort}` : null,
+      url: displayHost && this.currentPort ? `http://${displayHost}:${this.currentPort}` : null,
       reason: this.reason,
       pairedCount: this.opts.pairing.list().filter((d) => !d.revokedAt).length,
     };
   }
 
   private async bringUp(): Promise<void> {
-    const ip = await this.opts.resolveTailnetIp();
-    if (!ip) {
+    const ep = await this.opts.resolveTailnetEndpoint();
+    if (!ep.ip) {
       this.reason = 'tailnet IP not detected';
       logger.warn(`remote: ${this.reason}`);
       return;
     }
-    this.currentIp = ip;
+    this.currentIp = ep.ip;
+    this.currentHost = ep.host;
     this.reason = null;
     try {
-      const bridge = this.opts.makeBridge(ip);
+      const bridge = this.opts.makeBridge(ep.ip);
       const { port } = await bridge.start();
       this.bridge = bridge;
       this.currentPort = port;
@@ -136,12 +141,13 @@ export class RemoteModule {
 
   private async poll(): Promise<void> {
     if (this.stopping) return;
-    const ip = await this.opts.resolveTailnetIp();
-    if (ip !== this.currentIp) {
-      logger.info(`remote: tailnet IP changed (${this.currentIp} -> ${ip}); rebinding`);
+    const ep = await this.opts.resolveTailnetEndpoint();
+    if (ep.ip !== this.currentIp || ep.host !== this.currentHost) {
+      logger.info(`remote: tailnet endpoint changed (${this.currentHost ?? this.currentIp} -> ${ep.host ?? ep.ip}); rebinding`);
       await this.tearDown();
-      this.currentIp = ip;
-      if (ip) await this.bringUp();
+      this.currentIp = ep.ip;
+      this.currentHost = ep.host;
+      if (ep.ip) await this.bringUp();
     }
   }
 }

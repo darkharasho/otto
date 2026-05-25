@@ -30,3 +30,30 @@ export async function resolveTailnetIp(opts: { exec?: (args?: string[]) => Promi
     return null;
   }
 }
+
+export interface TailnetEndpoint { ip: string | null; host: string | null }
+
+interface TailscaleStatus {
+  Self?: { HostName?: string; DNSName?: string; TailscaleIPs?: string[] };
+  MagicDNSSuffix?: string;
+}
+
+export async function resolveTailnetEndpoint(opts: { exec?: () => Promise<ExecResult> } = {}): Promise<TailnetEndpoint> {
+  const exec = opts.exec ?? (() => defaultExec('tailscale', ['status', '--json']));
+  try {
+    const r = await exec();
+    if (r.code !== 0) return { ip: null, host: null };
+    const j = JSON.parse(r.stdout) as TailscaleStatus;
+    const ips = j.Self?.TailscaleIPs ?? [];
+    const ip = ips.find((s) => IPV4_RE.test(s)) ?? null;
+    let host: string | null = null;
+    if (j.MagicDNSSuffix && j.Self?.HostName) {
+      host = `${j.Self.HostName}.${j.MagicDNSSuffix.replace(/\.$/, '')}`;
+    } else if (j.Self?.DNSName) {
+      host = j.Self.DNSName.replace(/\.$/, '') || null;
+    }
+    return { ip, host };
+  } catch {
+    return { ip: null, host: null };
+  }
+}

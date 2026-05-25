@@ -44,7 +44,7 @@ describe('RemoteModule', () => {
     const mod = new RemoteModule({
       pairing: makePairing(),
       bus: new SessionBus(),
-      resolveTailnetIp: async () => null,
+      resolveTailnetEndpoint: async () => ({ ip: null, host: null }),
       makeBridge: () => makeFakeBridge() as never,
       pollMs: 0,
     });
@@ -55,19 +55,33 @@ describe('RemoteModule', () => {
     await mod.stop();
   });
 
-  it('starts the bridge when tailnet IP is present', async () => {
+  it('starts the bridge when tailnet IP is present and uses host in URL when available', async () => {
     const bridge = makeFakeBridge();
     const mod = new RemoteModule({
       pairing: makePairing(),
       bus: new SessionBus(),
-      resolveTailnetIp: async () => '100.64.1.2',
+      resolveTailnetEndpoint: async () => ({ ip: '100.64.1.2', host: 'otto.example.ts.net' }),
       makeBridge: () => bridge as never,
       pollMs: 0,
     });
     await mod.start();
     expect(mod.status().running).toBe(true);
-    expect(mod.status().url).toBe('http://100.64.1.2:9000');
+    expect(mod.status().url).toBe('http://otto.example.ts.net:9000');
     expect(bridge.startCalls).toBe(1);
+    await mod.stop();
+  });
+
+  it('falls back to IP in URL when no host is available', async () => {
+    const bridge = makeFakeBridge();
+    const mod = new RemoteModule({
+      pairing: makePairing(),
+      bus: new SessionBus(),
+      resolveTailnetEndpoint: async () => ({ ip: '100.64.1.2', host: null }),
+      makeBridge: () => bridge as never,
+      pollMs: 0,
+    });
+    await mod.start();
+    expect(mod.status().url).toBe('http://100.64.1.2:9000');
     await mod.stop();
   });
 
@@ -76,7 +90,7 @@ describe('RemoteModule', () => {
     const mod = new RemoteModule({
       pairing: makePairing(),
       bus: new SessionBus(),
-      resolveTailnetIp: async () => '100.64.1.2',
+      resolveTailnetEndpoint: async () => ({ ip: '100.64.1.2', host: null }),
       makeBridge: () => bridge as never,
       pollMs: 0,
       restartDelayMs: 1,
