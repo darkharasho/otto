@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
 import { randomBytes } from 'node:crypto';
+import { WebSocketServer, WebSocket } from 'ws';
 import { logger } from '../logger';
 import type { PairingStore } from './pairing-store';
 import type { SessionBus } from './session-bus';
@@ -19,6 +20,7 @@ interface PairingCode {
 
 export class BridgeServer {
   private server: http.Server | null = null;
+  private wss: WebSocketServer | null = null;
   private readonly codes = new Map<string, PairingCode>();
   private readonly PAIR_TTL_MS = 120_000;
   private readonly pairHits = new Map<string, number[]>();
@@ -50,6 +52,8 @@ export class BridgeServer {
     });
     this.server = server;
     const { port } = server.address() as AddressInfo;
+    this.wss = new WebSocketServer({ server, path: '/ws' });
+    this.wss.on('connection', (ws, req) => this.handleWs(ws, req));
     logger.info(`remote bridge listening on http://${this.opts.tailnetIp}:${port}`);
     return { port };
   }
@@ -57,8 +61,37 @@ export class BridgeServer {
   async stop(): Promise<void> {
     const s = this.server;
     this.server = null;
+    if (this.wss) { this.wss.close(); this.wss = null; }
     if (!s) return;
     await new Promise<void>((resolve) => s.close(() => resolve()));
+  }
+
+  private handleWs(ws: WebSocket, _req: http.IncomingMessage): void {
+    let authed = false;
+    let device: { id: string; label: string } | null = null;
+    let unsub: null | (() => void) = null;
+
+    const close = (code: number, reason: string) => { try { ws.close(code, reason); } catch { /* ws may already be torn down */ } };
+
+    ws.on('message', async (data) => {
+      let msg: { v?: number; type?: string; [k: string]: unknown };
+      try { msg = JSON.parse(data.toString()); } catch { return close(1003, 'bad json'); }
+      if (!authed) {
+        if (msg.type !== 'auth' || typeof msg.token !== 'string') return close(4001, 'auth_failed: first frame must be auth');
+        const found = await this.opts.pairing.verify(msg.token);
+        if (!found) return close(4001, 'auth_failed');
+        authed = true;
+        device = { id: found.id, label: found.label };
+        ws.send(JSON.stringify({ v: 1, type: 'auth_ok', deviceLabel: found.label }));
+        return;
+      }
+      // post-auth message handling fills in subsequent tasks (13, 14, 17).
+    });
+
+    ws.on('close', () => { const fn = unsub as (() => void) | null; if (fn) fn(); });
+    // expose `device` and `unsub` via closure for subsequent tasks
+    void device;
+    void unsub;
   }
 
   mintPairingCode(now: number = Date.now()): string {

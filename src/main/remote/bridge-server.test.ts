@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { openDatabase } from '../db/db';
 import { PairingStore } from './pairing-store';
+import WebSocket from 'ws';
 
 let server: BridgeServer | null = null;
 const dirs: string[] = [];
@@ -84,5 +85,33 @@ describe('BridgeServer /pair', () => {
     }
     const blocked = await fetch(`http://127.0.0.1:${port}/pair`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ code: 'bogus', deviceLabel: 'x' }) });
     expect(blocked.status).toBe(429);
+  });
+});
+
+describe('BridgeServer WS auth', () => {
+  it('WS closes with auth_failed when first frame is not a valid auth', async () => {
+    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing: makeStore(), bus: new SessionBus(), pwaDir: null });
+    const { port } = await server.start();
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    const closed = new Promise<{ code: number; reason: string }>((r) => ws.on('close', (code, reason) => r({ code, reason: reason.toString() })));
+    ws.on('open', () => ws.send(JSON.stringify({ v: 1, type: 'prompt', sessionId: 's1', text: 'hi' })));
+    const ev = await closed;
+    expect(ev.reason).toMatch(/auth/i);
+  });
+
+  it('WS accepts a valid token and replies auth_ok', async () => {
+    const pairing = makeStore();
+    const bus = new SessionBus();
+    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing, bus, pwaDir: null });
+    const { port } = await server.start();
+    const { token } = await pairing.issue('iPhone');
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    const ok = await new Promise<unknown>((resolve, reject) => {
+      ws.on('open', () => ws.send(JSON.stringify({ v: 1, type: 'auth', token })));
+      ws.on('message', (data) => resolve(JSON.parse(data.toString())));
+      ws.on('error', reject);
+    });
+    ws.close();
+    expect(ok).toMatchObject({ type: 'auth_ok' });
   });
 });
