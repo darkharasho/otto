@@ -22,7 +22,7 @@ function defaultDeviceLabel(): string {
   if (/iPhone/.test(ua)) return 'iPhone';
   if (/iPad/.test(ua)) return 'iPad';
   if (/Android/.test(ua)) return 'Android';
-  return 'Browser';
+  return 'Mobile';
 }
 
 export function Pair(): JSX.Element {
@@ -87,7 +87,7 @@ export function Pair(): JSX.Element {
       <div className="w-full max-w-sm">
         <h1 className="text-2xl font-semibold mb-2">Pair with Otto</h1>
         <p className="text-sm text-muted mb-6">
-          On your desktop, open Otto&apos;s Settings → Remote and tap &ldquo;Pair iPhone&rdquo;.
+          On your desktop, open Otto&apos;s Settings → Mobile remote and tap &ldquo;Pair new device&rdquo;.
           Paste the pairing URL or code below.
         </p>
         <form onSubmit={submit} className="space-y-4">

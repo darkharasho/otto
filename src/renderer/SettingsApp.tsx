@@ -8,7 +8,7 @@ import { ModelSection } from './components/settings/ModelSection';
 import { WindowSection } from './components/settings/WindowSection';
 import { ShortcutSection } from './components/settings/ShortcutSection';
 import { RemoteDesktopSection } from './components/settings/RemoteDesktopSection';
-import { IphoneRemoteSection } from './components/settings/IphoneRemoteSection';
+import { MobileRemoteSection } from './components/settings/MobileRemoteSection';
 import { StartupSection } from './components/settings/StartupSection';
 import { AutonomySection } from './components/settings/AutonomySection';
 import { NotificationsSection } from './components/settings/NotificationsSection';
@@ -139,7 +139,7 @@ function renderSubsection(args: RenderArgs) {
       );
     if (activeSub === 'shortcut') return <ShortcutSection />;
     if (activeSub === 'remoteDesktop') return <RemoteDesktopSection />;
-    if (activeSub === 'iphoneRemote') return <IphoneRemoteSection />;
+    if (activeSub === 'mobileRemote') return <MobileRemoteSection />;
     if (activeSub === 'startup')
       return (
         <StartupSection

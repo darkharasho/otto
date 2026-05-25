@@ -217,7 +217,7 @@ export class BridgeServer {
       return;
     }
     this.codes.delete(body.code);
-    const { deviceId, token } = await this.opts.pairing.issue(body.deviceLabel ?? 'iPhone');
+    const { deviceId, token } = await this.opts.pairing.issue(body.deviceLabel ?? 'Mobile');
     res.statusCode = 200;
     res.setHeader('content-type', 'application/json');
     res.end(JSON.stringify({ token, deviceId, wsUrl: `/ws` }));

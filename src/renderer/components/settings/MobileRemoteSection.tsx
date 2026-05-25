@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
-import QRCode from 'qrcode';
 import { ipc } from '../../ipc';
 import { Toggle } from '../SettingsControls';
 import { SubsectionPage } from './SubsectionPage';
-import { PairIphoneModal } from './PairIphoneModal';
+import { PairMobileModal } from './PairMobileModal';
 import type {
   PairedDeviceSummary,
   RemoteCeilingChoice,
@@ -40,13 +39,11 @@ function statusLine(status: RemoteStatus): string {
   return '';
 }
 
-export function IphoneRemoteSection() {
+export function MobileRemoteSection() {
   const [status, setStatus] = useState<RemoteStatus | null>(null);
   const [devices, setDevices] = useState<PairedDeviceSummary[]>([]);
   const [showPair, setShowPair] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [urlQrDataUrl, setUrlQrDataUrl] = useState<string | null>(null);
-  const [urlCopied, setUrlCopied] = useState(false);
 
   async function refreshStatus() {
     try {
@@ -75,37 +72,6 @@ export function IphoneRemoteSection() {
     }, REFRESH_MS);
     return () => clearInterval(id);
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    const url = status?.running ? status.url : null;
-    if (!url) {
-      setUrlQrDataUrl(null);
-      return;
-    }
-    (async () => {
-      try {
-        const data = await QRCode.toDataURL(url);
-        if (!cancelled) setUrlQrDataUrl(data);
-      } catch {
-        if (!cancelled) setUrlQrDataUrl(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [status?.running, status?.url]);
-
-  async function copyUrl() {
-    if (!status?.url) return;
-    try {
-      await navigator.clipboard.writeText(status.url);
-      setUrlCopied(true);
-      setTimeout(() => setUrlCopied(false), 1500);
-    } catch {
-      /* ignore */
-    }
-  }
 
   async function onToggleEnabled(v: boolean) {
     setStatus((cur) => (cur ? { ...cur, enabled: v } : cur));
@@ -143,8 +109,8 @@ export function IphoneRemoteSection() {
 
   return (
     <SubsectionPage
-      title="iPhone remote"
-      description="Talk to Otto from your iPhone over your tailnet. Paired devices appear below."
+      title="Mobile remote"
+      description="Talk to Otto from your phone or tablet over your tailnet. Paired devices appear below."
     >
       <div className="text-sm text-text py-2">
         {err ? (
@@ -179,44 +145,6 @@ export function IphoneRemoteSection() {
           <option value="strict">Force Strict for remote turns</option>
         </select>
       </div>
-
-      {status?.running && status.url && (
-        <div className="py-3 border-b border-border/40">
-          <div className="text-sm font-medium text-text mb-2">
-            Open Otto Remote on your phone
-          </div>
-          <div className="flex items-start gap-3">
-            <div className="flex items-center justify-center bg-white rounded-lg p-2 shrink-0">
-              {urlQrDataUrl ? (
-                <img
-                  src={urlQrDataUrl}
-                  alt="Otto Remote URL QR code"
-                  className="w-[150px] h-[150px]"
-                />
-              ) : (
-                <div className="w-[150px] h-[150px]" />
-              )}
-            </div>
-            <div className="min-w-0 flex-1 space-y-2">
-              <div className="text-[11px] text-muted">
-                Scan to open in Safari. Pair separately below.
-              </div>
-              <div className="flex items-center gap-2">
-                <code className="flex-1 min-w-0 px-2 py-1 text-[11px] rounded-md bg-bg/60 border border-border text-text truncate">
-                  {status.url}
-                </code>
-                <button
-                  type="button"
-                  onClick={() => void copyUrl()}
-                  className="px-2 py-1 text-xs rounded-md bg-bg/60 border border-border text-text hover:border-accent/60"
-                >
-                  {urlCopied ? 'Copied' : 'Copy'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="py-3">
         <div className="flex items-center justify-between mb-2">
@@ -270,7 +198,7 @@ export function IphoneRemoteSection() {
       </div>
 
       {showPair && (
-        <PairIphoneModal
+        <PairMobileModal
           initialDeviceCount={devices.length}
           onClose={() => {
             setShowPair(false);

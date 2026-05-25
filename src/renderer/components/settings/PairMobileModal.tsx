@@ -9,7 +9,7 @@ interface Props {
   onPaired: () => void;
 }
 
-export function PairIphoneModal({ initialDeviceCount, onClose, onPaired }: Props) {
+export function PairMobileModal({ initialDeviceCount, onClose, onPaired }: Props) {
   const [payload, setPayload] = useState<PairingCodePayload | null>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -121,7 +121,7 @@ export function PairIphoneModal({ initialDeviceCount, onClose, onPaired }: Props
                 <img src={qrDataUrl} alt="Pairing QR code" className="w-48 h-48" />
               </div>
               <div className="text-xs text-muted">
-                Scan with your iPhone, or open this URL on the device:
+                Scan with your phone, or open this URL on the device:
               </div>
               <div className="flex items-center gap-2">
                 <code className="flex-1 min-w-0 px-2 py-1 text-[11px] rounded-md bg-bg/60 border border-border text-text truncate">
