@@ -147,12 +147,11 @@ describe('migration 003 (artifact + FTS)', () => {
 
 describe('migration 006: paired_devices', () => {
   it('creates paired_devices table with expected columns', () => {
-    const dir = mkdtempSync(path.join(tmpdir(), 'otto-db-'));
+    const dir = freshDir();
     const db = openDatabase(path.join(dir, 'otto.db'));
-    const cols = db.prepare(`PRAGMA table_info(paired_devices)`).all() as Array<{ name: string }>;
+    const cols = db.prepare(`PRAGMA table_info(paired_devices)`).all() as { name: string }[];
     const names = cols.map((c) => c.name).sort();
     expect(names).toEqual(['id', 'label', 'last_seen_at', 'paired_at', 'revoked_at', 'token_hash'].sort());
     db.close();
-    rmSync(dir, { recursive: true, force: true });
   });
 });
