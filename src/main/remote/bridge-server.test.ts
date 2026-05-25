@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { openDatabase } from '../db/db';
 import { PairingStore } from './pairing-store';
+import type { SessionMeta } from '@shared/messages';
 import WebSocket from 'ws';
 
 let server: BridgeServer | null = null;
@@ -251,6 +252,104 @@ describe('BridgeServer approval bridging', () => {
     });
     ws.close();
     expect(resolved).toEqual([{ decisionId: 'd1', choice: 'approve' }]);
+  });
+});
+
+describe('BridgeServer /sessions', () => {
+  it('GET /sessions requires auth and returns the listed sessions', async () => {
+    const pairing = makeStore();
+    server = new BridgeServer({
+      tailnetIp: '127.0.0.1', pairing, bus: new SessionBus(), pwaDir: null,
+      screenshotSecret: 'x', loadScreenshot: async () => null,
+      listSessions: async (limit) => ([
+        { id: 's1', title: 'Hello', createdAt: 1, lastActive: 2, model: 'm', status: 'active', sdkSessionId: null },
+        { id: 's2', title: null, createdAt: 3, lastActive: 4, model: 'm', status: 'idle', sdkSessionId: null },
+      ] as SessionMeta[]).slice(0, limit),
+    });
+    const { port } = await server.start();
+    const { token } = await pairing.issue('iPhone');
+    const noauth = await fetch(`http://127.0.0.1:${port}/sessions`);
+    expect(noauth.status).toBe(401);
+    const ok = await fetch(`http://127.0.0.1:${port}/sessions?limit=10`, { headers: { authorization: `Bearer ${token}` } });
+    expect(ok.status).toBe(200);
+    const body = (await ok.json()) as { sessions: Array<{ id: string; title: string | null; status: string }> };
+    expect(body.sessions).toHaveLength(2);
+    expect(body.sessions[0]).toMatchObject({ id: 's1', title: 'Hello', status: 'active' });
+    expect(body.sessions[1]).toMatchObject({ id: 's2', title: null });
+  });
+
+  it('GET /sessions/:id/messages returns messages from the loader', async () => {
+    const pairing = makeStore();
+    server = new BridgeServer({
+      tailnetIp: '127.0.0.1', pairing, bus: new SessionBus(), pwaDir: null,
+      screenshotSecret: 'x', loadScreenshot: async () => null,
+      loadMessages: async (sid) => [
+        { id: 'm1', sessionId: sid, seq: 0, createdAt: 1, role: 'user', content: [{ type: 'text', text: 'hi' }] },
+      ],
+    });
+    const { port } = await server.start();
+    const { token } = await pairing.issue('iPhone');
+    const noauth = await fetch(`http://127.0.0.1:${port}/sessions/abc/messages`);
+    expect(noauth.status).toBe(401);
+    const ok = await fetch(`http://127.0.0.1:${port}/sessions/abc/messages`, { headers: { authorization: `Bearer ${token}` } });
+    expect(ok.status).toBe(200);
+    const body = (await ok.json()) as { messages: Array<{ id: string; role: string }> };
+    expect(body.messages).toHaveLength(1);
+    expect(body.messages[0]).toMatchObject({ id: 'm1', role: 'user' });
+  });
+});
+
+describe('BridgeServer WS session control', () => {
+  it('switch_session invokes the callback and replies session_switched', async () => {
+    const pairing = makeStore();
+    const seen: string[] = [];
+    server = new BridgeServer({
+      tailnetIp: '127.0.0.1', pairing, bus: new SessionBus(), pwaDir: null,
+      screenshotSecret: 'x', loadScreenshot: async () => null,
+      switchSession: async (sid) => { seen.push(sid); },
+    });
+    const { port } = await server.start();
+    const { token } = await pairing.issue('iPhone');
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    const got = await new Promise<Record<string, unknown>>((resolve) => {
+      ws.on('open', () => ws.send(JSON.stringify({ v: 1, type: 'auth', token })));
+      ws.on('message', (data) => {
+        const m = JSON.parse(data.toString()) as Record<string, unknown>;
+        if (m.type === 'auth_ok') {
+          ws.send(JSON.stringify({ v: 1, type: 'switch_session', sessionId: 'sX' }));
+          return;
+        }
+        if (m.type === 'session_switched') resolve(m);
+      });
+    });
+    ws.close();
+    expect(seen).toEqual(['sX']);
+    expect(got).toMatchObject({ type: 'session_switched', sessionId: 'sX' });
+  });
+
+  it('new_session invokes the callback and replies with the new session id', async () => {
+    const pairing = makeStore();
+    server = new BridgeServer({
+      tailnetIp: '127.0.0.1', pairing, bus: new SessionBus(), pwaDir: null,
+      screenshotSecret: 'x', loadScreenshot: async () => null,
+      newSession: async () => 'sNew',
+    });
+    const { port } = await server.start();
+    const { token } = await pairing.issue('iPhone');
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    const got = await new Promise<Record<string, unknown>>((resolve) => {
+      ws.on('open', () => ws.send(JSON.stringify({ v: 1, type: 'auth', token })));
+      ws.on('message', (data) => {
+        const m = JSON.parse(data.toString()) as Record<string, unknown>;
+        if (m.type === 'auth_ok') {
+          ws.send(JSON.stringify({ v: 1, type: 'new_session' }));
+          return;
+        }
+        if (m.type === 'session_switched') resolve(m);
+      });
+    });
+    ws.close();
+    expect(got).toMatchObject({ type: 'session_switched', sessionId: 'sNew' });
   });
 });
 

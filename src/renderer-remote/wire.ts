@@ -32,6 +32,28 @@ export async function getHistory(token: string, sessionId: string, sinceSeq: num
   return (await res.json()) as { events: HistoryEntry[]; truncated: boolean };
 }
 
+export interface RemoteSessionSummary {
+  id: string;
+  title: string | null;
+  createdAt: number;
+  lastActive: number;
+  status: string;
+}
+
+export async function listSessions(token: string, limit = 50): Promise<{ sessions: RemoteSessionSummary[] }> {
+  const res = await fetch(`/sessions?limit=${limit}`, { headers: { authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error(`sessions failed (${res.status})`);
+  return (await res.json()) as { sessions: RemoteSessionSummary[] };
+}
+
+export async function loadMessages(token: string, sessionId: string): Promise<{ messages: Array<Record<string, unknown>> }> {
+  const res = await fetch(`/sessions/${encodeURIComponent(sessionId)}/messages`, {
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`messages failed (${res.status})`);
+  return (await res.json()) as { messages: Array<Record<string, unknown>> };
+}
+
 export interface WsHandlers {
   onAuthOk(d: { deviceLabel: string }): void;
   onEvent(e: { type: string; [k: string]: unknown }): void;

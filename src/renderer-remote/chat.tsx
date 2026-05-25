@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Menu } from 'lucide-react';
 import { useRemoteStore } from './store';
-import { openWs, getHistory, type WsHandle } from './wire';
+import { openWs, getHistory, loadMessages, type WsHandle } from './wire';
 import { ApprovalCard } from './approval-card';
 import { Screenshot } from './screenshot';
+import { SessionDrawer } from './SessionDrawer';
 
 type ToolStatus = 'pending' | 'resolved' | 'denied';
 
@@ -86,6 +88,7 @@ export function Chat(): JSX.Element {
   const [connected, setConnected] = useState(false);
   const [input, setInput] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const streamWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearWatchdog = (): void => {
@@ -124,8 +127,84 @@ export function Chat(): JSX.Element {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [items, approvals]);
 
+  const resetForSession = (newSid: string): void => {
+    setItems([]);
+    setApprovals([]);
+    lastSeqRef.current = 0;
+    sessionIdRef.current = newSid;
+    setSessionId(newSid);
+    currentTextIdRef.current = null;
+    setStreaming(false);
+    clearWatchdog();
+    setErrorMsg(null);
+  };
+
+  const backfillMessages = async (sid: string): Promise<void> => {
+    const tok = tokenRef.current;
+    if (!tok) return;
+    try {
+      const { messages } = await loadMessages(tok, sid);
+      const built: TranscriptItem[] = [];
+      for (const raw of messages) {
+        const role = String((raw as { role?: unknown }).role ?? '');
+        const content = ((raw as { content?: unknown }).content ?? []) as Array<Record<string, unknown>>;
+        const idBase = String((raw as { id?: unknown }).id ?? newId());
+        if (role === 'user') {
+          const text = content
+            .filter((b) => b.type === 'text' && typeof b.text === 'string')
+            .map((b) => String(b.text))
+            .join('');
+          if (text) built.push({ kind: 'user', id: idBase, text });
+          continue;
+        }
+        if (role === 'assistant') {
+          let textBuf = '';
+          for (const block of content) {
+            const t = block.type;
+            if (t === 'text' && typeof block.text === 'string') {
+              textBuf += String(block.text);
+            } else if (t === 'tool_use') {
+              if (textBuf) {
+                built.push({ kind: 'text', id: `${idBase}-t-${built.length}`, text: textBuf, done: true });
+                textBuf = '';
+              }
+              const callId = String(block.callId ?? '');
+              built.push({
+                kind: 'tool',
+                id: `${idBase}-tu-${callId || built.length}`,
+                callId,
+                name: String(block.name ?? ''),
+                input: block.input,
+                status: 'pending',
+              });
+            } else if (t === 'tool_result') {
+              const callId = String(block.callId ?? '');
+              const idx = built.findIndex((it) => it.kind === 'tool' && it.callId === callId);
+              if (idx !== -1) {
+                const it = built[idx] as ToolItem;
+                built[idx] = { ...it, status: 'resolved', result: block.result, isError: Boolean(block.isError) };
+              }
+            }
+          }
+          if (textBuf) built.push({ kind: 'text', id: `${idBase}-t-${built.length}`, text: textBuf, done: true });
+          continue;
+        }
+        // tool / system roles: skip in the simple replay.
+      }
+      setItems(built);
+    } catch {
+      /* non-fatal — historical replay is best-effort */
+    }
+  };
+
   const handleEvent = (msg: { type: string; [k: string]: unknown }): void => {
     if (msg.type === 'pong') return;
+    if (msg.type === 'session_switched' && typeof msg.sessionId === 'string') {
+      const sid = msg.sessionId;
+      resetForSession(sid);
+      void backfillMessages(sid);
+      return;
+    }
     // Surface non-fatal errors (e.g. failed sendPrompt) inline.
     if (msg.type === 'error') {
       clearWatchdog();
@@ -320,12 +399,36 @@ export function Chat(): JSX.Element {
     <div className="flex flex-col h-full bg-bg text-text">
       <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface sticky top-0 z-10">
         <div className="flex items-center gap-2 text-sm">
+          <button
+            onClick={() => setDrawerOpen(true)}
+            className="p-1 -ml-1 text-muted hover:text-text"
+            aria-label="Open sessions"
+          >
+            <Menu size={20} />
+          </button>
           <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-500' : 'bg-orange-500'}`} />
           <span className="font-medium">Otto</span>
           {deviceLabel && <span className="text-muted text-xs">· {deviceLabel}</span>}
         </div>
         <button onClick={onUnpair} className="text-xs text-muted hover:text-text">Unpair</button>
       </header>
+
+      {token && (
+        <SessionDrawer
+          open={drawerOpen}
+          token={token}
+          currentSessionId={sessionId}
+          onClose={() => setDrawerOpen(false)}
+          onNewSession={() => {
+            wsRef.current?.send({ v: 1, type: 'new_session' });
+            setDrawerOpen(false);
+          }}
+          onPickSession={(sid) => {
+            wsRef.current?.send({ v: 1, type: 'switch_session', sessionId: sid });
+            setDrawerOpen(false);
+          }}
+        />
+      )}
 
       {approvals.length > 0 && (
         <div className="sticky top-[57px] z-10 px-3 py-2 space-y-2 bg-bg/95 backdrop-blur border-b border-border">

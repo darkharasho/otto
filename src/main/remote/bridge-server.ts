@@ -7,6 +7,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { logger } from '../logger';
 import type { PairingStore } from './pairing-store';
 import type { SessionBus } from './session-bus';
+import type { Message, SessionMeta } from '@shared/messages';
 import { ScreenshotUrlSigner } from './screenshot-urls';
 
 export interface BridgeServerOpts {
@@ -20,6 +21,10 @@ export interface BridgeServerOpts {
   resolveApproval?: (decisionId: string, choice: 'approve' | 'deny') => boolean;
   sendPrompt?: (text: string, origin: 'desktop' | 'remote') => Promise<void>;
   interruptTurn?: (sessionId?: string) => void;
+  listSessions?: (limit: number) => Promise<SessionMeta[]>;
+  loadMessages?: (sessionId: string) => Promise<Message[]>;
+  switchSession?: (sessionId: string) => Promise<void>;
+  newSession?: () => Promise<string>;
   /** Preferred TCP port to bind. Falls back to an ephemeral port if in use. Default: 17829. */
   port?: number;
 }
@@ -144,6 +149,23 @@ export class BridgeServer {
         this.opts.resolveApproval?.(msg.decisionId, msg.decision);
         return;
       }
+      if (msg.type === 'switch_session' && typeof msg.sessionId === 'string') {
+        const sid = msg.sessionId;
+        void this.opts.switchSession?.(sid).then(() => {
+          try { ws.send(JSON.stringify({ v: 1, type: 'session_switched', sessionId: sid })); } catch { /* ws may be closed */ }
+        }).catch((err) => {
+          logger.warn(`bridge: switch_session failed: ${err instanceof Error ? err.message : err}`);
+        });
+        return;
+      }
+      if (msg.type === 'new_session') {
+        void this.opts.newSession?.().then((sid) => {
+          try { ws.send(JSON.stringify({ v: 1, type: 'session_switched', sessionId: sid })); } catch { /* ws may be closed */ }
+        }).catch((err) => {
+          logger.warn(`bridge: new_session failed: ${err instanceof Error ? err.message : err}`);
+        });
+        return;
+      }
     });
 
     ws.on('close', () => { const fn = unsub as (() => void) | null; if (fn) fn(); });
@@ -168,6 +190,8 @@ export class BridgeServer {
     try {
       if (req.method === 'POST' && req.url === '/pair') return await this.handlePair(req, res);
       if (req.method === 'GET' && req.url?.startsWith('/history')) return await this.handleHistory(req, res);
+      if (req.method === 'GET' && req.url?.startsWith('/sessions/')) return await this.handleSessionMessages(req, res);
+      if (req.method === 'GET' && req.url?.startsWith('/sessions')) return await this.handleSessions(req, res);
       if (req.method === 'GET' && req.url?.startsWith('/screenshot/')) return await this.handleScreenshot(req, res);
       // Fall through to PWA static serving for any unmatched GET when a pwaDir
       // is configured. Reserved API prefixes above are matched first so the
@@ -257,6 +281,40 @@ export class BridgeServer {
         res.statusCode = 404; res.end('not found');
       }
     }
+  }
+
+  private async handleSessions(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const token = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
+    if (!token || !(await this.opts.pairing.verify(token))) { res.statusCode = 401; res.end('unauthorized'); return; }
+    const url = new URL(req.url!, 'http://x');
+    const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? '50') || 50, 1), 200);
+    const metas = (await this.opts.listSessions?.(limit)) ?? [];
+    const sessions = metas.map((m) => ({
+      id: m.id,
+      title: m.title,
+      createdAt: m.createdAt,
+      lastActive: m.lastActive,
+      status: m.status,
+    }));
+    res.statusCode = 200;
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ sessions }));
+  }
+
+  private async handleSessionMessages(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const token = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '');
+    if (!token || !(await this.opts.pairing.verify(token))) { res.statusCode = 401; res.end('unauthorized'); return; }
+    const url = new URL(req.url!, 'http://x');
+    // Expect: /sessions/<id>/messages
+    const parts = url.pathname.split('/').filter(Boolean);
+    if (parts.length < 3 || parts[0] !== 'sessions' || parts[2] !== 'messages') {
+      res.statusCode = 404; res.end('not found'); return;
+    }
+    const sessionId = decodeURIComponent(parts[1]!);
+    const messages = (await this.opts.loadMessages?.(sessionId)) ?? [];
+    res.statusCode = 200;
+    res.setHeader('content-type', 'application/json');
+    res.end(JSON.stringify({ messages }));
   }
 
   private async handleHistory(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {

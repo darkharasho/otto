@@ -389,6 +389,13 @@ async function startElectron(): Promise<void> {
         const target = sid ?? sessions.getActiveSessionId();
         if (target) sessions.cancel({ sessionId: target });
       },
+      listSessions: async (limit) => repo.listSessions(limit),
+      loadMessages: async (sessionId) => repo.loadMessages(sessionId),
+      switchSession: async (sessionId) => { await sessions.start({ resume: sessionId }); },
+      newSession: async () => {
+        const r = await sessions.start({});
+        return r.sessionId;
+      },
     }),
   });
   // Load remote (iPhone bridge) settings from disk. Conditional start replaces
