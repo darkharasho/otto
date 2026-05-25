@@ -15,6 +15,7 @@ export interface BridgeServerOpts {
   activeSessionId?: () => string | null;
   screenshotSecret: string;
   loadScreenshot: (id: string) => Promise<Buffer | null>;
+  resolveApproval?: (decisionId: string, choice: 'approve' | 'deny') => boolean;
 }
 
 interface PairingCode {
@@ -110,7 +111,10 @@ export class BridgeServer {
         return;
       }
       if (msg.type === 'ping') { ws.send(JSON.stringify({ v: 1, type: 'pong' })); return; }
-      // `approval` lands in Task 17.
+      if (msg.type === 'approval' && typeof msg.decisionId === 'string' && (msg.decision === 'approve' || msg.decision === 'deny')) {
+        this.opts.resolveApproval?.(msg.decisionId, msg.decision);
+        return;
+      }
     });
 
     ws.on('close', () => { const fn = unsub as (() => void) | null; if (fn) fn(); });

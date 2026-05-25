@@ -180,6 +180,35 @@ describe('BridgeServer /screenshot', () => {
   });
 });
 
+describe('BridgeServer approval bridging', () => {
+  it('inbound approval message resolves the DecisionBroker via injected resolver', async () => {
+    const pairing = makeStore();
+    const bus = new SessionBus();
+    const resolved: Array<{ decisionId: string; choice: string }> = [];
+    server = new BridgeServer({
+      tailnetIp: '127.0.0.1', pairing, bus, pwaDir: null,
+      screenshotSecret: 'x', loadScreenshot: async () => null,
+      activeSessionId: () => 's1',
+      resolveApproval: (id, choice) => { resolved.push({ decisionId: id, choice }); return true; },
+    });
+    const { port } = await server.start();
+    const { token } = await pairing.issue('iPhone');
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    await new Promise<void>((resolve) => {
+      ws.on('open', () => ws.send(JSON.stringify({ v: 1, type: 'auth', token })));
+      ws.on('message', (data) => {
+        const m = JSON.parse(data.toString());
+        if (m.type === 'auth_ok') {
+          ws.send(JSON.stringify({ v: 1, type: 'approval', decisionId: 'd1', decision: 'approve' }));
+          setTimeout(resolve, 50);
+        }
+      });
+    });
+    ws.close();
+    expect(resolved).toEqual([{ decisionId: 'd1', choice: 'approve' }]);
+  });
+});
+
 describe('BridgeServer /history', () => {
   it('GET /history requires auth token and returns events from the ring', async () => {
     const pairing = makeStore();
