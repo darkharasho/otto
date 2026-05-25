@@ -84,6 +84,70 @@ function parseMcpName(name: string): { server: string; tool: string } | null {
   return { server, tool };
 }
 
+function truncate(s: string, n: number): string {
+  const flat = s.replace(/\s+/g, ' ').trim();
+  return flat.length > n ? `${flat.slice(0, n - 1)}…` : flat;
+}
+
+function asString(v: unknown): string | null {
+  return typeof v === 'string' && v.length > 0 ? v : null;
+}
+
+type Summarizer = (input: Record<string, unknown>, max: number) => string | null;
+
+const SUMMARIZERS: Record<string, Summarizer> = {
+  shell_exec:   (o, m) => truncate(String(o['command'] ?? ''), m) || null,
+  shell_spawn:  (o, m) => truncate(String(o['command'] ?? ''), m) || null,
+  click:        (o)    => o['x'] !== undefined && o['y'] !== undefined ? `${o['x']}, ${o['y']}` : null,
+  double_click: (o)    => o['x'] !== undefined && o['y'] !== undefined ? `${o['x']}, ${o['y']}` : null,
+  move:         (o)    => o['x'] !== undefined && o['y'] !== undefined ? `${o['x']}, ${o['y']}` : null,
+  type:         (o, m) => o['text'] != null ? `"${truncate(String(o['text']), Math.max(8, m - 2))}"` : null,
+  key:          (o)    => asString(o['combo']),
+  screenshot:   (o)    => o['window'] ? String(o['window']) : o['region'] ? 'region' : 'full',
+  knowledge_append: (o, m) => truncate(String(o['note'] ?? ''), m) || null,
+  web_search:   (o, m) => o['query'] != null ? `"${truncate(String(o['query']), Math.max(8, m - 2))}"` : null,
+  web_fetch:    (o)    => {
+    const u = asString(o['url']);
+    if (!u) return null;
+    try { return new URL(u).hostname; } catch { return u; }
+  },
+};
+
+function mcpSummary(tool: string, o: Record<string, unknown>, max: number): string | null {
+  // GitHub-flavored heuristics first.
+  const isPr = /pull_request|create_pr/i.test(tool);
+  if (isPr && o['owner'] && o['repo'] && o['title']) {
+    return truncate(`${o['owner']}/${o['repo']} · "${o['title']}"`, max);
+  }
+  if (o['owner'] && o['repo']) return `${o['owner']}/${o['repo']}`;
+  // Generic: first string field with content.
+  for (const k of ['query', 'q', 'url', 'path', 'file_path', 'name', 'text', 'message', 'command']) {
+    const v = o[k];
+    if (typeof v === 'string' && v.length > 0) return truncate(v, max);
+  }
+  return null;
+}
+
+export function summarizeInput(name: string, input: unknown, maxLen = 80): string | null {
+  if (!input || typeof input !== 'object') return null;
+  const obj = input as Record<string, unknown>;
+
+  const direct = SUMMARIZERS[name];
+  if (direct) return direct(obj, maxLen);
+
+  const parsed = parseMcpName(name);
+  if (parsed) {
+    // Otto bundled tools — fall through to built-in summarizers.
+    if (parsed.server === 'otto-tools') {
+      const fallback = SUMMARIZERS[parsed.tool];
+      if (fallback) return fallback(obj, maxLen);
+    }
+    return mcpSummary(parsed.tool, obj, maxLen);
+  }
+
+  return null;
+}
+
 export function describeTool(name: string): ToolDescriptor {
   const builtin = BUILTIN[name];
   if (builtin) return builtin;
