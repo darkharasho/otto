@@ -14,8 +14,10 @@ Run before each release that includes iPhone remote changes.
 
 ## Pairing
 - [ ] Click "Pair new device" → QR code modal appears with countdown.
-- [ ] Scan QR with iPhone camera → Safari opens the PWA URL with `?code=...`.
-- [ ] Tap "Pair this device" → device appears in the paired list within 3s.
+- [ ] QR encodes an `http://<tailnet-host>:<port>/?code=...` URL (iOS Camera recognizes it as a regular link).
+- [ ] Scan QR with iPhone camera → Safari opens the PWA URL with `?code=...` and the PWA auto-pairs (shows a "Pairing…" spinner).
+- [ ] Alternative: open the PWA URL without `?code=` → paste the pairing URL (or just the bare code) into the "Pairing URL or code" field and tap Pair.
+- [ ] Device appears in the paired list within 3s.
 - [ ] Tap "Add to Home Screen" in Safari share sheet → icon appears on home screen.
 - [ ] Force-quit Safari and re-open from home-screen icon → lands directly on chat, no re-pair.
 

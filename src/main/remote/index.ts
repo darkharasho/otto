@@ -72,7 +72,7 @@ export class RemoteModule {
     const displayHost = this.currentHost ?? this.currentIp;
     return {
       code,
-      url: `otto-pair://${displayHost}:${this.currentPort}?code=${code}`,
+      url: `http://${displayHost}:${this.currentPort}/?code=${code}`,
       expiresAt: Date.now() + 120_000,
     };
   }
