@@ -394,7 +394,10 @@ export const useOttoStore = create<OttoState>((set, get) => ({
     }
     try {
       const messages = await window.otto.invoke('session.load', { sessionId });
-      set({ activeSession: { id: sessionId, messages, streaming: false, error: null } });
+      set({ activeSession: { id: sessionId, messages, streaming: false, error: null }, windowMode: 'panel' });
+      // Phone-started turns need the desktop to expand from bar → panel so
+      // the user can actually see the conversation that's unfolding.
+      void window.otto.invoke('window.setMode', { mode: 'panel' }).catch(() => {});
       // Refresh the sessions list so the new session shows up in history.
       void window.otto
         .invoke('session.list', undefined)
