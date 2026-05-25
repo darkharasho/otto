@@ -21,6 +21,19 @@ type TranscriptItem = TextItem | ToolItem | ScreenshotItem | UserItem;
 
 interface PendingApproval { decisionId: string; tool: string; actionClass: string; summary: string }
 
+function UnreachableBanner(): JSX.Element {
+  const host = typeof window !== 'undefined' ? window.location.host : '';
+  return (
+    <div className="px-3 py-2 text-xs bg-amber-500/15 border-b border-amber-500/30 text-amber-200 space-y-1">
+      <div className="font-semibold">Can&apos;t reach Otto at {host || 'this address'}.</div>
+      <div className="text-amber-200/80">
+        Still trying. If your desktop restarted, check that Tailscale is online on both devices — or
+        re-scan the pairing QR if the URL has changed.
+      </div>
+    </div>
+  );
+}
+
 function AddToHomeScreenBanner(): JSX.Element | null {
   const [dismissed, setDismissed] = useState(() => {
     try { return localStorage.getItem('otto.a2hs.dismissed') === '1'; } catch { return false; }
@@ -183,6 +196,8 @@ export function Chat(): JSX.Element {
   const [input, setInput] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [unreachable, setUnreachable] = useState(false);
+  const failedReconnectsRef = useRef(0);
   const streamWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const clearWatchdog = (): void => {
@@ -423,6 +438,8 @@ export function Chat(): JSX.Element {
     const handle = openWs(tok, {
       onAuthOk: ({ deviceLabel: lbl }) => {
         setConnected(true);
+        setUnreachable(false);
+        failedReconnectsRef.current = 0;
         setDeviceLabel(lbl);
         backoffRef.current = 1000;
         // Backfill history for the current session, if known.
@@ -446,6 +463,12 @@ export function Chat(): JSX.Element {
       onEvent: (e) => handleEvent(e),
       onClose: () => {
         setConnected(false);
+        failedReconnectsRef.current += 1;
+        // After ~3 failures (~7s of backoff), surface the routing banner so
+        // the user can see the URL their phone is trying to reach instead of
+        // sitting in a silent reconnect loop. Tailnet IP changes and asleep
+        // Tailscale clients are the usual culprits.
+        if (failedReconnectsRef.current >= 3) setUnreachable(true);
         if (pingTimerRef.current) { clearInterval(pingTimerRef.current); pingTimerRef.current = null; }
         // Backoff: 1s → 2s → 4s → ... 30s.
         const delay = Math.min(backoffRef.current, 30_000);
@@ -512,6 +535,7 @@ export function Chat(): JSX.Element {
         <button onClick={onUnpair} className="text-xs text-muted hover:text-text">Unpair</button>
       </header>
       <AddToHomeScreenBanner />
+      {unreachable && !connected && <UnreachableBanner />}
 
       {token && (
         <SessionDrawer
