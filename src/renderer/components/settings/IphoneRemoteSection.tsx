@@ -188,7 +188,6 @@ export function IphoneRemoteSection() {
           <div className="flex items-start gap-3">
             <div className="flex items-center justify-center bg-white rounded-lg p-2 shrink-0">
               {urlQrDataUrl ? (
-                // eslint-disable-next-line jsx-a11y/alt-text
                 <img
                   src={urlQrDataUrl}
                   alt="Otto Remote URL QR code"

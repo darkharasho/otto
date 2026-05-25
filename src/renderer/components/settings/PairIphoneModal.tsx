@@ -118,7 +118,6 @@ export function PairIphoneModal({ initialDeviceCount, onClose, onPaired }: Props
           ) : (
             <>
               <div className="flex items-center justify-center bg-white rounded-lg p-3">
-                {/* eslint-disable-next-line jsx-a11y/alt-text */}
                 <img src={qrDataUrl} alt="Pairing QR code" className="w-48 h-48" />
               </div>
               <div className="text-xs text-muted">
