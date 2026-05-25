@@ -1,3 +1,8 @@
+Version v0.5.4
+
+Bug fixes:
+- **Mobile remote: thinking indicator anchors to the bottom during tool calls.** Previously the typing dots stayed glued to the assistant text bubble *above* the tool card, so once Otto started running tools the animation looked stuck mid-transcript. Now the in-flight text bubble closes when a tool starts and a bottom-anchored indicator takes over until the next text-delta arrives.
+
 Version v0.5.3
 
 Bug fixes:
