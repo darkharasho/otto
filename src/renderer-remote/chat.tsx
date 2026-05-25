@@ -38,6 +38,65 @@ function TypingDots(): JSX.Element {
   );
 }
 
+function ToolCard({ item }: { item: ToolItem }): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const status =
+    item.status === 'pending' ? 'running'
+    : item.status === 'denied' ? 'denied'
+    : item.isError ? 'error'
+    : 'done';
+  const statusLabel = status === 'running' ? '…' : status;
+  const statusClass =
+    status === 'running' ? 'text-muted'
+    : status === 'done' ? 'text-emerald-500'
+    : 'text-danger';
+
+  return (
+    <div className="rounded-md border border-border bg-surface overflow-hidden">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-3 py-2 text-xs hover:bg-bg/40"
+      >
+        <span className="flex items-center gap-2">
+          <span className="font-semibold">{item.name}</span>
+        </span>
+        <span className="flex items-center gap-2">
+          <span className={`uppercase tracking-wide text-[10px] ${statusClass}`}>{statusLabel}</span>
+          <svg
+            viewBox="0 0 24 24"
+            className={`w-3 h-3 text-muted transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M6 9l6 6 6-6" />
+          </svg>
+        </span>
+      </button>
+      {open && (
+        <div className="px-3 pb-3 text-[11px] font-mono space-y-2">
+          <div>
+            <div className="text-muted mb-1">input</div>
+            <pre className="bg-bg/60 rounded p-2 overflow-x-auto whitespace-pre-wrap break-words">{JSON.stringify(item.input, null, 2)}</pre>
+          </div>
+          {item.result !== undefined && item.result !== null && (
+            <div>
+              <div className="text-muted mb-1">result</div>
+              <pre className="bg-bg/60 rounded p-2 overflow-x-auto whitespace-pre-wrap break-words">{
+                typeof item.result === 'string' ? item.result : JSON.stringify(item.result, null, 2)
+              }</pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function newId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
@@ -491,26 +550,7 @@ export function Chat(): JSX.Element {
             );
           }
           if (it.kind === 'tool') {
-            return (
-              <div key={it.id} className="rounded-md border border-border bg-surface px-3 py-2 text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold">{it.name}</span>
-                  <span className={
-                    it.status === 'pending' ? 'text-muted' :
-                    it.status === 'denied' ? 'text-danger' :
-                    it.isError ? 'text-danger' : 'text-emerald-500'
-                  }>
-                    {it.status === 'pending' ? '…' : it.status === 'denied' ? 'denied' : it.isError ? 'error' : 'ok'}
-                  </span>
-                </div>
-                <div className="text-muted mt-1 truncate">{summarizeInput(it.input)}</div>
-                {it.status === 'resolved' && it.result != null && (
-                  <div className="text-muted mt-1 line-clamp-3 whitespace-pre-wrap break-words">
-                    {summarizeInput(it.result)}
-                  </div>
-                )}
-              </div>
-            );
+            return <ToolCard key={it.id} item={it} />;
           }
           // screenshot
           return (
