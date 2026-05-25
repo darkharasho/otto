@@ -101,3 +101,59 @@ describe('summarizeInput', () => {
     expect(summarizeInput('mcp__some__do_thing', { query: 'hello' })).toBe('hello');
   });
 });
+
+import { classifyResult } from './tool-presenters';
+
+describe('classifyResult', () => {
+  it('isError → error kind', () => {
+    expect(classifyResult('shell_exec', 'boom', true)).toEqual({ kind: 'error', text: 'boom' });
+  });
+  it('null result → empty', () => {
+    expect(classifyResult('whatever', null, false)).toEqual({ kind: 'empty' });
+  });
+  it('screenshot with path → image (file://)', () => {
+    expect(classifyResult('screenshot', { path: '/tmp/a.png', width: 100, height: 50 }, false)).toEqual({
+      kind: 'image',
+      src: 'file:///tmp/a.png',
+      meta: '100×50',
+    });
+  });
+  it('base64 data URL in string → image', () => {
+    const data = 'data:image/png;base64,iVBORw0KGgoAAA';
+    expect(classifyResult('mcp__cdt__take_screenshot', data, false)).toEqual({
+      kind: 'image',
+      src: data,
+    });
+  });
+  it('SDK image content block → image', () => {
+    const block = [{ type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'AAAA' } }];
+    expect(classifyResult('mcp__cdt__take_screenshot', block, false)).toEqual({
+      kind: 'image',
+      src: 'data:image/png;base64,AAAA',
+    });
+  });
+  it('shell-shaped result → terminal', () => {
+    expect(classifyResult('shell_exec', { stdout: 'ok\n', stderr: '', exitCode: 0 }, false)).toEqual({
+      kind: 'terminal',
+      stdout: 'ok\n',
+      stderr: '',
+      exitCode: 0,
+    });
+  });
+  it('markdown-ish string → markdown', () => {
+    expect(classifyResult('web_fetch', '# Hi\n\n- one\n- two', false)).toEqual({
+      kind: 'markdown',
+      text: '# Hi\n\n- one\n- two',
+    });
+  });
+  it('small flat object → kv', () => {
+    expect(classifyResult('mcp__github__create_pr', { number: 287, url: 'x', state: 'open' }, false)).toEqual({
+      kind: 'kv',
+      entries: [['number', '287'], ['url', 'x'], ['state', 'open']],
+    });
+  });
+  it('nested object → json fallback', () => {
+    const big = { a: { b: { c: 1 } } };
+    expect(classifyResult('whatever', big, false)).toEqual({ kind: 'json', value: big });
+  });
+});

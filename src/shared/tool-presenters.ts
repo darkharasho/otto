@@ -148,6 +148,99 @@ export function summarizeInput(name: string, input: unknown, maxLen = 80): strin
   return null;
 }
 
+export type ResultView =
+  | { kind: 'image';    src: string; alt?: string; meta?: string }
+  | { kind: 'terminal'; stdout?: string; stderr?: string; exitCode?: number; durationMs?: number }
+  | { kind: 'markdown'; text: string }
+  | { kind: 'kv';       entries: Array<[string, string]> }
+  | { kind: 'error';    text: string }
+  | { kind: 'empty' }
+  | { kind: 'json';     value: unknown };
+
+const DATA_URL_RE = /data:image\/[a-zA-Z+]+;base64,[A-Za-z0-9+/=]+/;
+
+function extractError(result: unknown): string {
+  if (typeof result === 'string') return result;
+  if (result && typeof result === 'object') {
+    const o = result as Record<string, unknown>;
+    if (typeof o['error'] === 'string') return o['error'];
+    if (typeof o['message'] === 'string') return o['message'];
+  }
+  try { return JSON.stringify(result); } catch { return String(result); }
+}
+
+function looksLikeShellResult(o: Record<string, unknown>): boolean {
+  return 'stdout' in o || 'stderr' in o || 'exitCode' in o;
+}
+
+function looksLikeMarkdown(s: string): boolean {
+  return /(^|\n)#+ /.test(s) || /(^|\n)[-*] /.test(s) || /\[[^\]]+\]\(/.test(s);
+}
+
+function isScalar(v: unknown): boolean {
+  return v === null || ['string', 'number', 'boolean'].includes(typeof v);
+}
+
+export function classifyResult(name: string, result: unknown, isError: boolean): ResultView {
+  if (isError) return { kind: 'error', text: extractError(result) };
+  if (result == null || result === '') return { kind: 'empty' };
+
+  // Built-in screenshot with file path (handles `screenshot` or `mcp__otto-tools__screenshot`).
+  const parsed = parseMcpName(name);
+  const bareName = parsed?.server === 'otto-tools' ? parsed.tool : name;
+  if (bareName === 'screenshot' && typeof result === 'object' && result !== null && 'path' in (result as object)) {
+    const r = result as { path: unknown; width?: unknown; height?: unknown };
+    if (typeof r.path === 'string') {
+      const meta = typeof r.width === 'number' && typeof r.height === 'number' ? `${r.width}×${r.height}` : undefined;
+      return meta !== undefined
+        ? { kind: 'image', src: `file://${r.path}`, meta }
+        : { kind: 'image', src: `file://${r.path}` };
+    }
+  }
+
+  // base64 data URL inside a string
+  if (typeof result === 'string') {
+    const m = DATA_URL_RE.exec(result);
+    if (m) return { kind: 'image', src: m[0] };
+    if (looksLikeMarkdown(result)) return { kind: 'markdown', text: result };
+  }
+
+  // SDK image content block
+  if (Array.isArray(result)) {
+    for (const block of result) {
+      if (
+        block && typeof block === 'object'
+        && (block as { type?: unknown }).type === 'image'
+      ) {
+        const src = (block as { source?: { type?: string; media_type?: string; data?: string } }).source;
+        if (src && src.type === 'base64' && src.media_type && src.data) {
+          return { kind: 'image', src: `data:${src.media_type};base64,${src.data}` };
+        }
+      }
+    }
+  }
+
+  if (typeof result === 'object' && result !== null && !Array.isArray(result)) {
+    const o = result as Record<string, unknown>;
+
+    if (looksLikeShellResult(o)) {
+      const view: ResultView = { kind: 'terminal' };
+      if (typeof o['stdout'] === 'string') view.stdout = o['stdout'];
+      if (typeof o['stderr'] === 'string') view.stderr = o['stderr'];
+      if (typeof o['exitCode'] === 'number') view.exitCode = o['exitCode'];
+      if (typeof o['durationMs'] === 'number') view.durationMs = o['durationMs'];
+      return view;
+    }
+
+    const entries = Object.entries(o);
+    if (entries.length > 0 && entries.length <= 6 && entries.every(([, v]) => isScalar(v))) {
+      return { kind: 'kv', entries: entries.map(([k, v]) => [k, v === null ? 'null' : String(v)]) };
+    }
+  }
+
+  return { kind: 'json', value: result };
+}
+
 export function describeTool(name: string): ToolDescriptor {
   const builtin = BUILTIN[name];
   if (builtin) return builtin;
