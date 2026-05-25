@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { ipc } from './ipc';
 import type { SessionEvent } from '@shared/ipc-contract';
 import { OttoMark } from './components/OttoMark';
@@ -17,6 +19,30 @@ interface Step {
 }
 
 const MAX_STEPS = 8;
+
+// Overlay is a glance-and-go ticker — collapse block elements to inline so the
+// parent's `line-clamp-2` keeps each turn at two lines. Inline emphasis,
+// inline code, and links are preserved with theme-friendly styling.
+const OVERLAY_MD = {
+  p: (props: { children?: ReactNode }) => <>{props.children}</>,
+  h1: (props: { children?: ReactNode }) => <span className="font-semibold">{props.children}</span>,
+  h2: (props: { children?: ReactNode }) => <span className="font-semibold">{props.children}</span>,
+  h3: (props: { children?: ReactNode }) => <span className="font-semibold">{props.children}</span>,
+  h4: (props: { children?: ReactNode }) => <span className="font-semibold">{props.children}</span>,
+  ul: (props: { children?: ReactNode }) => <>{props.children}</>,
+  ol: (props: { children?: ReactNode }) => <>{props.children}</>,
+  li: (props: { children?: ReactNode }) => <span className="before:content-['•_'] before:text-muted">{props.children} </span>,
+  strong: (props: { children?: ReactNode }) => <strong className="font-semibold">{props.children}</strong>,
+  em: (props: { children?: ReactNode }) => <em className="italic">{props.children}</em>,
+  code: (props: { inline?: boolean; children?: ReactNode }) => (
+    <code className="rounded bg-bg/60 px-1 py-0.5 font-mono text-[0.9em]">{props.children}</code>
+  ),
+  pre: (props: { children?: ReactNode }) => <span className="font-mono">{props.children}</span>,
+  a: (props: { children?: ReactNode }) => <span className="text-accent underline">{props.children}</span>,
+  blockquote: (props: { children?: ReactNode }) => <span className="text-muted">{props.children}</span>,
+  hr: () => <span className="text-muted"> — </span>,
+  br: () => <> </>,
+} as const;
 
 function truncate(s: string, n: number): string {
   const flat = s.replace(/\s+/g, ' ').trim();
@@ -70,7 +96,11 @@ function StepRow({ step }: { step: Step }) {
     return (
       <div className="otto-step-enter flex gap-2 items-start py-1">
         <span className="mt-1 inline-block w-1 h-1 rounded-full bg-accent shrink-0" />
-        <span className="text-text text-[12.5px] leading-snug line-clamp-2">{step.label}</span>
+        <span className="text-text text-[12.5px] leading-snug line-clamp-2 min-w-0">
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={OVERLAY_MD}>
+            {step.label}
+          </ReactMarkdown>
+        </span>
       </div>
     );
   }
