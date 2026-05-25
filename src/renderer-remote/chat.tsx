@@ -556,7 +556,7 @@ export function Chat(): JSX.Element {
 
   return (
     <div className="flex flex-col h-full bg-bg text-text">
-      <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface sticky top-0 z-10">
+      <header className="flex items-center justify-between px-4 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-3 border-b border-border bg-surface sticky top-0 z-10">
         <div className="flex items-center gap-2 text-sm">
           <button
             onClick={() => setDrawerOpen(true)}
@@ -666,7 +666,7 @@ export function Chat(): JSX.Element {
         </div>
       )}
 
-      <footer className="border-t border-border bg-surface p-2 flex items-end gap-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
+      <footer className="border-t border-border bg-surface p-2 flex items-end gap-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
