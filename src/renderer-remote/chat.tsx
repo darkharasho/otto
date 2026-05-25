@@ -409,7 +409,13 @@ export function Chat(): JSX.Element {
         // reads in chronological order instead of accreting text above
         // earlier tool calls.
         currentTextIdRef.current = null;
-        setItems((prev) => [...prev, { kind: 'tool', id: newId(), callId, name, input: msg.input, status: 'pending' }]);
+        setItems((prev) => {
+          // Close any in-flight text bubble so its inline typing dots stop
+          // animating above the tool card; the bottom-anchored indicator
+          // takes over while the tool runs.
+          const closed = prev.map((it) => it.kind === 'text' && !it.done ? { ...it, done: true } : it);
+          return [...closed, { kind: 'tool', id: newId(), callId, name, input: msg.input, status: 'pending' }];
+        });
         return;
       }
       case 'tool-call-result': {
@@ -656,6 +662,11 @@ export function Chat(): JSX.Element {
             </div>
           );
         })}
+        {streaming && !items.some((it) => it.kind === 'text' && !it.done) && (
+          <div className="px-3 py-1 text-accent">
+            <TypingDots />
+          </div>
+        )}
         <div ref={transcriptEndRef} />
       </main>
 
