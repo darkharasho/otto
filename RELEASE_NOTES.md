@@ -1,3 +1,8 @@
+Version v0.5.1
+
+Bug fixes:
+- **Mobile remote: Add-to-Home-Screen no longer un-pairs the device.** iOS gives home-screen PWAs an isolated storage container, so Safari's localStorage didn't carry over. The bearer token now rides in the URL after pairing, so the launch URL captured by Add-to-Home-Screen hydrates the PWA's own storage on first launch. A small dismissible banner nudges iOS users to install before relying on persistence.
+
 Version v0.5.0
 
 New features:
