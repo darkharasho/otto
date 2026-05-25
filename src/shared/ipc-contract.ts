@@ -88,7 +88,46 @@ export type IpcRequest =
     }
   | { channel: 'memory.delete'; args: { id: string }; result: void }
   | { channel: 'remoteDesktop.status'; args: void; result: { granted: boolean } }
-  | { channel: 'remoteDesktop.revoke'; args: void; result: void };
+  | { channel: 'remoteDesktop.revoke'; args: void; result: void }
+  | { channel: 'remote:getStatus'; args: undefined; result: RemoteStatus }
+  | { channel: 'remote:setEnabled'; args: { enabled: boolean }; result: void }
+  | { channel: 'remote:setRemoteCeiling'; args: { ceiling: RemoteCeilingChoice }; result: void }
+  | { channel: 'remote:mintPairingCode'; args: undefined; result: PairingCodePayload }
+  | { channel: 'remote:listDevices'; args: undefined; result: PairedDeviceSummary[] }
+  | { channel: 'remote:revokeDevice'; args: { deviceId: string }; result: void };
+
+export type RemoteCeilingChoice = 'match' | 'strict' | 'balanced' | 'full-allow';
+
+export interface RemoteStatus {
+  running: boolean;
+  url: string | null;
+  reason: string | null;
+  enabled: boolean;
+  remoteCeiling: RemoteCeilingChoice;
+  pairedCount: number;
+}
+
+export interface PairedDeviceSummary {
+  id: string;
+  label: string;
+  pairedAt: number;
+  lastSeenAt: number | null;
+}
+
+export interface PairingCodePayload {
+  code: string;
+  url: string;
+  expiresAt: number;
+}
+
+export interface RemoteBridge {
+  getStatus(): Promise<RemoteStatus>;
+  setEnabled(enabled: boolean): Promise<void>;
+  setRemoteCeiling(ceiling: RemoteCeilingChoice): Promise<void>;
+  mintPairingCode(): Promise<PairingCodePayload>;
+  listDevices(): Promise<PairedDeviceSummary[]>;
+  revokeDevice(deviceId: string): Promise<void>;
+}
 
 export interface AppInfo {
   isDev: boolean;
@@ -203,6 +242,7 @@ export interface OttoBridge {
   onSessionEvent(handler: (event: SessionEvent) => void): () => void;
   onAutonomyEvent(handler: (event: AutonomyEvent) => void): () => void;
   updater: UpdaterBridge;
+  remote: RemoteBridge;
 }
 
 declare global {

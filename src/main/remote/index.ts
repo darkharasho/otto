@@ -5,6 +5,7 @@ import type { SessionBus } from './session-bus';
 export interface RemoteModuleBridge {
   start(): Promise<{ port: number }>;
   stop(): Promise<void>;
+  mintPairingCode(): string;
 }
 
 export interface RemoteModuleStatus {
@@ -49,6 +50,18 @@ export class RemoteModule {
     this.stopping = true;
     if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; }
     await this.tearDown();
+  }
+
+  mintPairingCode(): { code: string; url: string; expiresAt: number } {
+    if (!this.bridge || !this.currentIp || !this.currentPort) {
+      throw new Error('remote bridge not running');
+    }
+    const code = this.bridge.mintPairingCode();
+    return {
+      code,
+      url: `otto-pair://${this.currentIp}:${this.currentPort}?code=${code}`,
+      expiresAt: Date.now() + 120_000,
+    };
   }
 
   status(): RemoteModuleStatus {

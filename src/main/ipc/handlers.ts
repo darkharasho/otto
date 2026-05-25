@@ -26,6 +26,10 @@ import { logger } from '../logger';
 import { gatherShortcutInfo, openKeyboardSettings } from '../shortcut';
 import { instanceDisplayName, isDevInstance } from '../instance';
 import type { HotkeyManager } from '../hotkey';
+import type { RemoteModule } from '../remote';
+import type { PairingStore } from '../remote/pairing-store';
+import type { RemoteSettings } from '../remote/settings';
+import type { RemoteCeilingChoice } from '@shared/ipc-contract';
 
 export function registerIpcHandlers(deps: {
   repo: Repo;
@@ -43,6 +47,12 @@ export function registerIpcHandlers(deps: {
   configDir: string;
   applyStartAtLogin(enabled: boolean): void;
   openLogsDir(): void;
+  remote?: {
+    module: RemoteModule;
+    pairing: PairingStore;
+    settings: { get(): RemoteSettings; set(s: RemoteSettings): void };
+    applyRemoteCeiling?: (c: RemoteCeilingChoice) => void;
+  };
 }): void {
   const { repo, sessions, window, broker, settings, registry } = deps;
 
@@ -285,6 +295,44 @@ export function registerIpcHandlers(deps: {
       if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
     }
   });
+
+  if (deps.remote) {
+    const { module: mod, pairing, settings: remoteSettings, applyRemoteCeiling } = deps.remote;
+    ipcMain.handle('remote:getStatus', () => {
+      const s = mod.status();
+      const cfg = remoteSettings.get();
+      return { ...s, enabled: cfg.enabled, remoteCeiling: cfg.remoteCeiling };
+    });
+    ipcMain.handle('remote:setEnabled', async (_e, args: { enabled: boolean }) => {
+      const cfg = remoteSettings.get();
+      remoteSettings.set({ ...cfg, enabled: args.enabled });
+      if (args.enabled) await mod.start();
+      else await mod.stop();
+    });
+    ipcMain.handle(
+      'remote:setRemoteCeiling',
+      (_e, args: { ceiling: RemoteCeilingChoice }) => {
+        const cfg = remoteSettings.get();
+        remoteSettings.set({ ...cfg, remoteCeiling: args.ceiling });
+        applyRemoteCeiling?.(args.ceiling);
+      }
+    );
+    ipcMain.handle('remote:mintPairingCode', () => mod.mintPairingCode());
+    ipcMain.handle('remote:listDevices', () => {
+      return pairing
+        .list()
+        .filter((d) => !d.revokedAt)
+        .map((d) => ({
+          id: d.id,
+          label: d.label,
+          pairedAt: d.pairedAt,
+          lastSeenAt: d.lastSeenAt,
+        }));
+    });
+    ipcMain.handle('remote:revokeDevice', (_e, args: { deviceId: string }) => {
+      pairing.revoke(args.deviceId);
+    });
+  }
 
   settings.onChange((snap) => {
     broker.setMode(snap.autonomy.mode);

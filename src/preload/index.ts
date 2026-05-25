@@ -7,6 +7,10 @@ import {
   type IpcChannel,
   type IpcRequest,
   type OttoBridge,
+  type PairedDeviceSummary,
+  type PairingCodePayload,
+  type RemoteCeilingChoice,
+  type RemoteStatus,
   type SessionEvent,
   type UpdaterState,
 } from '@shared/ipc-contract';
@@ -39,6 +43,19 @@ const bridge: OttoBridge = {
       ipcRenderer.on(UPDATER_EVENT_CHANNEL, listener);
       return () => ipcRenderer.removeListener(UPDATER_EVENT_CHANNEL, listener);
     },
+  },
+  remote: {
+    getStatus: () => ipcRenderer.invoke('remote:getStatus') as Promise<RemoteStatus>,
+    setEnabled: (enabled: boolean) =>
+      ipcRenderer.invoke('remote:setEnabled', { enabled }) as Promise<void>,
+    setRemoteCeiling: (ceiling: RemoteCeilingChoice) =>
+      ipcRenderer.invoke('remote:setRemoteCeiling', { ceiling }) as Promise<void>,
+    mintPairingCode: () =>
+      ipcRenderer.invoke('remote:mintPairingCode') as Promise<PairingCodePayload>,
+    listDevices: () =>
+      ipcRenderer.invoke('remote:listDevices') as Promise<PairedDeviceSummary[]>,
+    revokeDevice: (deviceId: string) =>
+      ipcRenderer.invoke('remote:revokeDevice', { deviceId }) as Promise<void>,
   },
 };
 

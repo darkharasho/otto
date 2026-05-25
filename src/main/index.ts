@@ -85,6 +85,7 @@ async function startElectron(): Promise<void> {
   const { BridgeServer } = await import('./remote/bridge-server');
   const { PairingStore } = await import('./remote/pairing-store');
   const { resolveTailnetIp } = await import('./remote/tailnet');
+  const { loadRemoteSettings, saveRemoteSettings } = await import('./remote/settings');
   const { randomBytes } = await import('node:crypto');
 
   const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
@@ -364,7 +365,21 @@ async function startElectron(): Promise<void> {
       resolveApproval: (id, choice) => { broker.resolve(id, choice); return true; },
     }),
   });
-  void remoteModule.start();
+  // Load remote (iPhone bridge) settings from disk. Conditional start replaces
+  // the unconditional Task 19 behavior: the user's saved preference governs
+  // whether the bridge supervisor runs at boot, and the saved remoteCeiling is
+  // applied to the autonomy broker.
+  const remoteSettingsPath = path.join(ottoConfigDir, 'remote-settings.json');
+  let remoteSettingsCache = loadRemoteSettings(remoteSettingsPath);
+  const remoteSettingsWrap = {
+    get: () => remoteSettingsCache,
+    set: (s: import('./remote/settings').RemoteSettings) => {
+      remoteSettingsCache = s;
+      saveRemoteSettings(remoteSettingsPath, s);
+    },
+  };
+  broker.setRemoteCeiling(remoteSettingsCache.remoteCeiling);
+  if (remoteSettingsCache.enabled) void remoteModule.start();
 
   const preloadPath = path.join(app.getAppPath(), 'out', 'preload', 'index.js');
   window.create(preloadPath, rendererEntry());
@@ -400,6 +415,12 @@ async function startElectron(): Promise<void> {
     applyStartAtLogin,
     openLogsDir: () => {
       void shell.openPath(ottoConfigDir);
+    },
+    remote: {
+      module: remoteModule,
+      pairing: pairingStore,
+      settings: remoteSettingsWrap,
+      applyRemoteCeiling: (c) => broker.setRemoteCeiling(c),
     },
   });
 

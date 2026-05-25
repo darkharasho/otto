@@ -21,6 +21,7 @@ function makePairing() {
 interface FakeBridge {
   start(): Promise<{ port: number }>;
   stop(): Promise<void>;
+  mintPairingCode(): string;
   startCalls: number;
 }
 
@@ -34,6 +35,7 @@ function makeFakeBridge(opts: { throwOnce?: boolean } = {}): FakeBridge {
       return { port: 9000 };
     },
     async stop() {},
+    mintPairingCode() { return 'fake-code'; },
   };
 }
 
