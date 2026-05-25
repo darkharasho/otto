@@ -43,6 +43,13 @@ export function Pair(): JSX.Element {
     setBusy(true); setError(null);
     try {
       const res = await doPair(code, defaultDeviceLabel());
+      // Put the bearer in the URL so iOS captures it as the launch URL
+      // when the user taps "Add to Home Screen" — the home-screen PWA gets
+      // an isolated storage container, so Safari's localStorage won't
+      // carry over. Reading ?t= on load hydrates the PWA's own storage.
+      try {
+        window.history.replaceState(null, '', `/?t=${encodeURIComponent(res.token)}`);
+      } catch { /* non-fatal */ }
       setToken(res.token);
     } catch (err) {
       setError((err as Error).message);

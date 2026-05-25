@@ -3,6 +3,17 @@ import { create } from 'zustand';
 const TOKEN_KEY = 'otto.remote.token';
 
 function readToken(): string | null {
+  // Prefer a token in the URL — iOS PWAs added to the Home Screen get an
+  // isolated storage container, so Safari's localStorage doesn't carry over.
+  // We thread the bearer through the URL after pairing so the launch URL
+  // captured by "Add to Home Screen" hydrates the PWA's own localStorage.
+  try {
+    const fromUrl = new URLSearchParams(window.location.search).get('t');
+    if (fromUrl) {
+      try { localStorage.setItem(TOKEN_KEY, fromUrl); } catch { /* private mode */ }
+      return fromUrl;
+    }
+  } catch { /* SSR / no window */ }
   try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
 }
 

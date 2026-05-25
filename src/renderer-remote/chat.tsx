@@ -28,6 +28,33 @@ function summarizeInput(input: unknown): string {
   }
 }
 
+function AddToHomeScreenBanner(): JSX.Element | null {
+  const [dismissed, setDismissed] = useState(() => {
+    try { return localStorage.getItem('otto.a2hs.dismissed') === '1'; } catch { return false; }
+  });
+  // iOS-only: navigator.standalone is true once launched from the home screen.
+  const isIos = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const standalone = (navigator as unknown as { standalone?: boolean }).standalone === true;
+  if (!isIos || standalone || dismissed) return null;
+  return (
+    <div className="flex items-start gap-2 px-3 py-2 text-xs bg-accent/10 border-b border-accent/20 text-text">
+      <span className="flex-1">
+        Tap <span className="font-semibold">Share → Add to Home Screen</span> so Otto stays paired across launches.
+      </span>
+      <button
+        onClick={() => {
+          try { localStorage.setItem('otto.a2hs.dismissed', '1'); } catch { /* */ }
+          setDismissed(true);
+        }}
+        className="text-muted hover:text-text px-1"
+        aria-label="Dismiss"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
 function TypingDots(): JSX.Element {
   return (
     <span className="otto-typing inline-flex" aria-label="Otto is typing">
@@ -476,6 +503,7 @@ export function Chat(): JSX.Element {
         </div>
         <button onClick={onUnpair} className="text-xs text-muted hover:text-text">Unpair</button>
       </header>
+      <AddToHomeScreenBanner />
 
       {token && (
         <SessionDrawer
