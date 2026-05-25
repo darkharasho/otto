@@ -1,3 +1,8 @@
+Unreleased
+
+New features:
+- **iPhone remote.** Pair an iPhone via QR code over Tailscale. The phone becomes a second client to the same Otto session — full chat with streaming events, first-resolver-wins approvals, screenshot thumbs, and reconnect with history backfill. Remote-originated turns can be clamped to a stricter autonomy mode than the desktop is running. Bridge binds only to the tailnet IP; no public exposure.
+
 Version v0.3.0
 
 New features:

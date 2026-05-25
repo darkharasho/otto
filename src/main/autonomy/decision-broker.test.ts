@@ -110,6 +110,26 @@ describe('DecisionBroker.decide', () => {
     expect(result).toBe('deny');
   });
 
+  it('remote-originated reversible call requires confirm when ceiling=strict, even if desktop=full-allow', async () => {
+    const events: SessionEvent[] = [];
+    const broker = new DecisionBroker('full-allow', (e) => events.push(e));
+    broker.setRemoteCeiling('strict');
+    const p = broker.decide(args({ actionClass: 'reversible', origin: 'remote' }));
+    await new Promise((r) => setTimeout(r, 5));
+    expect(events.some((e) => e.type === 'tool-call-pending')).toBe(true);
+    const pending = events.find((e) => e.type === 'tool-call-pending');
+    if (!pending || pending.type !== 'tool-call-pending') throw new Error('expected pending');
+    broker.resolve(pending.decisionId, 'approve');
+    await p;
+  });
+
+  it('desktop-originated calls are not clamped', async () => {
+    const broker = new DecisionBroker('full-allow', () => {});
+    broker.setRemoteCeiling('strict');
+    const outcome = await broker.decide(args({ actionClass: 'reversible', origin: 'desktop' }));
+    expect(outcome).toBe('allow');
+  });
+
   it('times out after 5 minutes and resolves as deny', async () => {
     vi.useFakeTimers();
     try {

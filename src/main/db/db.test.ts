@@ -21,7 +21,7 @@ describe('openDatabase', () => {
     const dir = freshDir();
     const db = openDatabase(path.join(dir, 'otto.db'));
     const row = db.prepare('SELECT MAX(version) AS v FROM schema_version').get() as { v: number };
-    expect(row.v).toBe(5);
+    expect(row.v).toBe(6);
     db.close();
   });
 
@@ -34,7 +34,7 @@ describe('openDatabase', () => {
       .prepare('SELECT version FROM schema_version ORDER BY version')
       .all() as { version: number }[];
     // Each migration should have been applied exactly once.
-    expect(rows.map((r) => r.version)).toEqual([1, 2, 3, 4, 5]);
+    expect(rows.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6]);
     db.close();
   });
 
@@ -141,6 +141,17 @@ describe('migration 003 (artifact + FTS)', () => {
       )
       .all('stutter') as { id: string }[];
     expect(hits.map((h) => h.id)).toEqual(['a1']);
+    db.close();
+  });
+});
+
+describe('migration 006: paired_devices', () => {
+  it('creates paired_devices table with expected columns', () => {
+    const dir = freshDir();
+    const db = openDatabase(path.join(dir, 'otto.db'));
+    const cols = db.prepare(`PRAGMA table_info(paired_devices)`).all() as { name: string }[];
+    const names = cols.map((c) => c.name).sort();
+    expect(names).toEqual(['id', 'label', 'last_seen_at', 'paired_at', 'revoked_at', 'token_hash'].sort());
     db.close();
   });
 });

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { SessionEvent } from '@shared/ipc-contract';
 import type { ActionClass, AutonomyMode } from '@shared/messages';
-import { evaluate, type Decision } from './policy';
+import { clamp, evaluate, type Decision, type RemoteCeiling } from './policy';
 
 export interface DecideArgs {
   sessionId: string;
@@ -11,6 +11,7 @@ export interface DecideArgs {
   actionClass: ActionClass;
   input: unknown;
   denyPatternsFn: ((input: unknown) => string | null) | null;
+  origin?: 'desktop' | 'remote';
 }
 
 type UserChoice = 'approve' | 'approve-session' | 'deny';
@@ -28,6 +29,7 @@ const DECISION_TIMEOUT_MS = 5 * 60 * 1000;
 
 export class DecisionBroker {
   private mode: AutonomyMode;
+  private remoteCeiling: RemoteCeiling = 'match';
   private readonly pending = new Map<string, Pending>();
   private readonly sessionAllow = new Set<string>();
 
@@ -37,6 +39,10 @@ export class DecisionBroker {
 
   setMode(mode: AutonomyMode): void {
     this.mode = mode;
+  }
+
+  setRemoteCeiling(c: RemoteCeiling): void {
+    this.remoteCeiling = c;
   }
 
   async decide(args: DecideArgs): Promise<'allow' | 'deny'> {
@@ -51,15 +57,18 @@ export class DecisionBroker {
     const cacheKey = `${args.sessionId}::${args.toolName}`;
     if (this.sessionAllow.has(cacheKey)) return 'allow';
 
-    const policyOutcome: Decision = evaluate(this.mode, args.actionClass);
+    const effectiveMode = (args.origin ?? 'desktop') === 'remote'
+      ? clamp(this.mode, this.remoteCeiling)
+      : this.mode;
+    const policyOutcome: Decision = evaluate(effectiveMode, args.actionClass);
     if (policyOutcome === 'allow') return 'allow';
     if (policyOutcome === 'deny') {
-      this.emitDenied(args, `mode=${this.mode}, class=${args.actionClass}`);
+      this.emitDenied(args, `mode=${effectiveMode}, class=${args.actionClass}`);
       return 'deny';
     }
 
     const decisionId = randomUUID();
-    const reason = `mode=${this.mode}, class=${args.actionClass}`;
+    const reason = `mode=${effectiveMode}, class=${args.actionClass}`;
 
     return new Promise<'allow' | 'deny'>((resolve) => {
       const timer = setTimeout(() => {

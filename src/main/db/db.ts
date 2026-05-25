@@ -128,12 +128,26 @@ CREATE VIRTUAL TABLE IF NOT EXISTS memory_vec USING vec0(
 );
 `;
 
+const MIGRATION_006_PAIRED_DEVICES = `
+CREATE TABLE IF NOT EXISTS paired_devices (
+  id           TEXT PRIMARY KEY,
+  label        TEXT NOT NULL,
+  token_hash   TEXT NOT NULL,
+  paired_at    INTEGER NOT NULL,
+  last_seen_at INTEGER,
+  revoked_at   INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS paired_devices_revoked_idx ON paired_devices(revoked_at);
+`;
+
 const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 1, sql: MIGRATION_001_INIT },
   { version: 2, sql: MIGRATION_002_SDK_SESSION_ID },
   { version: 3, sql: MIGRATION_003_ARTIFACTS },
   { version: 4, sql: MIGRATION_004_FACTS },
   { version: 5, sql: MIGRATION_005_VEC },
+  { version: 6, sql: MIGRATION_006_PAIRED_DEVICES },
 ];
 
 export function openDatabase(dbPath: string): DB {

@@ -23,11 +23,17 @@ interface OttoState {
   loadSession(id: string, messages: Message[]): void;
   appendUserMessage(id: string, text: string): void;
   applyEvent(event: SessionEvent): void;
+  attachSession(sessionId: string): Promise<void>;
   setSessions(list: SessionMeta[]): void;
   setMode(mode: AutonomyMode): void;
   setModel(model: string): void;
   reset(): void;
 }
+
+// Sessions currently being attached (e.g. started from the iPhone remote).
+// Events that arrive for these IDs are buffered and replayed once the
+// session record has been loaded and set active.
+const attachInFlight = new Map<string, SessionEvent[]>();
 
 const MODEL_STORAGE_KEY = 'otto.model';
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
@@ -101,9 +107,60 @@ export const useOttoStore = create<OttoState>((set, get) => ({
 
   applyEvent(event) {
     const session = get().activeSession;
-    if (!session || event.sessionId !== session.id) return;
+    if (!session || event.sessionId !== session.id) {
+      // Auto-attach to a session we don't currently track (e.g. one started
+      // from the iPhone remote). Kick off the load and buffer this event so
+      // it can be replayed once attach completes.
+      if (event.sessionId) {
+        const pending = attachInFlight.get(event.sessionId);
+        if (pending) {
+          pending.push(event);
+        } else {
+          attachInFlight.set(event.sessionId, [event]);
+          void get().attachSession(event.sessionId);
+        }
+      }
+      return;
+    }
 
     switch (event.type) {
+      case 'user-message': {
+        // The desktop optimistically appends a user bubble when YOU submit
+        // (handleSubmit -> appendUserMessage with a random UUID). For
+        // remote-originated prompts (from the phone), no optimistic add
+        // happens, so we must append from the event. Dedupe by:
+        //   (1) exact messageId match, or
+        //   (2) the immediately-prior message is a user msg with the same
+        //       text — covers the desktop's optimistic add (different id).
+        const messages = session.messages;
+        if (messages.some((m) => m.id === event.messageId)) return;
+        const last = messages[messages.length - 1];
+        if (
+          last &&
+          last.role === 'user' &&
+          last.content.length === 1 &&
+          last.content[0]!.type === 'text' &&
+          (last.content[0] as { type: 'text'; text: string }).text === event.text
+        ) {
+          return;
+        }
+        const msg: UserMessage = {
+          id: event.messageId,
+          sessionId: session.id,
+          seq: session.messages.length,
+          createdAt: Date.now(),
+          role: 'user',
+          content: [{ type: 'text', text: event.text }],
+        };
+        set({
+          activeSession: {
+            ...session,
+            messages: [...session.messages, msg],
+            error: null,
+          },
+        });
+        return;
+      }
       case 'message-start': {
         const placeholder: AssistantMessage = {
           id: event.messageId,
@@ -318,6 +375,41 @@ export const useOttoStore = create<OttoState>((set, get) => ({
       case 'done': {
         set({ activeSession: { ...session, streaming: false } });
         return;
+      }
+    }
+  },
+
+  async attachSession(sessionId) {
+    // Already the active session — nothing to do.
+    if (get().activeSession?.id === sessionId) {
+      const buffered = attachInFlight.get(sessionId);
+      attachInFlight.delete(sessionId);
+      if (buffered) for (const e of buffered) get().applyEvent(e);
+      return;
+    }
+    // Guard against SSR / tests where the preload bridge isn't installed.
+    if (typeof window === 'undefined' || !window.otto) {
+      attachInFlight.delete(sessionId);
+      return;
+    }
+    try {
+      const messages = await window.otto.invoke('session.load', { sessionId });
+      set({ activeSession: { id: sessionId, messages, streaming: false, error: null }, windowMode: 'panel' });
+      // Phone-started turns need the desktop to expand from bar → panel so
+      // the user can actually see the conversation that's unfolding.
+      void window.otto.invoke('window.setMode', { mode: 'panel' }).catch(() => {});
+      // Refresh the sessions list so the new session shows up in history.
+      void window.otto
+        .invoke('session.list', undefined)
+        .then((list) => set({ sessions: list }))
+        .catch(() => {});
+    } catch {
+      // Swallow — next event on the same session will retry attach.
+    } finally {
+      const buffered = attachInFlight.get(sessionId);
+      attachInFlight.delete(sessionId);
+      if (buffered && get().activeSession?.id === sessionId) {
+        for (const e of buffered) get().applyEvent(e);
       }
     }
   },

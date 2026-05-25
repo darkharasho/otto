@@ -21,6 +21,7 @@ export const TABS: TabEntry[] = [
       { id: 'window', label: 'Window' },
       { id: 'shortcut', label: 'Shortcut' },
       { id: 'remoteDesktop', label: 'Remote desktop' },
+      { id: 'iphoneRemote', label: 'iPhone remote' },
       { id: 'startup', label: 'Startup' },
     ],
   },

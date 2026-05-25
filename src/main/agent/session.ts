@@ -76,6 +76,11 @@ export class SessionManager {
   async send(args: { sessionId: string; text: string }): Promise<void> {
     const { sessionId, text } = args;
     const user = this.repo.appendMessage({ ...newUserMessage(text), sessionId });
+    // Broadcast the user turn so subscribers (desktop renderer, PWA over the
+    // bridge, etc.) can render a user bubble. The desktop renderer also adds
+    // an optimistic bubble when YOU submit via the local UI — it dedupes by
+    // messageId to avoid double-rendering.
+    this.emit({ type: 'user-message', sessionId, messageId: user.id, text });
     this.repo.setSessionTitleIfMissing(sessionId, text.slice(0, 80));
     this.repo.updateSessionActivity(sessionId, Date.now(), 'active');
 

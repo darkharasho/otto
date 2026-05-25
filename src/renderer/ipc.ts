@@ -19,4 +19,12 @@ export const ipc: OttoBridge = {
     install: () => window.otto.updater.install(),
     onStateChange: (cb: (state: UpdaterState) => void) => window.otto.updater.onStateChange(cb),
   },
+  remote: {
+    getStatus: () => window.otto.remote.getStatus(),
+    setEnabled: (enabled) => window.otto.remote.setEnabled(enabled),
+    setRemoteCeiling: (ceiling) => window.otto.remote.setRemoteCeiling(ceiling),
+    mintPairingCode: () => window.otto.remote.mintPairingCode(),
+    listDevices: () => window.otto.remote.listDevices(),
+    revokeDevice: (deviceId) => window.otto.remote.revokeDevice(deviceId),
+  },
 };

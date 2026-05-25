@@ -69,7 +69,13 @@ function MarkdownBlock({ text, caret }: { text: string; caret?: boolean }) {
       >
         {text}
       </ReactMarkdown>
-      {caret && <span className="otto-caret -ml-1 text-accent" aria-hidden />}
+      {caret && (
+        <span className="otto-typing text-accent align-middle inline-flex" aria-hidden>
+          <span />
+          <span />
+          <span />
+        </span>
+      )}
     </div>
   );
 }

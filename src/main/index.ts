@@ -80,6 +80,13 @@ async function startElectron(): Promise<void> {
   const { getEmbedder } = await import('./embeddings/embedder');
   const { backfillEmbeddings } = await import('./embeddings/backfill');
   const { MemorySearch } = await import('./memory/search');
+  const { SessionBus } = await import('./remote/session-bus');
+  const { RemoteModule } = await import('./remote');
+  const { BridgeServer } = await import('./remote/bridge-server');
+  const { PairingStore } = await import('./remote/pairing-store');
+  const { resolveTailnetEndpoint } = await import('./remote/tailnet');
+  const { loadRemoteSettings, saveRemoteSettings } = await import('./remote/settings');
+  const { randomBytes } = await import('node:crypto');
 
   const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
 
@@ -163,7 +170,8 @@ async function startElectron(): Promise<void> {
     rendererEntry(),
     () => window.isVisible()
   );
-  const emitWithNotify: typeof emitSessionEvent = (event) => {
+  const sessionBus = new SessionBus();
+  const baseEmit: typeof emitSessionEvent = (event) => {
     notifier.handle(event);
     overlay.handleSessionEvent(event);
     emitSessionEvent(event);
@@ -172,6 +180,17 @@ async function startElectron(): Promise<void> {
     // the window. Cleared as soon as the main window becomes visible.
     if (event.type === 'done' && !window.isVisible()) {
       tray.setBadged(true);
+    }
+  };
+  // Fan out to the SessionBus so remote subscribers (iPhone bridge) see the
+  // same events as the renderer. Additive — preserves existing behavior.
+  const emitWithNotify: typeof emitSessionEvent = (event) => {
+    baseEmit(event);
+    if ('sessionId' in event && typeof (event as { sessionId?: unknown }).sessionId === 'string') {
+      sessionBus.publish(
+        (event as { sessionId: string }).sessionId,
+        { ...event, type: 'event', kind: event.type } as unknown as import('./remote/session-bus').RemoteOutbound
+      );
     }
   };
 
@@ -317,6 +336,83 @@ async function startElectron(): Promise<void> {
 
   sessions.onDoneListener((sessionId) => detector.onDone(sessionId));
   sessions.onUserActiveListener((sessionId) => detector.onUserActive(sessionId));
+  // Remote (iPhone) inputs no longer route through the bus input queue —
+  // BridgeServer now invokes sendPrompt/interruptTurn callbacks directly
+  // (see the makeBridge factory below). The bus stays as the output fan-out
+  // channel only.
+
+  // Remote (iPhone) bridge supervisor. Always starts in Task 19; conditional
+  // gating on settings lands in Task 22. Stays dormant until Tailscale is up.
+  const pairingStore = new PairingStore(db);
+  const screenshotSecret = randomBytes(32).toString('base64url');
+  const remoteModule = new RemoteModule({
+    pairing: pairingStore,
+    bus: sessionBus,
+    resolveTailnetEndpoint,
+    makeBridge: (tailnetIp) => new BridgeServer({
+      tailnetIp,
+      port: 17829,
+      pairing: pairingStore,
+      bus: sessionBus,
+      pwaDir: path.join(app.getAppPath(), 'out', 'renderer-remote'),
+      screenshotSecret,
+      // Screenshot fan-out into the remote bus isn't wired yet (no caller
+      // currently emits `screenshot-captured` events with a stable id), so the
+      // /screenshot/<id> route has no source of truth to read from. Leaving as
+      // a null stub means the route returns 404 if hit early; once the bus
+      // fan-out lands, this becomes a read from src/main/screenshot/store.
+      loadScreenshot: async () => null,
+      activeSessionId: () => sessions.getActiveSessionId(),
+      resolveApproval: (id, choice) => { broker.resolve(id, choice); return true; },
+      sendPrompt: async (text, _origin) => {
+        // Errors here used to be swallowed by the bridge's fire-and-forget
+        // `void sendPrompt(...)`. The PWA had already optimistically flipped
+        // streaming=true and would wait forever for a 'done' event that never
+        // arrived. Surface failures via the bus so the phone can unjam and
+        // show a useful error.
+        let sid: string | null = sessions.getActiveSessionId();
+        try {
+          if (!sid) {
+            const started = await sessions.start({});
+            sid = started.sessionId;
+          }
+          await sessions.send({ sessionId: sid, text });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.error(`remote sendPrompt failed: ${msg}`);
+          const target = sid ?? 'no-session';
+          sessionBus.publish(target, { type: 'event', kind: 'done', sessionId: target } as unknown as import('./remote/session-bus').RemoteOutbound);
+          sessionBus.publish(target, { type: 'error', code: 'send-failed', message: msg, fatal: false });
+        }
+      },
+      interruptTurn: (sid) => {
+        const target = sid ?? sessions.getActiveSessionId();
+        if (target) sessions.cancel({ sessionId: target });
+      },
+      listSessions: async (limit) => repo.listSessions(limit),
+      loadMessages: async (sessionId) => repo.loadMessages(sessionId),
+      switchSession: async (sessionId) => { await sessions.start({ resume: sessionId }); },
+      newSession: async () => {
+        const r = await sessions.start({});
+        return r.sessionId;
+      },
+    }),
+  });
+  // Load remote (iPhone bridge) settings from disk. Conditional start replaces
+  // the unconditional Task 19 behavior: the user's saved preference governs
+  // whether the bridge supervisor runs at boot, and the saved remoteCeiling is
+  // applied to the autonomy broker.
+  const remoteSettingsPath = path.join(ottoConfigDir, 'remote-settings.json');
+  let remoteSettingsCache = loadRemoteSettings(remoteSettingsPath);
+  const remoteSettingsWrap = {
+    get: () => remoteSettingsCache,
+    set: (s: import('./remote/settings').RemoteSettings) => {
+      remoteSettingsCache = s;
+      saveRemoteSettings(remoteSettingsPath, s);
+    },
+  };
+  broker.setRemoteCeiling(remoteSettingsCache.remoteCeiling);
+  if (remoteSettingsCache.enabled) void remoteModule.start();
 
   const preloadPath = path.join(app.getAppPath(), 'out', 'preload', 'index.js');
   window.create(preloadPath, rendererEntry());
@@ -352,6 +448,12 @@ async function startElectron(): Promise<void> {
     applyStartAtLogin,
     openLogsDir: () => {
       void shell.openPath(ottoConfigDir);
+    },
+    remote: {
+      module: remoteModule,
+      pairing: pairingStore,
+      settings: remoteSettingsWrap,
+      applyRemoteCeiling: (c) => broker.setRemoteCeiling(c),
     },
   });
 
@@ -406,6 +508,7 @@ async function startElectron(): Promise<void> {
     hotkey.unregisterAll();
     void toggleServer.stop();
     void registry.killAll();
+    void remoteModule.stop();
     tray.destroy();
     settingsWindow.destroy();
     overlay.destroy();
