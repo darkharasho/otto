@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Menu } from 'lucide-react';
+import { rehypeEmojiIcons } from '../renderer/components/rehype-emoji-icons';
+import { EMOJI_TO_ICON, fluentEmojiUrl } from '../renderer/components/emoji-icons';
 import { useRemoteStore } from './store';
 import { openWs, getHistory, loadMessages, type WsHandle } from './wire';
 import { ApprovalCard } from './approval-card';
@@ -154,6 +156,41 @@ function newId(): string {
 // it's just enough to make AI responses readable on the phone (paragraphs,
 // headings, code, lists, links).
 const MD_COMPONENTS = {
+  // The rehype plugin emits <span class="otto-emoji" data-emoji="…" />; render
+  // Lucide for mapped emojis and Fluent Emoji High Contrast (via CSS mask)
+  // for everything else, matching the desktop look.
+  span: (props: { className?: string; children?: ReactNode; 'data-emoji'?: string }) => {
+    const classes = props.className ?? '';
+    if (classes.includes('otto-emoji')) {
+      const emoji = props['data-emoji'];
+      if (emoji) {
+        const Icon = EMOJI_TO_ICON[emoji];
+        if (Icon) {
+          return (
+            <Icon
+              className="inline-block align-[-0.2em] mx-[0.1em] w-[1.1em] h-[1.1em] text-accent"
+              strokeWidth={2.25}
+              aria-label={emoji}
+            />
+          );
+        }
+        const url = fluentEmojiUrl(emoji);
+        if (url) {
+          return (
+            <span
+              role="img"
+              aria-label={emoji}
+              title={emoji}
+              className="otto-emoji-mask text-accent"
+              style={{ WebkitMaskImage: `url(${url})`, maskImage: `url(${url})` }}
+            />
+          );
+        }
+        return null;
+      }
+    }
+    return <span className={classes}>{props.children}</span>;
+  },
   p: (props: { children?: ReactNode }) => <p className="my-1 first:mt-0 last:mb-0">{props.children}</p>,
   h1: (props: { children?: ReactNode }) => <h1 className="text-base font-semibold mt-2 mb-1">{props.children}</h1>,
   h2: (props: { children?: ReactNode }) => <h2 className="text-sm font-semibold mt-2 mb-1">{props.children}</h2>,
@@ -580,7 +617,7 @@ export function Chat(): JSX.Element {
             return (
               <div key={it.id} className="flex justify-end">
                 <div className="rounded-md bg-accent/15 text-text px-3 py-2 text-sm break-words max-w-[85%]">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeEmojiIcons]} components={MD_COMPONENTS}>
                     {it.text}
                   </ReactMarkdown>
                 </div>
@@ -598,7 +635,7 @@ export function Chat(): JSX.Element {
             }
             return (
               <div key={it.id} className="rounded-md bg-surface px-3 py-2 text-sm break-words">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeEmojiIcons]} components={MD_COMPONENTS}>
                   {it.text}
                 </ReactMarkdown>
                 {!it.done && (
