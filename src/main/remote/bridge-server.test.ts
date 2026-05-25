@@ -137,4 +137,27 @@ describe('BridgeServer WS auth', () => {
     ws.close();
     expect(messages).toContainEqual(expect.objectContaining({ type: 'event', kind: 'text-delta', text: 'hello' }));
   });
+
+  it('routes inbound prompt to bus.enqueueInput', async () => {
+    const pairing = makeStore();
+    const bus = new SessionBus();
+    const seen: unknown[] = [];
+    bus.setInputHandler('s1', async (m) => { seen.push(m); });
+    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing, bus, pwaDir: null, activeSessionId: () => 's1' });
+    const { port } = await server.start();
+    const { token } = await pairing.issue('iPhone');
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    await new Promise<void>((resolve) => {
+      ws.on('open', () => ws.send(JSON.stringify({ v: 1, type: 'auth', token })));
+      ws.on('message', (data) => {
+        const m = JSON.parse(data.toString());
+        if (m.type === 'auth_ok') {
+          ws.send(JSON.stringify({ v: 1, type: 'prompt', sessionId: 's1', text: 'hi from phone' }));
+          setTimeout(resolve, 50);
+        }
+      });
+    });
+    ws.close();
+    expect(seen).toContainEqual(expect.objectContaining({ type: 'prompt', text: 'hi from phone' }));
+  });
 });

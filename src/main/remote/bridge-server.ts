@@ -92,7 +92,16 @@ export class BridgeServer {
         }
         return;
       }
-      // post-auth message handling fills in subsequent tasks (13, 14, 17).
+      if (msg.type === 'prompt' && typeof msg.sessionId === 'string' && typeof msg.text === 'string') {
+        void this.opts.bus.enqueueInput(msg.sessionId, { type: 'prompt', sessionId: msg.sessionId, text: msg.text, origin: 'remote' });
+        return;
+      }
+      if (msg.type === 'interrupt' && typeof msg.sessionId === 'string') {
+        void this.opts.bus.enqueueInput(msg.sessionId, { type: 'interrupt', sessionId: msg.sessionId });
+        return;
+      }
+      if (msg.type === 'ping') { ws.send(JSON.stringify({ v: 1, type: 'pong' })); return; }
+      // `approval` lands in Task 17.
     });
 
     ws.on('close', () => { const fn = unsub as (() => void) | null; if (fn) fn(); });
