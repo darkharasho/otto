@@ -81,6 +81,11 @@ async function startElectron(): Promise<void> {
   const { backfillEmbeddings } = await import('./embeddings/backfill');
   const { MemorySearch } = await import('./memory/search');
   const { SessionBus } = await import('./remote/session-bus');
+  const { RemoteModule } = await import('./remote');
+  const { BridgeServer } = await import('./remote/bridge-server');
+  const { PairingStore } = await import('./remote/pairing-store');
+  const { resolveTailnetIp } = await import('./remote/tailnet');
+  const { randomBytes } = await import('node:crypto');
 
   const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
 
@@ -340,6 +345,27 @@ async function startElectron(): Promise<void> {
     });
   });
 
+  // Remote (iPhone) bridge supervisor. Always starts in Task 19; conditional
+  // gating on settings lands in Task 22. Stays dormant until Tailscale is up.
+  const pairingStore = new PairingStore(db);
+  const screenshotSecret = randomBytes(32).toString('base64url');
+  const remoteModule = new RemoteModule({
+    pairing: pairingStore,
+    bus: sessionBus,
+    resolveTailnetIp,
+    makeBridge: (tailnetIp) => new BridgeServer({
+      tailnetIp,
+      pairing: pairingStore,
+      bus: sessionBus,
+      pwaDir: null, // wired in Task 25
+      screenshotSecret,
+      loadScreenshot: async () => null, // wired in Task 29
+      activeSessionId: () => sessions.getActiveSessionId(),
+      resolveApproval: (id, choice) => { broker.resolve(id, choice); return true; },
+    }),
+  });
+  void remoteModule.start();
+
   const preloadPath = path.join(app.getAppPath(), 'out', 'preload', 'index.js');
   window.create(preloadPath, rendererEntry());
   overlay.start();
@@ -428,6 +454,7 @@ async function startElectron(): Promise<void> {
     hotkey.unregisterAll();
     void toggleServer.stop();
     void registry.killAll();
+    void remoteModule.stop();
     tray.destroy();
     settingsWindow.destroy();
     overlay.destroy();
