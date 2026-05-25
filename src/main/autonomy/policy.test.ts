@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { evaluate, type Decision } from './policy';
+import { clamp, evaluate, type Decision } from './policy';
 import type { ActionClass, AutonomyMode } from '@shared/messages';
 
 describe('evaluate', () => {
@@ -23,4 +23,13 @@ describe('evaluate', () => {
       expect(evaluate(mode, cls)).toBe(expected);
     });
   }
+});
+
+describe('clamp', () => {
+  it('returns the more-restrictive mode', () => {
+    expect(clamp('full-allow', 'strict')).toBe('strict');
+    expect(clamp('balanced', 'full-allow')).toBe('balanced');
+    expect(clamp('balanced', 'match')).toBe('balanced');
+    expect(clamp('strict', 'match')).toBe('strict');
+  });
 });

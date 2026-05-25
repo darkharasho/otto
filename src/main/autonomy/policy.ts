@@ -26,3 +26,10 @@ const MATRIX: Record<AutonomyMode, Record<ActionClass, Decision>> = {
 export function evaluate(mode: AutonomyMode, actionClass: ActionClass): Decision {
   return MATRIX[mode][actionClass];
 }
+
+const ORDER: Record<AutonomyMode, number> = { strict: 0, balanced: 1, 'full-allow': 2 };
+export type RemoteCeiling = AutonomyMode | 'match';
+export function clamp(desktop: AutonomyMode, ceiling: RemoteCeiling): AutonomyMode {
+  if (ceiling === 'match') return desktop;
+  return ORDER[ceiling] < ORDER[desktop] ? ceiling : desktop;
+}
