@@ -99,7 +99,7 @@ function ToolCard({ item }: { item: ToolItem }): JSX.Element {
         className="w-full flex items-center justify-between gap-2 px-2.5 py-2 text-xs min-h-[44px] hover:bg-bg/40"
       >
         <span className="flex items-center gap-2 min-w-0 flex-1">
-          <span className="w-6 h-6 rounded bg-accent/10 text-accent flex items-center justify-center flex-shrink-0">
+          <span className="w-5 h-5 rounded bg-accent/10 text-accent flex items-center justify-center flex-shrink-0">
             <ToolIcon name={desc.icon} className="w-3 h-3" />
           </span>
           <span className="flex flex-col min-w-0 text-left">

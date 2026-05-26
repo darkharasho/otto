@@ -51,7 +51,30 @@ async function main() {
   await mkdir(readmeOutDir, { recursive: true });
   await sharp(master).resize(256, 256).png().toFile(join(readmeOutDir, 'otto-logo.png'));
 
-  console.log('Wrote build/icon.{png,ico,icns} and public/img/otto-logo.png');
+  // PWA / iOS home-screen icon: 512x512 with the brand mark inset on Otto's
+  // dark surface so iOS's rounded-corner mask doesn't clip the glyph and the
+  // icon has the same safe-area padding Apple's HIG expects (~12%).
+  const PWA_SIZE = 512;
+  const PWA_INSET = Math.round(PWA_SIZE * 0.76); // ~12% padding on each side
+  const inner = await sharp(master)
+    .resize(PWA_INSET, PWA_INSET, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .png()
+    .toBuffer();
+  const pwaIcon = await sharp({
+    create: {
+      width: PWA_SIZE,
+      height: PWA_SIZE,
+      channels: 4,
+      // Matches manifest theme/background_color (#0d0d0e).
+      background: { r: 0x0d, g: 0x0d, b: 0x0e, alpha: 1 },
+    },
+  })
+    .composite([{ input: inner, gravity: 'center' }])
+    .png()
+    .toBuffer();
+  await writeFile(join(repoRoot, 'src', 'renderer-remote', 'otto-logo.png'), pwaIcon);
+
+  console.log('Wrote build/icon.{png,ico,icns}, public/img/otto-logo.png, and src/renderer-remote/otto-logo.png');
 }
 
 main().catch((err) => {
