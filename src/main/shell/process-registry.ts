@@ -16,6 +16,7 @@ export interface RunningProcess {
   sessionId: string;
   messageId: string;
   startedAt: number;
+  exitedAt: number | null;
   outputBuffer: OutputEntry[];
   outputBytes: number;
   status: 'running' | 'exited' | 'killed';
@@ -32,11 +33,17 @@ const KILLALL_GRACE_MS = 2_000;
 export class ProcessRegistry {
   private readonly processes = new Map<string, RunningProcess>();
   private readonly children = new Map<string, ShellChild>();
+  private readonly now: () => number;
+  private readonly graceMs: number;
 
   constructor(
     private readonly emit: (e: SessionEvent) => void,
-    private readonly factory: SpawnFactory
-  ) {}
+    private readonly factory: SpawnFactory,
+    opts: { now?: () => number; graceMs?: number } = {},
+  ) {
+    this.now = opts.now ?? Date.now;
+    this.graceMs = opts.graceMs ?? 5 * 60_000;
+  }
 
   spawn(args: {
     sessionId: string;
@@ -44,6 +51,7 @@ export class ProcessRegistry {
     command: string;
     cwd: string;
   }): RunningProcess {
+    this.sweep();
     const child = this.factory(args.command, args.cwd);
     const handle = randomUUID();
     const proc: RunningProcess = {
@@ -54,6 +62,7 @@ export class ProcessRegistry {
       sessionId: args.sessionId,
       messageId: args.messageId,
       startedAt: Date.now(),
+      exitedAt: null,
       outputBuffer: [],
       outputBytes: 0,
       status: 'running',
@@ -92,6 +101,8 @@ export class ProcessRegistry {
         signal: signal ?? null,
       });
       this.children.delete(handle);
+      const proc = this.processes.get(handle);
+      if (proc) proc.exitedAt = this.now();
     });
 
     return proc;
@@ -173,8 +184,17 @@ export class ProcessRegistry {
     }
   }
 
-  get(handle: string): RunningProcess | null {
-    return this.processes.get(handle) ?? null;
+  get(handle: string): RunningProcess | undefined {
+    return this.processes.get(handle);
+  }
+
+  sweep(): void {
+    const cutoff = this.now() - this.graceMs;
+    for (const [handle, proc] of this.processes) {
+      if (proc.exitedAt !== null && proc.exitedAt < cutoff) {
+        this.processes.delete(handle);
+      }
+    }
   }
 
   private onChunk(handle: string, stream: 'stdout' | 'stderr', chunk: Buffer): void {

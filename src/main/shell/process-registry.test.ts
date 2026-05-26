@@ -150,3 +150,23 @@ describe('ProcessRegistry.killAll', () => {
     expect(killSpies[1]).toHaveBeenCalledWith('SIGTERM');
   });
 });
+
+describe('ProcessRegistry exit eviction', () => {
+  it('evicts exited processes from this.processes after the grace period', async () => {
+    const now = { ms: 0 };
+    const events: SessionEvent[] = [];
+    const spawned: FakeChild[] = [];
+    const factory = (): ShellChild => { const c = new FakeChild(); spawned.push(c); return c; };
+    const registry = new ProcessRegistry((e) => events.push(e), factory, { now: () => now.ms, graceMs: 1000 });
+
+    const p = registry.spawn({ sessionId: 's1', messageId: 'm1', command: 'x', cwd: '/tmp' });
+    spawned[0]!.finish(0);
+    await spawned[0]!.exited;
+    // After exit, entry is still queryable during the grace period.
+    expect(registry.get(p.handle)).toBeDefined();
+    // Advance past grace and sweep.
+    now.ms = 2000;
+    registry.sweep();
+    expect(registry.get(p.handle)).toBeUndefined();
+  });
+});
