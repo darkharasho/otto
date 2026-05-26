@@ -33,6 +33,15 @@ export type ContentBlock =
       heuristics: number;
       promoted: number;
       demoted: number;
+    }
+  | {
+      type: 'image-ref';
+      id: string;
+      sessionId: string;
+      path: string;
+      width: number;
+      height: number;
+      mimeType: 'image/png';
     };
 
 export interface BaseMessage {

@@ -7,6 +7,28 @@ import {
   type AssistantMessage,
   type ContentBlock,
 } from '@shared/messages';
+import { consumeScreenshotRefs } from './sdk-client';
+
+function normalizeImageBlocks(callId: string, result: unknown): unknown {
+  if (typeof result !== 'object' || result === null) return result;
+  const r = result as { content?: unknown[] };
+  if (!Array.isArray(r.content)) return result;
+  const refs = consumeScreenshotRefs(callId);
+  if (!refs) return result;
+  // Replace image blocks in positional order with the recorded refs.
+  let refIdx = 0;
+  const nextContent = r.content.map((block) => {
+    if (
+      typeof block === 'object' && block !== null &&
+      (block as { type?: unknown }).type === 'image' &&
+      refIdx < refs.length
+    ) {
+      return refs[refIdx++];
+    }
+    return block;
+  });
+  return { ...r, content: nextContent };
+}
 
 export type SdkStreamEvent =
   | { type: 'message-start' }
@@ -128,10 +150,11 @@ export class SessionManager {
             break;
           }
           case 'tool-call-result': {
+            const normalizedResult = normalizeImageBlocks(ev.callId, ev.result);
             assistant.content.push({
               type: 'tool_result',
               callId: ev.callId,
-              result: ev.result,
+              result: normalizedResult,
               isError: ev.isError,
             });
             this.emit({
@@ -139,7 +162,7 @@ export class SessionManager {
               sessionId,
               messageId: assistant.id,
               callId: ev.callId,
-              result: ev.result,
+              result: normalizedResult,
               isError: ev.isError,
             });
             break;

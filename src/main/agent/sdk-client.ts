@@ -27,6 +27,21 @@ import { tmpdir } from 'node:os';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
+interface CallRefs { refs: import('@shared/messages').ContentBlock[]; }
+const screenshotRefsByCall = new Map<string, CallRefs>();
+
+export function consumeScreenshotRefs(callId: string): import('@shared/messages').ContentBlock[] | null {
+  const entry = screenshotRefsByCall.get(callId);
+  if (!entry) return null;
+  screenshotRefsByCall.delete(callId);
+  return entry.refs;
+}
+
+// Test seam: lets session.test.ts seed refs without running the full screenshot path.
+export function __setScreenshotRefsForTest(callId: string, refs: import('@shared/messages').ContentBlock[]): void {
+  screenshotRefsByCall.set(callId, { refs });
+}
+
 /**
  * In packaged builds, the @anthropic-ai/claude-agent-sdk is asarUnpacked so its
  * bundled cli.js can be read by a child process. We also can't rely on a `node`
@@ -335,26 +350,41 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
           const captured = await withSelfHidden(() => capture(sArgs, getPlatformAdapter()));
           const tiled = await tileIfNeeded(captured.bytes, MAX_SCREENSHOT_EDGE, MAX_SCREENSHOT_TILES);
           const savedPath = await save(captured.bytes, ctx.sessionId, ctx.getConfigDir());
+          // Capture refs in the call map so session.ts can rewrite the published event.
+          // Filename stem == id; derive from savedPath so disk + ref agree.
+          const baseId = savedPath.split('/').pop()!.replace(/\.png$/, '');
+          const refs: import('@shared/messages').ContentBlock[] = tiled.tiles.map(() => ({
+            type: 'image-ref' as const,
+            id: baseId,
+            sessionId: ctx.sessionId,
+            path: savedPath,
+            width: captured.width,
+            height: captured.height,
+            mimeType: 'image/png' as const,
+          }));
+          screenshotRefsByCall.set(callId, { refs });
+          // Bytes for the current turn's API call (transient — released after yield).
+          const tilesForApi = tiled.tiles.map((tile) => ({
+            type: 'image' as const,
+            data: tile.bytes.toString('base64'),
+            mimeType: 'image/png' as const,
+          }));
           const meta = {
             path: savedPath,
             width: captured.width,
             height: captured.height,
             monitors: captured.monitors,
-            tiles: tiled.tiles.map((t, index) => ({
+            tiles: tiled.tiles.map((tile, index) => ({
               index,
-              x: captured.origin.x + t.x,
-              y: captured.origin.y + t.y,
-              w: t.w,
-              h: t.h,
+              x: captured.origin.x + tile.x,
+              y: captured.origin.y + tile.y,
+              w: tile.w,
+              h: tile.h,
             })),
           };
           return {
             content: [
-              ...tiled.tiles.map((t) => ({
-                type: 'image' as const,
-                data: t.bytes.toString('base64'),
-                mimeType: 'image/png',
-              })),
+              ...tilesForApi,
               { type: 'text' as const, text: JSON.stringify(meta) },
             ],
           };

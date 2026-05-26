@@ -7,6 +7,7 @@ import { Repo } from '../db/repo';
 import { SessionManager, type SdkClient, type SdkStreamEvent, type SdkTurn } from './session';
 import type { SessionEvent } from '@shared/ipc-contract';
 import { SessionBus, type RemoteOutbound } from '../remote/session-bus';
+import { __setScreenshotRefsForTest } from './sdk-client';
 
 let dir: string;
 let repo: Repo;
@@ -142,6 +143,46 @@ describe('SessionManager', () => {
     const { sessionId } = await manager.start({});
     await manager.send({ sessionId, text: 'first prompt here' });
     expect(repo.getSession(sessionId)?.title).toBe('first prompt here');
+  });
+
+  it('rewrites image blocks in tool_result.result.content to image-ref blocks', async () => {
+    // Override fakeSdk for this test to yield a tool-call-result with inline image content.
+    (fakeSdk.sendTurn as ReturnType<typeof vi.fn>).mockImplementationOnce((_sid, _text, signal) => ({
+      signal,
+      async *events() {
+        yield { type: 'message-start' };
+        yield { type: 'tool-call-start', callId: 'cs-1', name: 'screenshot', input: {} };
+        yield {
+          type: 'tool-call-result',
+          callId: 'cs-1',
+          isError: false,
+          result: {
+            content: [
+              { type: 'image', data: 'BASE64DATA', mimeType: 'image/png' },
+              { type: 'text', text: '{}' },
+            ],
+          },
+        };
+        yield { type: 'message-end' };
+        yield { type: 'done' };
+      },
+    }));
+
+    // Seed the per-call ref map as the screenshot tool would have.
+    __setScreenshotRefsForTest('cs-1', [
+      { type: 'image-ref', id: 'img1', sessionId: 'sdk-1', path: '/tmp/img1.png', width: 100, height: 50, mimeType: 'image/png' },
+    ]);
+
+    const { sessionId } = await manager.start({});
+    await manager.send({ sessionId, text: 'go' });
+
+    const result = events.find((e) => e.type === 'tool-call-result') as Extract<SessionEvent, { type: 'tool-call-result' }>;
+    expect(result).toBeDefined();
+    const content = (result.result as { content: unknown[] }).content;
+    expect((content[0] as { type: string }).type).toBe('image-ref');
+    expect((content[0] as { id: string }).id).toBe('img1');
+    // Inline base64 must be gone.
+    expect(JSON.stringify(content)).not.toContain('BASE64DATA');
   });
 });
 

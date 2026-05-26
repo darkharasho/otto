@@ -95,6 +95,19 @@ describe('SessionBus ring/history', () => {
   });
 });
 
+describe('SessionBus byte cap', () => {
+  it('drops oldest events when ring exceeds byte cap', () => {
+    const bus = new SessionBus({ maxBytesPerSession: 1024 });
+    for (let i = 0; i < 100; i++) {
+      bus.publish('s1', { type: 'event', kind: 'noise', payload: 'x'.repeat(64) });
+    }
+    const { events } = bus.history('s1', 0);
+    const totalBytes = events.reduce((sum, e) => sum + JSON.stringify(e).length, 0);
+    expect(totalBytes).toBeLessThanOrEqual(1024 * 2); // generous upper bound (estimator slack)
+    expect(events.length).toBeGreaterThan(0);
+  });
+});
+
 describe('SessionBus input queue', () => {
   it('serializes concurrent enqueues per session', async () => {
     const order: string[] = [];

@@ -61,4 +61,17 @@ describe('SystemMessage', () => {
     ]);
     expect(isSystemMessage(sys)).toBe(true);
   });
+
+  it('accepts an image-ref content block', () => {
+    const block: ContentBlock = {
+      type: 'image-ref',
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      sessionId: 's1',
+      path: '/tmp/screenshots/s1/foo.png',
+      width: 1920,
+      height: 1080,
+      mimeType: 'image/png',
+    };
+    expect(block.type).toBe('image-ref');
+  });
 });
