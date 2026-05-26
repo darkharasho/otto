@@ -218,6 +218,23 @@ export function classifyResult(name: string, result: unknown, isError: boolean):
     if (looksLikeMarkdown(result)) return { kind: 'markdown', text: result };
   }
 
+  // image-ref blocks in content array (takes precedence over legacy inline-base64)
+  if (typeof result === 'object' && result !== null && Array.isArray((result as { content?: unknown[] }).content)) {
+    for (const block of (result as { content: unknown[] }).content) {
+      if (
+        typeof block === 'object' && block !== null &&
+        (block as { type?: unknown }).type === 'image-ref'
+      ) {
+        const r = block as { id: string; sessionId: string; width?: number; height?: number };
+        const meta = typeof r.width === 'number' && typeof r.height === 'number'
+          ? `${r.width}×${r.height}` : undefined;
+        return meta !== undefined
+          ? { kind: 'image', src: `otto-image://${r.sessionId}/${r.id}.png`, meta }
+          : { kind: 'image', src: `otto-image://${r.sessionId}/${r.id}.png` };
+      }
+    }
+  }
+
   // SDK image content block
   if (Array.isArray(result)) {
     for (const block of result) {

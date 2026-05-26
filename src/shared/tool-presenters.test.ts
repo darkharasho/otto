@@ -156,4 +156,14 @@ describe('classifyResult', () => {
     const big = { a: { b: { c: 1 } } };
     expect(classifyResult('whatever', big, false)).toEqual({ kind: 'json', value: big });
   });
+  it('classifies a result containing an image-ref block as an image view', () => {
+    const result = {
+      content: [
+        { type: 'image-ref', id: 'abc', sessionId: 's1', path: '/tmp/x.png', width: 100, height: 50, mimeType: 'image/png' },
+        { type: 'text', text: '{"width":100}' },
+      ],
+    };
+    const view = classifyResult('screenshot', result, false);
+    expect(view).toEqual({ kind: 'image', src: 'otto-image://s1/abc.png', meta: '100×50' });
+  });
 });
