@@ -1,5 +1,7 @@
 import { existsSync, realpathSync } from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { protocol, net } from 'electron';
 
 export type ResolveResult =
   | { ok: true; absPath: string }
@@ -22,4 +24,18 @@ export function resolveImageRequest(rawUrl: string, root: string): ResolveResult
   const rootReal = realpathSync(root);
   if (!real.startsWith(rootReal + path.sep)) return { ok: false, status: 404 };
   return { ok: true, absPath: real };
+}
+
+export function registerOttoImageSchemePrivileges(): void {
+  protocol.registerSchemesAsPrivileged([
+    { scheme: 'otto-image', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  ]);
+}
+
+export function registerOttoImageProtocol(root: string): void {
+  protocol.handle('otto-image', (req) => {
+    const r = resolveImageRequest(req.url, root);
+    if (!r.ok) return new Response(null, { status: 404 });
+    return net.fetch(pathToFileURL(r.absPath).toString());
+  });
 }

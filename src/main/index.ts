@@ -88,9 +88,11 @@ async function startElectron(): Promise<void> {
   const { loadRemoteSettings, saveRemoteSettings } = await import('./remote/settings');
   const { ImageCache } = await import('./image-cache/cache');
   const { registerImageProtocolPrivileges, registerImageProtocolHandler } = await import('./image-cache/protocol');
+  const { registerOttoImageSchemePrivileges, registerOttoImageProtocol } = await import('./screenshot/protocol');
   const { randomBytes } = await import('node:crypto');
 
   registerImageProtocolPrivileges();
+  registerOttoImageSchemePrivileges();
 
   const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
 
@@ -106,6 +108,7 @@ async function startElectron(): Promise<void> {
 
   const imageCache = new ImageCache({ cacheDir: path.join(ottoConfigDir, 'image-cache') });
   registerImageProtocolHandler(imageCache);
+  registerOttoImageProtocol(path.join(ottoConfigDir, 'screenshots'));
 
   let db;
   try {
