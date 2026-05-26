@@ -1,7 +1,12 @@
-Version v0.5.6
+Version v0.5.7
 
 UI polish:
-- **Mobile remote: tool-card icon has more breathing room.** The accent chip around the icon went from `w-5` to `w-6`, doubling the padding around the glyph so it stops feeling cramped at the edge of the chip.
+- **Mobile remote: home-screen icon now has proper safe-area padding.** The PWA / apple-touch-icon was a 256×256 PNG with the Otto mark touching every edge and a transparent background, so iOS slammed it against its rounded mask with no breathing room. Regenerated at 512×512 with the mark inset ~12% on Otto's `#0d0d0e` surface — matches Apple HIG safe-area guidance and renders crisply on retina home screens. Re-add to home screen to pick up the new icon.
+- **Icon pipeline extended.** `scripts/generate-app-icons.mjs` now emits the padded PWA icon alongside the existing app/README outputs, so future regenerations stay in sync.
+
+Version v0.5.6
+
+(Withdrawn — the "padding" tweak in this release targeted the wrong icon. See v0.5.7 for the actual home-screen icon fix.)
 
 Version v0.5.5
 
