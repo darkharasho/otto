@@ -97,6 +97,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build native addon (macOS only)
+        if: matrix.platform == 'mac'
+        run: |
+          cd src/native && npx node-gyp rebuild --target=$(node -e "console.log(require('electron/package.json').version)") --arch=arm64 --dist-url=https://electronjs.org/headers
+          mkdir -p ../../native
+          cp build/Release/darwin_shortcut.node ../../native/
+        # arm64 binary — x64 gets Rosetta translation. For true universal,
+        # a second node-gyp rebuild with --arch=x64 and lipo would be needed.
+
       - name: Build app
         run: pnpm build
         env:

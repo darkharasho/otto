@@ -14,6 +14,7 @@ files:
   - public/svg/**
   - package.json
   - resources/embedding/**
+  - native/darwin_shortcut.node
 
 publish:
   provider: github
@@ -54,6 +55,7 @@ mac:
     teamId: YMPSC6RQ4F
 
 asarUnpack:
+  - "native/darwin_shortcut.node"
   - "**/node_modules/better-sqlite3/**"
   - "**/node_modules/sharp/**"
   # The Claude Agent SDK spawns a child `node` process pointed at its bundled

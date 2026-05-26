@@ -18,3 +18,4 @@ node_modules/.otto-abi-state
 resources/embedding/*
 !resources/embedding/.gitkeep
 src/native/build/
+native/
