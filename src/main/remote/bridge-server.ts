@@ -18,6 +18,8 @@ export interface BridgeServerOpts {
   activeSessionId?: () => string | null;
   screenshotSecret: string;
   loadScreenshot: (id: string) => Promise<Buffer | null>;
+  /** Optional image cache for inline-image markdown. When unset, /image returns 404. */
+  imageCache?: { get(url: string): Promise<{ path: string; contentType: string }> };
   resolveApproval?: (decisionId: string, choice: 'approve' | 'deny') => boolean;
   sendPrompt?: (text: string, origin: 'desktop' | 'remote') => Promise<void>;
   interruptTurn?: (sessionId?: string) => void;
@@ -193,6 +195,7 @@ export class BridgeServer {
       if (req.method === 'GET' && req.url?.startsWith('/sessions/')) return await this.handleSessionMessages(req, res);
       if (req.method === 'GET' && req.url?.startsWith('/sessions')) return await this.handleSessions(req, res);
       if (req.method === 'GET' && req.url?.startsWith('/screenshot/')) return await this.handleScreenshot(req, res);
+      if (req.method === 'GET' && req.url?.startsWith('/image')) return await this.handleImage(req, res);
       // Fall through to PWA static serving for any unmatched GET when a pwaDir
       // is configured. Reserved API prefixes above are matched first so the
       // bridge wire still works even if a static file happens to share a name.
@@ -231,6 +234,34 @@ export class BridgeServer {
     res.statusCode = 200;
     res.setHeader('content-type', 'image/png');
     res.end(buf);
+  }
+
+  private async handleImage(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const cache = this.opts.imageCache;
+    if (!cache) { res.statusCode = 404; res.end('disabled'); return; }
+    const url = new URL(req.url ?? '/', 'http://x');
+    // <img> tags can't send custom headers — the PWA appends the bearer as a
+    // query param, matching how it would supply the WS token on first auth.
+    const token = url.searchParams.get('token') ?? '';
+    if (!token || !(await this.opts.pairing.verify(token))) { res.statusCode = 401; res.end('unauthorized'); return; }
+    const encoded = url.searchParams.get('u');
+    if (!encoded) { res.statusCode = 400; res.end('missing u'); return; }
+    let target: string;
+    try { target = Buffer.from(encoded, 'base64url').toString('utf8'); }
+    catch { res.statusCode = 400; res.end('bad u'); return; }
+    try {
+      const cached = await cache.get(target);
+      const buf = await fsp.readFile(cached.path);
+      res.statusCode = 200;
+      res.setHeader('content-type', cached.contentType);
+      res.setHeader('cache-control', 'public, max-age=86400');
+      res.end(buf);
+    } catch (err) {
+      const status = (err as { status?: number }).status ?? 502;
+      const reason = (err as Error).message ?? 'fetch failed';
+      res.statusCode = status;
+      res.end(reason);
+    }
   }
 
   private static readonly MIME: Record<string, string> = {

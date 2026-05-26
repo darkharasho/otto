@@ -108,6 +108,8 @@ const SYSTEM_PROMPT = [
   '- mark_task_complete(summary): call ONCE when you believe the user\'s request is fully addressed. Triggers a silent background reflection pass; does not affect the chat. Do not call between sub-steps.',
   '- echo(msg), fake-mutate(target), fake-wipe(target): test stubs; ignore unless explicitly asked.',
   '',
+  'INLINE IMAGES: you can embed images in your responses with `![alt](url)`. Use this only when a visual materially helps the user — a screenshot from a guide, an in-game map, a diagram, a UI reference. Never decorative. The URL must come from a WebSearch/WebFetch result (or another tool that returned an image URL); do not invent URLs. Otto downloads, validates, and caches every image locally before rendering, so dead or non-image URLs fail silently.',
+  '',
   'When a screenshot is too large for a single image, it is split into TILES. The meta\'s `tiles` array lists each tile\'s virtual-desktop rect: `[{ index, x, y, w, h }, ...]`, in the same order the image attachments appear. To convert a pixel you see at `(ix, iy)` inside tile N to virtual-desktop coords for clicking: `(tiles[N].x + ix, tiles[N].y + iy)`. The image pixel pitch is always 1:1 with virtual-desktop pixels (no DPR scaling) so no further math is needed. When `tiles.length === 1`, the offset is `(0, 0)` for full-desktop captures and the region/window origin for crops — translation still works the same way.',
   '',
   'GUI workflow — when the user asks you to type, click, or otherwise interact with their screen:',

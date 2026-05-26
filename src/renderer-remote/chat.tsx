@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Menu } from 'lucide-react';
@@ -12,6 +12,7 @@ import { SessionDrawer } from './SessionDrawer';
 import { describeTool, summarizeInput, classifyResult } from '../shared/tool-presenters';
 import { ToolIcon } from './tool-icon';
 import { ToolResultRenderer } from './tool-result-renderer';
+import { toLocalImageSrc } from '../shared/image-src';
 
 type ToolStatus = 'pending' | 'resolved' | 'denied';
 
@@ -155,7 +156,29 @@ function newId(): string {
 // common markdown elements to explicit classes here. Keep this list small —
 // it's just enough to make AI responses readable on the phone (paragraphs,
 // headings, code, lists, links).
-const MD_COMPONENTS = {
+function makeMdComponents(token: string) {
+  return {
+  ...MD_BASE,
+  img: (props: { src?: string; alt?: string }) => {
+    const resolved = toLocalImageSrc(props.src, { kind: 'remote', token });
+    if (!resolved) return null;
+    // span+block: react-markdown wraps images in <p>; <figure> inside <p> is invalid.
+    return (
+      <span className="block my-2 max-w-full">
+        <img
+          src={resolved}
+          alt={props.alt ?? ''}
+          loading="lazy"
+          className="rounded-md border border-border w-full h-auto bg-bg/40"
+        />
+        {props.alt && <span className="block mt-1 text-[10px] text-muted italic">{props.alt}</span>}
+      </span>
+    );
+  },
+  } as const;
+}
+
+const MD_BASE = {
   // The rehype plugin emits <span class="otto-emoji" data-emoji="…" />; render
   // Lucide for mapped emojis and Fluent Emoji High Contrast (via CSS mask)
   // for everything else, matching the desktop look.
@@ -220,6 +243,7 @@ const MD_COMPONENTS = {
 
 export function Chat(): JSX.Element {
   const token = useRemoteStore((s) => s.token);
+  const mdComponents = useMemo(() => makeMdComponents(token ?? ''), [token]);
   const sessionId = useRemoteStore((s) => s.sessionId);
   const setSessionId = useRemoteStore((s) => s.setSessionId);
   const setToken = useRemoteStore((s) => s.setToken);
@@ -623,7 +647,7 @@ export function Chat(): JSX.Element {
             return (
               <div key={it.id} className="flex justify-end">
                 <div className="rounded-md bg-accent/15 text-text px-3 py-2 text-sm break-words max-w-[85%]">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeEmojiIcons]} components={MD_COMPONENTS}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeEmojiIcons]} components={mdComponents}>
                     {it.text}
                   </ReactMarkdown>
                 </div>
@@ -641,7 +665,7 @@ export function Chat(): JSX.Element {
             }
             return (
               <div key={it.id} className="rounded-md bg-surface px-3 py-2 text-sm break-words">
-                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeEmojiIcons]} components={MD_COMPONENTS}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeEmojiIcons]} components={mdComponents}>
                   {it.text}
                 </ReactMarkdown>
                 {!it.done && (

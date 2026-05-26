@@ -42,6 +42,9 @@ const OVERLAY_MD = {
   blockquote: (props: { children?: ReactNode }) => <span className="text-muted">{props.children}</span>,
   hr: () => <span className="text-muted"> — </span>,
   br: () => <> </>,
+  // Overlay clamps to two inline lines; an image would blow the layout. Show
+  // just the alt text so the user still sees Otto referenced something visual.
+  img: (props: { alt?: string }) => (props.alt ? <span className="text-muted italic">[{props.alt}]</span> : null),
 } as const;
 
 function truncate(s: string, n: number): string {

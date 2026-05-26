@@ -7,6 +7,7 @@ import { ProcessCard } from './ProcessCard';
 import { rehypeEmojiIcons } from './rehype-emoji-icons';
 import { EMOJI_TO_ICON, fluentEmojiUrl } from './emoji-icons';
 import { OttoMark } from './OttoMark';
+import { toLocalImageSrc } from '@shared/image-src';
 
 const markdownComponents: Components = {
   // The rehype plugin emits <span class="otto-emoji" data-emoji="…" />; we
@@ -54,6 +55,24 @@ const markdownComponents: Components = {
     return (
       <span className={classes} {...rest}>
         {children}
+      </span>
+    );
+  },
+  img(props) {
+    const { src, alt } = props as { src?: string; alt?: string };
+    const resolved = toLocalImageSrc(src, { kind: 'electron' });
+    if (!resolved) return null;
+    // span+block instead of figure/figcaption — react-markdown wraps images in
+    // <p>, and <figure> as a <p> descendant is invalid HTML.
+    return (
+      <span className="block my-2 max-w-sm">
+        <img
+          src={resolved}
+          alt={alt ?? ''}
+          loading="lazy"
+          className="rounded-md border border-border w-full h-auto bg-bg/40"
+        />
+        {alt && <span className="block mt-1 text-[11px] text-muted italic">{alt}</span>}
       </span>
     );
   },

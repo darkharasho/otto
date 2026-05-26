@@ -226,6 +226,71 @@ describe('BridgeServer /screenshot', () => {
   });
 });
 
+describe('BridgeServer /image', () => {
+  it('returns 404 when no image cache is configured', async () => {
+    const pairing = makeStore();
+    server = new BridgeServer({
+      tailnetIp: '127.0.0.1', pairing, bus: new SessionBus(), pwaDir: null,
+      screenshotSecret: 'x', loadScreenshot: async () => null,
+    });
+    const { port } = await server.start();
+    const res = await fetch(`http://127.0.0.1:${port}/image?u=aGk&token=anything`);
+    expect(res.status).toBe(404);
+  });
+
+  it('requires a valid bearer token in the query string', async () => {
+    const pairing = makeStore();
+    const cacheDir = mkdtempSync(path.join(tmpdir(), 'otto-img-bridge-'));
+    dirs.push(cacheDir);
+    server = new BridgeServer({
+      tailnetIp: '127.0.0.1', pairing, bus: new SessionBus(), pwaDir: null,
+      screenshotSecret: 'x', loadScreenshot: async () => null,
+      imageCache: { get: async () => ({ path: path.join(cacheDir, 'nope'), contentType: 'image/png' }) },
+    });
+    const { port } = await server.start();
+    const u = Buffer.from('https://example.com/a.png', 'utf8').toString('base64url');
+    const res = await fetch(`http://127.0.0.1:${port}/image?u=${u}&token=bogus`);
+    expect(res.status).toBe(401);
+  });
+
+  it('serves cached bytes with the correct content-type when authorized', async () => {
+    const pairing = makeStore();
+    const cacheDir = mkdtempSync(path.join(tmpdir(), 'otto-img-bridge-'));
+    dirs.push(cacheDir);
+    const filePath = path.join(cacheDir, 'sample.png');
+    const bytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
+    await import('node:fs/promises').then((m) => m.writeFile(filePath, bytes));
+    server = new BridgeServer({
+      tailnetIp: '127.0.0.1', pairing, bus: new SessionBus(), pwaDir: null,
+      screenshotSecret: 'x', loadScreenshot: async () => null,
+      imageCache: { get: async () => ({ path: filePath, contentType: 'image/png' }) },
+    });
+    const { port } = await server.start();
+    const { token } = await pairing.issue('iPhone');
+    const u = Buffer.from('https://example.com/a.png', 'utf8').toString('base64url');
+    const res = await fetch(`http://127.0.0.1:${port}/image?u=${u}&token=${encodeURIComponent(token)}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('image/png');
+    const buf = Buffer.from(await res.arrayBuffer());
+    expect(buf.equals(bytes)).toBe(true);
+  });
+
+  it('rejects when the u parameter is missing', async () => {
+    const pairing = makeStore();
+    const cacheDir = mkdtempSync(path.join(tmpdir(), 'otto-img-bridge-'));
+    dirs.push(cacheDir);
+    server = new BridgeServer({
+      tailnetIp: '127.0.0.1', pairing, bus: new SessionBus(), pwaDir: null,
+      screenshotSecret: 'x', loadScreenshot: async () => null,
+      imageCache: { get: async () => ({ path: '', contentType: 'image/png' }) },
+    });
+    const { port } = await server.start();
+    const { token } = await pairing.issue('iPhone');
+    const res = await fetch(`http://127.0.0.1:${port}/image?token=${encodeURIComponent(token)}`);
+    expect(res.status).toBe(400);
+  });
+});
+
 describe('BridgeServer approval bridging', () => {
   it('inbound approval message resolves the DecisionBroker via injected resolver', async () => {
     const pairing = makeStore();

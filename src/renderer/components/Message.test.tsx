@@ -96,6 +96,28 @@ describe('MessageView system memory-update', () => {
   });
 });
 
+describe('MessageView inline markdown images', () => {
+  it('rewrites img src to the otto-img:// scheme and shows the alt caption', () => {
+    const m: Message = {
+      ...baseAssistant,
+      content: [{ type: 'text', text: 'Found it: ![chest location](https://wiki.example.com/chest.png)' }],
+    };
+    render(<MessageView message={m} />);
+    const img = screen.getByAltText('chest location') as HTMLImageElement;
+    expect(img.getAttribute('src')).toMatch(/^otto-img:\/\/\/\?u=/);
+    expect(screen.getByText('chest location')).toBeInTheDocument();
+  });
+
+  it('drops images with non-http(s) src silently', () => {
+    const m: Message = {
+      ...baseAssistant,
+      content: [{ type: 'text', text: 'sketchy ![x](javascript:alert(1))' }],
+    };
+    render(<MessageView message={m} />);
+    expect(screen.queryByAltText('x')).not.toBeInTheDocument();
+  });
+});
+
 describe('MessageView mark_task_complete suppression', () => {
   it('hides mark_task_complete tool_use and its result', () => {
     const m: Message = {

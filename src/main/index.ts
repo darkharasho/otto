@@ -86,7 +86,11 @@ async function startElectron(): Promise<void> {
   const { PairingStore } = await import('./remote/pairing-store');
   const { resolveTailnetEndpoint } = await import('./remote/tailnet');
   const { loadRemoteSettings, saveRemoteSettings } = await import('./remote/settings');
+  const { ImageCache } = await import('./image-cache/cache');
+  const { registerImageProtocolPrivileges, registerImageProtocolHandler } = await import('./image-cache/protocol');
   const { randomBytes } = await import('node:crypto');
+
+  registerImageProtocolPrivileges();
 
   const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
 
@@ -97,6 +101,9 @@ async function startElectron(): Promise<void> {
   app.disableHardwareAcceleration();
 
   await app.whenReady();
+
+  const imageCache = new ImageCache({ cacheDir: path.join(ottoConfigDir, 'image-cache') });
+  registerImageProtocolHandler(imageCache);
 
   let db;
   try {
@@ -362,6 +369,7 @@ async function startElectron(): Promise<void> {
       // a null stub means the route returns 404 if hit early; once the bus
       // fan-out lands, this becomes a read from src/main/screenshot/store.
       loadScreenshot: async () => null,
+      imageCache,
       activeSessionId: () => sessions.getActiveSessionId(),
       resolveApproval: (id, choice) => { broker.resolve(id, choice); return true; },
       sendPrompt: async (text, _origin) => {
