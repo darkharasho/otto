@@ -30,6 +30,7 @@ function getModule(): DarwinShortcutModule {
   ];
   for (const p of candidates) {
     try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       mod = require(p) as DarwinShortcutModule;
       return mod;
     } catch {

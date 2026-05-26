@@ -3,7 +3,7 @@ import { promises as fsp } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { nativeImage, screen } from 'electron';
+import { screen } from 'electron';
 import type {
   CaptureOptions,
   CaptureResult,
@@ -326,7 +326,6 @@ export class DarwinAdapter implements PlatformAdapter {
         // screencapture -R x,y,w,h captures a specific rectangle.
         // -x suppresses the camera shutter sound.
         const r = region;
-        const scale = monitors[0]?.scale || 1;
         await run('screencapture', [
           '-x', '-R', `${r.x},${r.y},${r.w},${r.h}`, tmp,
         ]);
