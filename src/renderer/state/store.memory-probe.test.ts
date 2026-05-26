@@ -92,6 +92,7 @@ describe('memory probe', () => {
         sessionId: 'sD',
         messageId: mid,
         handle: `h${turn}`,
+        pid: turn + 1,
         command: 'foo',
         cwd: '/tmp',
       });
@@ -128,6 +129,7 @@ describe('memory probe', () => {
       sessionId: 'sC',
       messageId: 'mC',
       handle: 'h1',
+      pid: 1,
       command: 'tail -f log',
       cwd: '/tmp',
     });
