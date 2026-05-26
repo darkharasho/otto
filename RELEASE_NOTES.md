@@ -1,3 +1,14 @@
+Version v0.7.1
+
+Features:
+- **Pick which display Otto opens on.** New Settings → General → Window option: *Follow cursor* (default, current behavior) or *Primary display*. If you summon Otto with the hotkey and it lands on the wrong monitor, set this to "Primary display" to pin it.
+- **Cycle Otto between monitors with `Ctrl+Shift+←`/`Ctrl+Shift+→`.** Runtime override while Otto is open — useful when you want to move it without changing the persistent setting.
+
+Fixes:
+- **Native darwin_shortcut addon now bundles in prod builds** so the macOS global hotkey works in packaged builds, not just dev.
+- **Stream drain timeout in the shell executor** prevents the test suite from hanging on CI.
+- **Lint cleanup in the darwin platform files.**
+
 Version v0.7.0
 
 Features:
