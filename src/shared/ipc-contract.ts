@@ -136,7 +136,7 @@ export interface AppInfo {
 }
 
 export interface ShortcutInfoView {
-  desktopEnv: 'kde' | 'gnome' | 'xfce' | 'cinnamon' | 'mate' | 'hyprland' | 'sway' | 'other' | 'unknown';
+  desktopEnv: 'kde' | 'gnome' | 'xfce' | 'cinnamon' | 'mate' | 'hyprland' | 'sway' | 'macos' | 'other' | 'unknown';
   displayServer: 'x11' | 'wayland' | 'unknown';
   mechanism: 'global-shortcut' | 'external-toggle' | 'none';
   registered: boolean;

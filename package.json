@@ -6,7 +6,7 @@
   "private": true,
   "packageManager": "pnpm@9.15.0",
   "scripts": {
-    "predev": "node scripts/ensure-abi.mjs electron",
+    "predev": "node scripts/ensure-abi.mjs electron && node scripts/codesign-dev.mjs",
     "dev": "electron-vite dev",
     "prebuild": "node scripts/ensure-abi.mjs electron && node scripts/fetch-embedding-model.mjs",
     "build": "electron-vite build && vite build --config vite.config.pwa.ts",
@@ -75,6 +75,7 @@
     "eslint-plugin-react": "^7.37.2",
     "eslint-plugin-react-hooks": "^5.0.0",
     "jsdom": "^25.0.1",
+    "node-addon-api": "^8.8.0",
     "png2icons": "^2.0.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",

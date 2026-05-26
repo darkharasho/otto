@@ -51,6 +51,9 @@ export class WindowManager {
       focusable: true,
       show: false,
       backgroundColor: '#00000000',
+      // macOS adds a native shadow to frameless windows, which shows as dark
+      // border artifacts around transparent/rounded content.
+      hasShadow: process.platform !== 'darwin',
       webPreferences: {
         preload: preloadPath,
         contextIsolation: true,

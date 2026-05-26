@@ -33,6 +33,9 @@ function settingsCommands(de: DesktopEnv): Array<[string, string[]]> {
       return [['mate-keybinding-properties', []]];
     case 'xfce':
       return [['xfce4-keyboard-settings', []]];
+    case 'macos':
+      // Deep-link into System Settings > Keyboard > Keyboard Shortcuts.
+      return [['open', ['x-apple.systempreferences:com.apple.Keyboard-Settings.extension']]];
     case 'hyprland':
     case 'sway':
       // No GUI settings panel — these are config-file driven.

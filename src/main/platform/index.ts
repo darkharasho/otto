@@ -1,4 +1,5 @@
 import { LinuxAdapter } from './linux';
+import { DarwinAdapter } from './darwin';
 
 export type DisplayServer = 'x11' | 'wayland' | 'unknown';
 
@@ -80,5 +81,9 @@ export function getPlatformAdapter(): PlatformAdapter {
     cachedAdapter = new LinuxAdapter();
     return cachedAdapter;
   }
-  throw new Error(`Otto skeleton supports linux only (current: ${process.platform})`);
+  if (process.platform === 'darwin') {
+    cachedAdapter = new DarwinAdapter();
+    return cachedAdapter;
+  }
+  throw new Error(`Otto does not support this platform (current: ${process.platform})`);
 }

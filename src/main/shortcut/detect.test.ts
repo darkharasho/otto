@@ -3,24 +3,27 @@ import { detectDesktopEnvironment, detectDisplayServer, supportsAutoRegister } f
 
 describe('detectDesktopEnvironment', () => {
   it('reads KDE from XDG_CURRENT_DESKTOP', () => {
-    expect(detectDesktopEnvironment({ XDG_CURRENT_DESKTOP: 'KDE' })).toBe('kde');
+    expect(detectDesktopEnvironment({ XDG_CURRENT_DESKTOP: 'KDE' }, 'linux')).toBe('kde');
   });
   it('reads KDE from a plasma DESKTOP_SESSION fallback', () => {
     expect(
-      detectDesktopEnvironment({ DESKTOP_SESSION: '/usr/share/wayland-sessions/plasma.desktop' })
+      detectDesktopEnvironment({ DESKTOP_SESSION: '/usr/share/wayland-sessions/plasma.desktop' }, 'linux')
     ).toBe('kde');
   });
   it('reads GNOME', () => {
-    expect(detectDesktopEnvironment({ XDG_CURRENT_DESKTOP: 'GNOME' })).toBe('gnome');
+    expect(detectDesktopEnvironment({ XDG_CURRENT_DESKTOP: 'GNOME' }, 'linux')).toBe('gnome');
   });
   it('matches the first recognized token in a colon list', () => {
-    expect(detectDesktopEnvironment({ XDG_CURRENT_DESKTOP: 'X-Generic:KDE' })).toBe('kde');
+    expect(detectDesktopEnvironment({ XDG_CURRENT_DESKTOP: 'X-Generic:KDE' }, 'linux')).toBe('kde');
   });
   it('returns unknown when nothing is set', () => {
-    expect(detectDesktopEnvironment({})).toBe('unknown');
+    expect(detectDesktopEnvironment({}, 'linux')).toBe('unknown');
   });
   it('returns other for unrecognized tokens', () => {
-    expect(detectDesktopEnvironment({ XDG_CURRENT_DESKTOP: 'BudgieDesktop' })).toBe('other');
+    expect(detectDesktopEnvironment({ XDG_CURRENT_DESKTOP: 'BudgieDesktop' }, 'linux')).toBe('other');
+  });
+  it('returns macos on darwin', () => {
+    expect(detectDesktopEnvironment({}, 'darwin')).toBe('macos');
   });
 });
 

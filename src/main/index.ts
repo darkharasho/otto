@@ -94,11 +94,13 @@ async function startElectron(): Promise<void> {
 
   const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
 
-  // Prefer Wayland native rendering when available; fall back to X11.
-  app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
-  app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations,UseOzonePlatform');
-  // Some Wayland compositors crash the GPU process on transparent windows; disable hw accel.
-  app.disableHardwareAcceleration();
+  if (process.platform === 'linux') {
+    // Prefer Wayland native rendering when available; fall back to X11.
+    app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
+    app.commandLine.appendSwitch('enable-features', 'WaylandWindowDecorations,UseOzonePlatform');
+    // Some Wayland compositors crash the GPU process on transparent windows; disable hw accel.
+    app.disableHardwareAcceleration();
+  }
 
   await app.whenReady();
 
@@ -437,7 +439,7 @@ async function startElectron(): Promise<void> {
     window.toggle(mode);
   };
 
-  const hotkey = new HotkeyManager(platform, onToggle);
+  const hotkey = new HotkeyManager(platform, onToggle, ottoConfigDir);
 
   registerIpcHandlers({
     repo,

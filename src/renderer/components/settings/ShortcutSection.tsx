@@ -90,7 +90,7 @@ export function ShortcutSection() {
 }
 
 function StatusRow({ info }: { info: ShortcutInfoView }) {
-  if (info.registered && info.mechanism === 'global-shortcut') {
+  if (info.registered && (info.mechanism === 'global-shortcut')) {
     return (
       <div className="flex items-center gap-2 text-[11px]">
         <Dot className="text-accent" />
@@ -102,7 +102,11 @@ function StatusRow({ info }: { info: ShortcutInfoView }) {
     return (
       <div className="flex items-center gap-2 text-[11px]">
         <Dot className="text-muted" />
-        <span className="text-text">Manual binding required on Wayland</span>
+        <span className="text-text">
+          {info.desktopEnv === 'macos'
+            ? 'Manual binding required'
+            : 'Manual binding required on Wayland'}
+        </span>
       </div>
     );
   }
@@ -156,7 +160,9 @@ function describeMechanism(info: ShortcutInfoView): string {
     return 'Global hotkey is held for this session.';
   }
   if (info.mechanism === 'external-toggle') {
-    return 'On Wayland, bind a desktop keyboard shortcut to the command below.';
+    return info.desktopEnv === 'macos'
+      ? 'Bind a keyboard shortcut to the command below in System Settings.'
+      : 'On Wayland, bind a desktop keyboard shortcut to the command below.';
   }
   return 'No global hotkey is active. Use the command below to bind one.';
 }
@@ -167,6 +173,7 @@ function hasSettingsLauncher(info: ShortcutInfoView): boolean {
     info.desktopEnv === 'gnome' ||
     info.desktopEnv === 'cinnamon' ||
     info.desktopEnv === 'mate' ||
-    info.desktopEnv === 'xfce'
+    info.desktopEnv === 'xfce' ||
+    info.desktopEnv === 'macos'
   );
 }

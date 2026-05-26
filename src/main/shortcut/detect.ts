@@ -12,12 +12,18 @@ export type DesktopEnv =
   | 'mate'
   | 'hyprland'
   | 'sway'
+  | 'macos'
   | 'other'
   | 'unknown';
 
 export type DisplayServer = 'x11' | 'wayland' | 'unknown';
 
-export function detectDesktopEnvironment(env: NodeJS.ProcessEnv = process.env): DesktopEnv {
+export function detectDesktopEnvironment(
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform,
+): DesktopEnv {
+  if (platform === 'darwin') return 'macos';
+
   // XDG_CURRENT_DESKTOP is a colon-separated list of "current" desktops. We
   // match on the first recognized token. DESKTOP_SESSION is a fallback for
   // older or unusual setups.

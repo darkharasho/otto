@@ -52,6 +52,12 @@ export async function exec(opts: ExecOptions, adapter: PlatformAdapter): Promise
   child.stdout.on('data', onStdout);
   child.stderr.on('data', onStderr);
 
+  // Wait for streams to finish draining before returning. On some platforms
+  // (notably macOS/zsh) the process 'exit' event fires before all pipe data
+  // has been delivered, so we must wait for both 'end' events.
+  const stdoutDone = new Promise<void>((r) => child.stdout.once('end', r));
+  const stderrDone = new Promise<void>((r) => child.stderr.once('end', r));
+
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
@@ -60,6 +66,7 @@ export async function exec(opts: ExecOptions, adapter: PlatformAdapter): Promise
   }, opts.timeoutMs);
 
   const result = await child.exited;
+  await Promise.all([stdoutDone, stderrDone]);
   clearTimeout(timer);
 
   const exitCode = result.exitCode ?? -1;

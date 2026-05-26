@@ -1,6 +1,11 @@
 import { globalShortcut } from 'electron';
 import { logger } from './logger';
 import type { PlatformAdapter } from './platform';
+import {
+  registerDarwinShortcut,
+  unregisterDarwinShortcut,
+  promptAccessibility,
+} from './platform/darwin-shortcut';
 
 export type HotkeyMechanism = 'global-shortcut' | 'external-toggle' | 'none';
 
@@ -19,24 +24,47 @@ export class HotkeyManager {
     mechanism: 'none',
   };
 
+  private usingDarwinNative = false;
+
   constructor(
     private readonly platform: PlatformAdapter,
-    private readonly onTrigger: () => void
+    private readonly onTrigger: () => void,
+    private readonly configDir?: string,
   ) {}
 
   async register(): Promise<HotkeyState> {
     const accelerator = this.platform.defaultHotkey();
-    const display = this.platform.name === 'linux' ? this.platform.detectDisplayServer() : 'n/a';
 
-    if (this.platform.name === 'linux' && display === 'wayland') {
-      // Wayland has no portable global-hotkey API for Electron. We tried
-      // xdg-desktop-portal (blocked for non-sandboxed apps) and KDE's
-      // kglobalaccel D-Bus (registers but KWin doesn't grab the keys). The
-      // working fallback is a Unix-socket toggle server: users bind a DE
-      // keyboard shortcut to `otto toggle`, which talks to that socket. The
-      // Settings UI surfaces the exact command to paste.
+    // macOS: use a native CGEvent tap for global hotkey.
+    // Electron's globalShortcut uses deprecated Carbon APIs that are broken on
+    // macOS 26 Tahoe — register() returns true but the callback never fires.
+    // CGEvent taps require Accessibility permission — prod apps get prompted
+    // automatically; dev builds need manual setup.
+    if (this.platform.name === 'darwin') {
+      const ok = registerDarwinShortcut(accelerator, this.onTrigger);
+      if (ok) {
+        this.usingDarwinNative = true;
+        this.state = { registered: true, failureReason: null, mechanism: 'global-shortcut' };
+        logger.info(`hotkey registered via native CGEvent tap: ${accelerator}`);
+        return this.state;
+      }
+      // Registration failed — most likely missing Accessibility permission.
+      // Prompt the user (shows macOS system dialog on first call).
+      logger.warn('darwin-shortcut: CGEvent tap failed — prompting for Accessibility permission');
+      promptAccessibility();
+      this.state = {
+        registered: false,
+        failureReason: 'Accessibility permission required. Grant it in System Settings > Privacy & Security > Accessibility, then relaunch.',
+        mechanism: 'none',
+      };
+      return this.state;
+    }
+
+    // Wayland: Electron's globalShortcut silently drops events even though
+    // register() returns true. Use the toggle server as the primary mechanism.
+    if (this.platform.name === 'linux' && this.platform.detectDisplayServer() === 'wayland') {
       logger.info(
-        'Wayland detected — running toggle server. Bind a DE keyboard shortcut to: otto toggle'
+        'Wayland detected — using toggle server. Bind a keyboard shortcut to: otto toggle'
       );
       this.state = {
         registered: false,
@@ -60,6 +88,10 @@ export class HotkeyManager {
   }
 
   unregisterAll(): void {
+    if (this.usingDarwinNative) {
+      unregisterDarwinShortcut();
+      this.usingDarwinNative = false;
+    }
     globalShortcut.unregisterAll();
   }
 

@@ -147,6 +147,9 @@ importers:
       jsdom:
         specifier: ^25.0.1
         version: 25.0.1
+      node-addon-api:
+        specifier: ^8.8.0
+        version: 8.8.0
       png2icons:
         specifier: ^2.0.1
         version: 2.0.1
