@@ -34,7 +34,15 @@ export type ContentBlock =
       promoted: number;
       demoted: number;
     }
-  | { type: 'image-ref'; id: string; sessionId: string; path: string; width: number; height: number; mimeType: 'image/png' };
+  | {
+      type: 'image-ref';
+      id: string;
+      sessionId: string;
+      path: string;
+      width: number;
+      height: number;
+      mimeType: 'image/png';
+    };
 
 export interface BaseMessage {
   id: string;
