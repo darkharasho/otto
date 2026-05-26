@@ -181,6 +181,8 @@ export function registerIpcHandlers(deps: {
 
   ipcMain.handle('settings.resetAllSessions', async (): Promise<{ deleted: number }> => {
     const deleted = repo.deleteAllSessions();
+    const { wipeAllScreenshots } = await import('../screenshot/cleanup');
+    await wipeAllScreenshots(path.join(deps.configDir, 'screenshots'));
     return { deleted };
   });
 

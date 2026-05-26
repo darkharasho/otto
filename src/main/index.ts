@@ -136,6 +136,19 @@ async function startElectron(): Promise<void> {
     if (removed > 0) logger.info(`auto-deleted ${removed} session(s) older than ${autoDeleteDays}d`);
   }
 
+  // Non-blocking orphan screenshot sweep: remove any screenshot dirs that have
+  // no corresponding session in the database (e.g. left over from a hard kill).
+  void (async () => {
+    try {
+      const { sweepOrphanScreenshots } = await import('./screenshot/cleanup');
+      const sessions = repo.listSessions();
+      const known = new Set(sessions.map((s: { id: string }) => s.id));
+      await sweepOrphanScreenshots(path.join(ottoConfigDir, 'screenshots'), known);
+    } catch (err) {
+      console.warn('orphan screenshot sweep failed', err);
+    }
+  })();
+
   // app.setLoginItemSettings is a no-op on Linux, so we write an XDG autostart
   // .desktop file there instead. Either path is scheduled off the current tick
   // and swallows errors so a quirky desktop environment can't tank startup or
