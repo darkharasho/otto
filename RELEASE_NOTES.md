@@ -1,3 +1,8 @@
+Version v0.5.6
+
+UI polish:
+- **Mobile remote: tool-card icon has more breathing room.** The accent chip around the icon went from `w-5` to `w-6`, doubling the padding around the glyph so it stops feeling cramped at the edge of the chip.
+
 Version v0.5.5
 
 Memory:
