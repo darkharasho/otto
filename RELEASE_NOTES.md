@@ -1,3 +1,10 @@
+Version v0.6.0
+
+Features:
+- **Otto can inline images in its responses.** When a visual genuinely helps — a screenshot from a game wiki, an in-game map, a diagram pulled from a guide — Otto can now emit `![alt](url)` in its prose and the image renders inline on desktop chat and the mobile remote. The system prompt nudges Otto to use this only when it materially helps (never decorative) and only with URLs that came from a real `WebSearch`/`WebFetch` result, not invented ones.
+- **Local image cache with privacy + SSRF guards.** Every image is downloaded once in the main process, validated (image content-type, ≤5 MB, no SVG, no loopback / RFC1918 / link-local / CGNAT hosts), and cached under `userData/image-cache/`. The renderer points at the cache via a new `otto-img://` Electron scheme on desktop and a token-authed `/image` endpoint on the bridge for the mobile PWA. Third-party hosts never see your IP; cache hits are instant on subsequent renders.
+- **Overlay feed renders image alt text only.** The two-line ticker would have its layout blown out by an inline image, so it falls back to a muted `[alt text]` placeholder so you can still tell Otto cited a visual.
+
 Version v0.5.7
 
 UI polish:
