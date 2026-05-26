@@ -41,7 +41,7 @@ describe('exec', () => {
   it('times out and reports timedOut: true', async () => {
     const res = await exec({ command: 'sleep 10', cwd: tmpdir(), timeoutMs: 100 }, adapter);
     expect(res.timedOut).toBe(true);
-  });
+  }, 10_000);
 
   it('truncates stdout past 1 MB', async () => {
     const res = await exec(

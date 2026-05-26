@@ -66,7 +66,11 @@ export async function exec(opts: ExecOptions, adapter: PlatformAdapter): Promise
   }, opts.timeoutMs);
 
   const result = await child.exited;
-  await Promise.all([stdoutDone, stderrDone]);
+  // Give streams a short window to flush after exit. On macOS/zsh the exit
+  // event fires before all pipe data is delivered, but we don't want to hang
+  // indefinitely if a killed process's streams never close.
+  const drainTimeout = new Promise<void>((r) => setTimeout(r, 1000));
+  await Promise.race([Promise.all([stdoutDone, stderrDone]), drainTimeout]);
   clearTimeout(timer);
 
   const exitCode = result.exitCode ?? -1;
