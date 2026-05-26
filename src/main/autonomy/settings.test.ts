@@ -24,12 +24,34 @@ describe('Settings.load', () => {
     await s.load();
     expect(s.getMode()).toBe('balanced');
     const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
-    expect(written.version).toBe(2);
+    expect(written.version).toBe(3);
     expect(written.autonomy).toEqual({ mode: 'balanced' });
     expect(written.notifications).toEqual({ turnComplete: true, approval: true, sound: false });
     expect(written.startAtLogin).toBe(false);
     expect(written.windowPosition).toBe('bottom-center');
+    expect(written.displayTarget).toBe('cursor');
     expect(written.autoDeleteDays).toBe(0);
+  });
+
+  it('migrates a v2 file forward, defaulting displayTarget to cursor', async () => {
+    writeFileSync(
+      settingsPath(),
+      JSON.stringify({
+        version: 2,
+        autonomy: { mode: 'strict' },
+        notifications: { turnComplete: true, approval: true, sound: false },
+        startAtLogin: false,
+        windowPosition: 'bottom-center',
+        autoDeleteDays: 0,
+        hideOnBlur: false,
+      })
+    );
+    const s = new Settings(settingsPath());
+    await s.load();
+    expect(s.getDisplayTarget()).toBe('cursor');
+    const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
+    expect(written.version).toBe(3);
+    expect(written.displayTarget).toBe('cursor');
   });
 
   it('returns existing mode from a v1 file', async () => {

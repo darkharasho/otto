@@ -153,9 +153,11 @@ async function startElectron(): Promise<void> {
   applyStartAtLogin(settings.getStartAtLogin());
 
   window.setPositionPref(settings.getWindowPosition());
+  window.setDisplayTarget(settings.getDisplayTarget());
   window.setHideOnBlur(settings.getHideOnBlur());
   settings.onChange((snap) => {
     window.setPositionPref(snap.windowPosition);
+    window.setDisplayTarget(snap.displayTarget);
     window.setHideOnBlur(snap.hideOnBlur);
   });
 

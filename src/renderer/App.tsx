@@ -126,6 +126,21 @@ export function App() {
     return () => window.removeEventListener('keydown', handler);
   }, [windowMode, setWindowMode, streaming, activeSession?.id, handleStop]);
 
+  // Ctrl+Shift+Arrow moves Otto across monitors. Right = next, Left = prev.
+  // Chord is uncommon enough not to clash with normal typing.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!e.ctrlKey || !e.shiftKey) return;
+      const direction =
+        e.key === 'ArrowRight' ? 'next' : e.key === 'ArrowLeft' ? 'prev' : null;
+      if (!direction) return;
+      e.preventDefault();
+      void ipc.invoke('window.cycleDisplay', { direction });
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   // Up arrow expands bar→panel to show the current session
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

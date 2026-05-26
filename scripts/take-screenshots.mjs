@@ -62,6 +62,7 @@ const SEED = {
     notifications: { turnComplete: true, approval: true, sound: false },
     startAtLogin: false,
     windowPosition: 'bottom-center',
+    displayTarget: 'cursor',
     autoDeleteDays: 30,
     version: '0.1.0',
   },

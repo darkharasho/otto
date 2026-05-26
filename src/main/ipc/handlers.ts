@@ -85,6 +85,13 @@ export function registerIpcHandlers(deps: {
   });
 
   ipcMain.handle(
+    'window.cycleDisplay',
+    async (_e, args: { direction: 'next' | 'prev' }): Promise<void> => {
+      window.cycleDisplay(args.direction);
+    }
+  );
+
+  ipcMain.handle(
     'autonomy.decide',
     async (
       _e,
@@ -142,6 +149,14 @@ export function registerIpcHandlers(deps: {
     async (_e, args: { position: 'bottom-center' | 'top-center' }): Promise<void> => {
       await settings.setWindowPosition(args.position);
       // Re-position the visible window immediately so the change is felt.
+      if (window.isVisible()) window.show(window.getMode());
+    }
+  );
+
+  ipcMain.handle(
+    'settings.setDisplayTarget',
+    async (_e, args: { target: 'cursor' | 'primary' }): Promise<void> => {
+      await settings.setDisplayTarget(args.target);
       if (window.isVisible()) window.show(window.getMode());
     }
   );

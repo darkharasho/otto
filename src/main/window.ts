@@ -12,11 +12,17 @@ const PANEL_TOP_MARGIN = 48;
 const PANEL_MAX_DISPLAY_RATIO = 0.7;
 
 export type WindowPositionPref = 'bottom-center' | 'top-center';
+export type DisplayTargetPref = 'cursor' | 'primary';
 
 export class WindowManager {
   private window: BrowserWindow | null = null;
   private mode: WindowMode = 'bar';
   private positionPref: WindowPositionPref = 'bottom-center';
+  private displayTarget: DisplayTargetPref = 'cursor';
+  // Runtime-only override from the cycle-display shortcut. Cleared if the
+  // chosen display disappears (cable unplug, suspend/resume). Not persisted —
+  // display IDs aren't stable across reboots on most compositors.
+  private cycledDisplayId: number | null = null;
   private hideOnBlur = false;
   private visibilityListeners: Array<(visible: boolean) => void> = [];
 
@@ -33,6 +39,38 @@ export class WindowManager {
 
   setPositionPref(p: WindowPositionPref): void {
     this.positionPref = p;
+  }
+
+  setDisplayTarget(t: DisplayTargetPref): void {
+    if (this.displayTarget !== t) {
+      // Explicit user choice supersedes any prior cycle override.
+      this.cycledDisplayId = null;
+    }
+    this.displayTarget = t;
+  }
+
+  cycleDisplay(direction: 'next' | 'prev' = 'next'): void {
+    if (!this.window) return;
+    const displays = screen.getAllDisplays();
+    if (displays.length < 2) return;
+    const current = this.pickDisplay();
+    const idx = displays.findIndex((d) => d.id === current.id);
+    const step = direction === 'prev' ? -1 : 1;
+    const nextIdx = (idx + step + displays.length) % displays.length;
+    const next = displays[nextIdx];
+    if (!next) return;
+    this.cycledDisplayId = next.id;
+    this.applyMode(this.mode);
+  }
+
+  private pickDisplay(): Electron.Display {
+    if (this.cycledDisplayId != null) {
+      const match = screen.getAllDisplays().find((d) => d.id === this.cycledDisplayId);
+      if (match) return match;
+      this.cycledDisplayId = null;
+    }
+    if (this.displayTarget === 'primary') return screen.getPrimaryDisplay();
+    return screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   }
 
   setHideOnBlur(enabled: boolean): void {
@@ -144,7 +182,7 @@ export class WindowManager {
   private applyMode(mode: WindowMode): void {
     if (!this.window) return;
     this.mode = mode;
-    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const display = this.pickDisplay();
     const maxPanelHeight = Math.floor(display.workArea.height * PANEL_MAX_DISPLAY_RATIO);
     const height =
       mode === 'bar' ? BAR_HEIGHT : Math.max(PANEL_MIN_HEIGHT, Math.min(maxPanelHeight, 520));
@@ -159,7 +197,7 @@ export class WindowManager {
 
   private repositionBottomCenter(): void {
     if (!this.window) return;
-    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const display = this.pickDisplay();
     const bounds = this.window.getBounds();
     const { x, y } = this.bottomCenter(display.workArea, bounds.width, bounds.height);
     this.window.setBounds({ ...bounds, x, y });

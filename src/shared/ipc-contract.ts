@@ -41,6 +41,7 @@ export type IpcRequest =
   | { channel: 'session.load'; args: SessionLoadArgs; result: Message[] }
   | { channel: 'window.setMode'; args: { mode: 'bar' | 'panel' }; result: void }
   | { channel: 'window.hide'; args: void; result: void }
+  | { channel: 'window.cycleDisplay'; args: { direction: 'next' | 'prev' }; result: void }
   | {
       channel: 'autonomy.decide';
       args: { decisionId: string; decision: 'approve' | 'approve-session' | 'deny' };
@@ -58,6 +59,11 @@ export type IpcRequest =
   | {
       channel: 'settings.setWindowPosition';
       args: { position: 'bottom-center' | 'top-center' };
+      result: void;
+    }
+  | {
+      channel: 'settings.setDisplayTarget';
+      args: { target: 'cursor' | 'primary' };
       result: void;
     }
   | { channel: 'settings.setAutoDeleteDays'; args: { days: number }; result: void }
@@ -150,6 +156,7 @@ export interface SettingsView {
   notifications: { turnComplete: boolean; approval: boolean; sound: boolean };
   startAtLogin: boolean;
   windowPosition: 'bottom-center' | 'top-center';
+  displayTarget: 'cursor' | 'primary';
   autoDeleteDays: number;
   hideOnBlur: boolean;
   version: string;

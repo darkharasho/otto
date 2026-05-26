@@ -2,12 +2,15 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { AutonomyMode } from '@shared/messages';
 
-const CURRENT_VERSION = 2;
+const CURRENT_VERSION = 3;
 const DEFAULT_MODE: AutonomyMode = 'balanced';
 const VALID_MODES: AutonomyMode[] = ['strict', 'balanced', 'full-allow'];
 
 export type WindowPosition = 'bottom-center' | 'top-center';
 export const VALID_POSITIONS: WindowPosition[] = ['bottom-center', 'top-center'];
+
+export type DisplayTarget = 'cursor' | 'primary';
+export const VALID_DISPLAY_TARGETS: DisplayTarget[] = ['cursor', 'primary'];
 
 export interface NotificationPrefs {
   turnComplete: boolean;
@@ -20,6 +23,7 @@ export interface SettingsSnapshot {
   notifications: NotificationPrefs;
   startAtLogin: boolean;
   windowPosition: WindowPosition;
+  displayTarget: DisplayTarget;
   autoDeleteDays: number;
   hideOnBlur: boolean;
 }
@@ -29,17 +33,22 @@ interface SettingsFileV1 {
   autonomy: { mode: AutonomyMode };
 }
 
-interface SettingsFileV2 extends SettingsSnapshot {
+interface SettingsFileV2 extends Omit<SettingsSnapshot, 'displayTarget'> {
   version: 2;
 }
 
-type SettingsFile = SettingsFileV1 | SettingsFileV2;
+interface SettingsFileV3 extends SettingsSnapshot {
+  version: 3;
+}
+
+type SettingsFile = SettingsFileV1 | SettingsFileV2 | SettingsFileV3;
 
 const DEFAULTS: SettingsSnapshot = {
   autonomy: { mode: DEFAULT_MODE },
   notifications: { turnComplete: true, approval: true, sound: false },
   startAtLogin: false,
   windowPosition: 'bottom-center',
+  displayTarget: 'cursor',
   autoDeleteDays: 0,
   hideOnBlur: false,
 };
@@ -88,6 +97,9 @@ export class Settings {
   getWindowPosition(): WindowPosition {
     return this.state.windowPosition;
   }
+  getDisplayTarget(): DisplayTarget {
+    return this.state.displayTarget;
+  }
   getAutoDeleteDays(): number {
     return this.state.autoDeleteDays;
   }
@@ -100,6 +112,7 @@ export class Settings {
       notifications: { ...this.state.notifications },
       startAtLogin: this.state.startAtLogin,
       windowPosition: this.state.windowPosition,
+      displayTarget: this.state.displayTarget,
       autoDeleteDays: this.state.autoDeleteDays,
       hideOnBlur: this.state.hideOnBlur,
     };
@@ -124,6 +137,12 @@ export class Settings {
   async setWindowPosition(position: WindowPosition): Promise<void> {
     if (!VALID_POSITIONS.includes(position)) throw new Error(`invalid position: ${position}`);
     this.state.windowPosition = position;
+    await this.persist();
+  }
+
+  async setDisplayTarget(target: DisplayTarget): Promise<void> {
+    if (!VALID_DISPLAY_TARGETS.includes(target)) throw new Error(`invalid display target: ${target}`);
+    this.state.displayTarget = target;
     await this.persist();
   }
 
@@ -161,8 +180,8 @@ export class Settings {
       this.state = { ...DEFAULTS, autonomy: { mode: m } };
       return 'migrated';
     }
-    if (version === CURRENT_VERSION) {
-      const o = obj as SettingsFileV2;
+    if (version === 2 || version === CURRENT_VERSION) {
+      const o = obj as Omit<SettingsFileV2, 'version'> & Partial<Omit<SettingsFileV3, 'version'>>;
       const m = o.autonomy?.mode;
       if (!m || !VALID_MODES.includes(m)) return false;
       this.state = {
@@ -176,13 +195,16 @@ export class Settings {
         windowPosition: VALID_POSITIONS.includes(o.windowPosition as WindowPosition)
           ? o.windowPosition
           : DEFAULTS.windowPosition,
+        displayTarget: VALID_DISPLAY_TARGETS.includes(o.displayTarget as DisplayTarget)
+          ? (o.displayTarget as DisplayTarget)
+          : DEFAULTS.displayTarget,
         autoDeleteDays:
           Number.isFinite(o.autoDeleteDays) && o.autoDeleteDays >= 0
             ? Math.floor(o.autoDeleteDays)
             : DEFAULTS.autoDeleteDays,
         hideOnBlur: typeof o.hideOnBlur === 'boolean' ? o.hideOnBlur : DEFAULTS.hideOnBlur,
       };
-      return 'ok';
+      return version === CURRENT_VERSION ? 'ok' : 'migrated';
     }
     return false;
   }
@@ -196,7 +218,7 @@ export class Settings {
     const dir = path.dirname(this.filePath);
     await fs.mkdir(dir, { recursive: true });
     const tmp = `${this.filePath}.tmp`;
-    const payload: SettingsFileV2 = { version: CURRENT_VERSION, ...this.snapshot() };
+    const payload: SettingsFileV3 = { version: CURRENT_VERSION, ...this.snapshot() };
     await fs.writeFile(tmp, JSON.stringify(payload, null, 2));
     await fs.rename(tmp, this.filePath);
   }

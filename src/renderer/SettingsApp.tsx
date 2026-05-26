@@ -126,10 +126,15 @@ function renderSubsection(args: RenderArgs) {
       return (
         <WindowSection
           windowPosition={s.windowPosition}
+          displayTarget={s.displayTarget}
           hideOnBlur={s.hideOnBlur}
           onPositionChange={(position) => {
             patch('windowPosition', position);
             void ipc.invoke('settings.setWindowPosition', { position });
+          }}
+          onDisplayTargetChange={(target) => {
+            patch('displayTarget', target);
+            void ipc.invoke('settings.setDisplayTarget', { target });
           }}
           onHideOnBlurChange={(v) => {
             patch('hideOnBlur', v);
