@@ -171,6 +171,12 @@ describe('buildInputTools', () => {
   });
 });
 
+import { consumeScreenshotRefs } from './sdk-client';
+
+it('consumeScreenshotRefs returns null for unknown call ids', () => {
+  expect(consumeScreenshotRefs('does-not-exist')).toBeNull();
+});
+
 import { buildRecallTool, buildMarkTaskCompleteTool } from './tools';
 
 describe('buildRecallTool', () => {
