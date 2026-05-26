@@ -126,6 +126,22 @@ export function App() {
     return () => window.removeEventListener('keydown', handler);
   }, [windowMode, setWindowMode, streaming, activeSession?.id, handleStop]);
 
+  // Up arrow expands bar→panel to show the current session
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowUp') return;
+      if (windowMode !== 'bar') return;
+      // Only expand if focus is on the input (not mid-typing elsewhere)
+      const input = document.querySelector('input[type="text"]');
+      if (document.activeElement !== input) return;
+      e.preventDefault();
+      setWindowMode('panel');
+      void ipc.invoke('window.setMode', { mode: 'panel' });
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [windowMode, setWindowMode]);
+
   if (windowMode === 'bar') {
     return (
       <div key={`bar-${enterTick}`} className="w-screen h-screen p-1 otto-enter">
