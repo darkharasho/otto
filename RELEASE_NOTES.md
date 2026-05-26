@@ -1,3 +1,16 @@
+Version v0.7.0
+
+Features:
+- **macOS support.** Otto now runs natively on macOS with a full platform adapter — screenshots via `screencapture`, input via CoreGraphics/AppleScript, window geometry via System Events, and shell via zsh. Works on macOS 26 Tahoe.
+- **Native global hotkey on macOS.** A custom Obj-C++ Node addon uses CGEvent taps for reliable global hotkey registration, bypassing Electron's broken Carbon-based `globalShortcut` on macOS 26. Prod: `Ctrl+Shift+Space`. Dev: `Ctrl+Shift+Cmd+Space`. Requires Accessibility + Input Monitoring permissions.
+- **Smarter reflection.** The learning system now errs on the side of saving rather than skipping. Platform mismatches, tool corrections, and course changes are explicitly flagged as high-value learnings. Long back-and-forth sessions now trigger mid-conversation reflection instead of waiting for idle timeout.
+
+Fixes:
+- **Shell executor race condition.** On macOS, `child.exited` resolves before stdout data events fire. Now waits for stream `end` events before returning output.
+- **Frameless window shadow artifacts on macOS.** Disabled native shadow on transparent frameless windows to prevent dark border rendering.
+- **Tray icon too large on macOS.** Resized to 16×16 pt to match macOS menu bar expectations.
+- **Linux-only Ozone/Wayland switches no longer applied on macOS.**
+
 Version v0.6.0
 
 Features:
