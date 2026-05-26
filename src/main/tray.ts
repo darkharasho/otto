@@ -20,7 +20,8 @@ export class TrayManager {
     this.badged = badged;
     if (!this.tray) return;
     try {
-      const img = nativeImage.createFromPath(this.iconPath());
+      let img = nativeImage.createFromPath(this.iconPath());
+      if (process.platform === 'darwin') img = img.resize({ width: 16, height: 16 });
       if (!img.isEmpty()) this.tray.setImage(img);
     } catch (err) {
       logger.warn(`tray setImage failed: ${err instanceof Error ? err.message : err}`);
@@ -34,6 +35,11 @@ export class TrayManager {
       if (icon.isEmpty()) {
         logger.warn(`tray icon empty at ${this.iconPath()}`);
         return;
+      }
+      // macOS menu bar expects 16×16 pt (32×32 px @2x). The generated PNGs are
+      // 32×32 base which renders too large. Resize to the correct dimensions.
+      if (process.platform === 'darwin') {
+        icon = icon.resize({ width: 16, height: 16 });
       }
     } catch (err) {
       logger.warn(`tray icon load failed: ${err instanceof Error ? err.message : err}`);
