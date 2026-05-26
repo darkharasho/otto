@@ -353,13 +353,13 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
           // Capture refs in the call map so session.ts can rewrite the published event.
           // Filename stem == id; derive from savedPath so disk + ref agree.
           const baseId = savedPath.split('/').pop()!.replace(/\.png$/, '');
-          const refs: import('@shared/messages').ContentBlock[] = tiled.tiles.map((tile, idx) => ({
+          const refs: import('@shared/messages').ContentBlock[] = tiled.tiles.map(() => ({
             type: 'image-ref' as const,
-            id: tiled.tiles.length === 1 ? baseId : `${baseId}-${idx}`,
+            id: baseId,
             sessionId: ctx.sessionId,
             path: savedPath,
-            width: tile.w,
-            height: tile.h,
+            width: captured.width,
+            height: captured.height,
             mimeType: 'image/png' as const,
           }));
           screenshotRefsByCall.set(callId, { refs });
