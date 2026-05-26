@@ -16,7 +16,7 @@ type InputHandler = (m: RemoteInbound) => Promise<void>;
 
 interface RingEntry { seq: number; event: RemoteOutbound; t: number }
 
-export interface SessionBusOpts { ringSize?: number; now?: () => number }
+export interface SessionBusOpts { ringSize?: number; maxBytesPerSession?: number; now?: () => number }
 
 export class SessionBus {
   private readonly subs = new Map<string, Set<Subscriber>>();
@@ -27,10 +27,13 @@ export class SessionBus {
   private readonly inputRunning = new Map<string, boolean>();
   private readonly handlers = new Map<string, InputHandler>();
   private readonly ringSize: number;
+  private readonly maxBytesPerSession: number;
+  private readonly ringBytes = new Map<string, number>();
   private readonly now: () => number;
 
   constructor(opts: SessionBusOpts = {}) {
     this.ringSize = opts.ringSize ?? 200;
+    this.maxBytesPerSession = opts.maxBytesPerSession ?? 8 * 1024 * 1024;
     this.now = opts.now ?? Date.now;
   }
 
@@ -56,10 +59,16 @@ export class SessionBus {
     const seq = (this.seqs.get(sessionId) ?? 0) + 1;
     this.seqs.set(sessionId, seq);
     const entry: RingEntry = { seq, event, t: this.now() };
+    const entryBytes = JSON.stringify(entry).length;
     let ring = this.ring.get(sessionId);
     if (!ring) { ring = []; this.ring.set(sessionId, ring); }
     ring.push(entry);
-    if (ring.length > this.ringSize) ring.shift();
+    let bytes = (this.ringBytes.get(sessionId) ?? 0) + entryBytes;
+    while ((ring.length > this.ringSize || bytes > this.maxBytesPerSession) && ring.length > 0) {
+      const dropped = ring.shift()!;
+      bytes -= JSON.stringify(dropped).length;
+    }
+    this.ringBytes.set(sessionId, Math.max(0, bytes));
     const subs = this.subs.get(sessionId);
     if (subs) {
       for (const s of subs) {
