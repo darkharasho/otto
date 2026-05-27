@@ -48,6 +48,17 @@ export interface SessionLoadArgs {
   sessionId: string;
 }
 
+export interface SessionEnsureForSubmitArgs {
+  current: string | null;
+  model?: string;
+}
+
+export interface SessionEnsureForSubmitResult {
+  sessionId: string;
+  isNew: boolean;
+  reason: 'reused' | 'idle-timeout' | 'manual' | 'no-session';
+}
+
 export type IpcRequest =
   | { channel: 'session.start'; args: SessionStartArgs; result: SessionStartResult }
   | { channel: 'session.send'; args: SessionSendArgs; result: void }
@@ -55,6 +66,11 @@ export type IpcRequest =
   | { channel: 'session.interrupt'; args: SessionInterruptArgs; result: void }
   | { channel: 'session.list'; args: void; result: SessionMeta[] }
   | { channel: 'session.load'; args: SessionLoadArgs; result: Message[] }
+  | {
+      channel: 'session.ensureForSubmit';
+      args: SessionEnsureForSubmitArgs;
+      result: SessionEnsureForSubmitResult;
+    }
   | { channel: 'window.setMode'; args: { mode: 'bar' | 'panel' }; result: void }
   | { channel: 'window.hide'; args: void; result: void }
   | { channel: 'window.cycleDisplay'; args: { direction: 'next' | 'prev' }; result: void }
@@ -84,6 +100,7 @@ export type IpcRequest =
     }
   | { channel: 'settings.setAutoDeleteDays'; args: { days: number }; result: void }
   | { channel: 'settings.setHideOnBlur'; args: { enabled: boolean }; result: void }
+  | { channel: 'settings.setNewConversationIdleTimeoutMinutes'; args: { minutes: number }; result: void }
   | { channel: 'settings.openLogsDir'; args: void; result: void }
   | { channel: 'settings.resetAllSessions'; args: void; result: { deleted: number } }
   | { channel: 'shell.kill'; args: { handle: string }; result: { killed: boolean } }
@@ -177,6 +194,7 @@ export interface SettingsView {
   displayTarget: 'cursor' | 'primary';
   autoDeleteDays: number;
   hideOnBlur: boolean;
+  newConversation: { idleTimeoutMinutes: number };
   version: string;
 }
 
