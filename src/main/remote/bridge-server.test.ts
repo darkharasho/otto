@@ -183,12 +183,12 @@ describe('BridgeServer WS auth', () => {
   it('routes inbound prompt to sendPrompt callback', async () => {
     const pairing = makeStore();
     const bus = new SessionBus();
-    const seen: Array<{ text: string; origin: string }> = [];
+    const seen: Array<{ text: string; origin: string; attachments: unknown[] }> = [];
     server = new BridgeServer({
       tailnetIp: '127.0.0.1', pairing, bus, pwaDir: null,
       screenshotSecret: 'x', loadScreenshot: async () => null,
       activeSessionId: () => 's1',
-      sendPrompt: async (text, origin) => { seen.push({ text, origin }); },
+      sendPrompt: async (text, origin, attachments) => { seen.push({ text, origin, attachments }); },
     });
     const { port } = await server.start();
     const { token } = await pairing.issue('iPhone');
@@ -204,7 +204,99 @@ describe('BridgeServer WS auth', () => {
       });
     });
     ws.close();
-    expect(seen).toEqual([{ text: 'hi from phone', origin: 'remote' }]);
+    expect(seen).toEqual([{ text: 'hi from phone', origin: 'remote', attachments: [] }]);
+  });
+});
+
+describe('BridgeServer WS attach + prompt with attachmentIds', () => {
+  it('attach frame saves the image and attach_ok comes back; subsequent prompt with attachmentId forwards the ref to sendPrompt', async () => {
+    // Minimal 1×1 PNG bytes.
+    const png = Buffer.from(
+      '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a4944415478da6300010000000500010d0a2db40000000049454e44ae426082',
+      'hex',
+    );
+
+    // Mock electron's nativeImage so saveUserUpload works outside Electron.
+    const { vi } = await import('vitest');
+    vi.doMock('electron', () => ({
+      nativeImage: {
+        createFromBuffer: () => ({ getSize: () => ({ width: 1, height: 1 }) }),
+      },
+    }));
+    vi.resetModules();
+
+    // Re-import BridgeServer after module reset so it picks up the mocked electron.
+    const { BridgeServer: BridgeServerMocked } = await import('./bridge-server');
+
+    const pairing = makeStore();
+    const bus = new SessionBus();
+    const configDir = mkdtempSync(path.join(tmpdir(), 'otto-bridge-attach-'));
+    dirs.push(configDir);
+
+    const sendPromptCalls: Array<{ text: string; origin: string; attachments: unknown[] }> = [];
+    const srv = new BridgeServerMocked({
+      tailnetIp: '127.0.0.1', pairing, bus, pwaDir: null,
+      screenshotSecret: 'x', loadScreenshot: async () => null,
+      configDir,
+      sendPrompt: async (text, origin, attachments) => { sendPromptCalls.push({ text, origin, attachments }); },
+    });
+    const { port } = await srv.start();
+    const { token } = await pairing.issue('iPhone');
+
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    let attachOkRef: Record<string, unknown> | null = null;
+
+    await new Promise<void>((resolve, reject) => {
+      ws.on('error', reject);
+      ws.on('open', () => ws.send(JSON.stringify({ v: 1, type: 'auth', token })));
+      ws.on('message', (data) => {
+        const m = JSON.parse(data.toString()) as Record<string, unknown>;
+        if (m.type === 'auth_ok') {
+          // Send attach frame.
+          ws.send(JSON.stringify({
+            v: 1,
+            type: 'attach',
+            sessionId: 'sess-mobile',
+            mimeType: 'image/png',
+            bytesBase64: png.toString('base64'),
+            clientCorrelationId: 'corr-1',
+          }));
+          return;
+        }
+        if (m.type === 'attach_ok') {
+          attachOkRef = m.ref as Record<string, unknown>;
+          // Send prompt with the attachment id.
+          ws.send(JSON.stringify({
+            v: 1,
+            type: 'prompt',
+            sessionId: 'sess-mobile',
+            text: 'look at this',
+            attachmentIds: [(m.ref as Record<string, unknown>).id],
+          }));
+          setTimeout(resolve, 100);
+          return;
+        }
+        if (m.type === 'attach_err') {
+          reject(new Error(`attach_err: ${String(m.message)}`));
+        }
+      });
+    });
+
+    ws.close();
+    await srv.stop();
+
+    vi.doUnmock('electron');
+    vi.resetModules();
+
+    expect(attachOkRef).toBeTruthy();
+    expect(attachOkRef!.type).toBe('image-ref');
+    expect(attachOkRef!.source).toBe('user');
+    expect(sendPromptCalls).toHaveLength(1);
+    expect(sendPromptCalls[0]!.text).toBe('look at this');
+    expect(sendPromptCalls[0]!.origin).toBe('remote');
+    expect(Array.isArray(sendPromptCalls[0]!.attachments)).toBe(true);
+    expect((sendPromptCalls[0]!.attachments as unknown[]).length).toBe(1);
+    expect((sendPromptCalls[0]!.attachments as Array<Record<string, unknown>>)[0]!.id).toBe(attachOkRef!.id);
   });
 });
 

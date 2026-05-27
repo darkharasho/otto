@@ -6,7 +6,8 @@ export type RemoteOutbound =
   | { type: 'error'; code: string; message: string; fatal: boolean };
 
 export type RemoteInbound =
-  | { type: 'prompt'; sessionId: string; text: string; origin: 'desktop' | 'remote' }
+  | { type: 'prompt'; sessionId: string; text: string; origin: 'desktop' | 'remote'; attachmentIds?: string[] }
+  | { type: 'attach'; sessionId: string; mimeType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'; bytesBase64: string; clientCorrelationId: string }
   | { type: 'approval'; decisionId: string; decision: 'approve' | 'deny' }
   | { type: 'interrupt'; sessionId: string };
 

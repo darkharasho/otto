@@ -41,7 +41,8 @@ export type ContentBlock =
       path: string;
       width: number;
       height: number;
-      mimeType: 'image/png';
+      mimeType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
+      source: 'screenshot' | 'user';
     };
 
 export interface BaseMessage {
@@ -88,14 +89,20 @@ function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${counter.toString(36)}`;
 }
 
-export function newUserMessage(text: string): UserMessage {
+export function newUserMessage(
+  text: string,
+  attachments: Array<Extract<ContentBlock, { type: 'image-ref' }>> = [],
+): UserMessage {
+  const content: ContentBlock[] = [];
+  if (text.length > 0) content.push({ type: 'text', text });
+  for (const a of attachments) content.push(a);
   return {
     id: newId('msg'),
     sessionId: null,
     seq: 0,
     createdAt: Date.now(),
     role: 'user',
-    content: [{ type: 'text', text }],
+    content,
   };
 }
 
@@ -127,3 +134,14 @@ export const isUserMessage = (m: Message): m is UserMessage => m.role === 'user'
 export const isAssistantMessage = (m: Message): m is AssistantMessage => m.role === 'assistant';
 export const isToolMessage = (m: Message): m is ToolMessage => m.role === 'tool';
 export const isSystemMessage = (m: Message): m is SystemMessage => m.role === 'system';
+
+export type ImageMimeType = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
+
+export function extFromMime(m: ImageMimeType): 'png' | 'jpg' | 'webp' | 'gif' {
+  switch (m) {
+    case 'image/png': return 'png';
+    case 'image/jpeg': return 'jpg';
+    case 'image/webp': return 'webp';
+    case 'image/gif': return 'gif';
+  }
+}

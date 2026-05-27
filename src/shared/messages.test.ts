@@ -7,6 +7,7 @@ import {
   newUserMessage,
   newAssistantMessage,
   newSystemMessage,
+  extFromMime,
   type Message,
   type SystemMessage,
   type ContentBlock,
@@ -71,7 +72,28 @@ describe('SystemMessage', () => {
       width: 1920,
       height: 1080,
       mimeType: 'image/png',
+      source: 'screenshot',
     };
     expect(block.type).toBe('image-ref');
   });
+});
+
+it('extFromMime maps every supported mime to a file extension', () => {
+  expect(extFromMime('image/png')).toBe('png');
+  expect(extFromMime('image/jpeg')).toBe('jpg');
+  expect(extFromMime('image/webp')).toBe('webp');
+  expect(extFromMime('image/gif')).toBe('gif');
+});
+
+it('accepts an image-ref with source: user', () => {
+  const block: ContentBlock = {
+    type: 'image-ref',
+    id: 'abc',
+    sessionId: 's1',
+    path: '/tmp/x.jpg',
+    width: 100, height: 50,
+    mimeType: 'image/jpeg',
+    source: 'user',
+  };
+  expect(block.source).toBe('user');
 });

@@ -24,7 +24,7 @@ const MAX_SCREENSHOT_EDGE = 1920;
 const MAX_SCREENSHOT_TILES = 8;
 import { save } from '../screenshot/store';
 import { tmpdir } from 'node:os';
-import { existsSync } from 'node:fs';
+import { existsSync, promises as fsp } from 'node:fs';
 import path from 'node:path';
 
 interface CallRefs { refs: import('@shared/messages').ContentBlock[]; }
@@ -361,6 +361,7 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
             width: captured.width,
             height: captured.height,
             mimeType: 'image/png' as const,
+            source: 'screenshot' as const,
           }));
           screenshotRefsByCall.set(callId, { refs });
           // Bytes for the current turn's API call (transient — released after yield).
@@ -436,7 +437,7 @@ function createFakeSdkClient(deps?: {
       counter += 1;
       return { id: `fake-${counter}` };
     },
-    sendTurn(sid, text, signal, _resumeId) {
+    sendTurn(sid, text, _attachments, signal, _resumeId) {
       const fakeSdkId = `fake-sdk-${(counter += 1)}`;
       const wantsShell = text.includes('[shell]') && !!deps?.broker;
       const wantsSpawn = text.includes('[spawn]') && !!deps?.broker && !!deps?.getRegistry;
@@ -595,7 +596,7 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
       return { id };
     },
 
-    sendTurn(sessionId, text, signal, resumeId): SdkTurn {
+    sendTurn(sessionId, text, attachments, signal, resumeId): SdkTurn {
       // The SDK takes an AbortController, not a raw AbortSignal. Bridge by
       // creating a controller and aborting it when the upstream signal fires.
       const abortController = new AbortController();
@@ -633,8 +634,29 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
           parts.push(knowledge.trim());
         }
         const systemPrompt = parts.join('\n');
+        const promptInput: string | AsyncIterable<unknown> = attachments.length === 0
+          ? text
+          : (async function* () {
+              const imageBlocks = await Promise.all(attachments.map(async (a) => ({
+                type: 'image' as const,
+                source: {
+                  type: 'base64' as const,
+                  media_type: a.mimeType,
+                  data: (await fsp.readFile(a.path)).toString('base64'),
+                },
+              })));
+              const content: unknown[] = [];
+              if (text.length > 0) content.push({ type: 'text', text });
+              for (const b of imageBlocks) content.push(b);
+              yield {
+                type: 'user' as const,
+                message: { role: 'user' as const, content },
+                parent_tool_use_id: null,
+                session_id: sessionId,
+              };
+            })();
         const iter = sdk.query({
-          prompt: text,
+          prompt: promptInput as Parameters<typeof sdk.query>[0]['prompt'],
           options: {
             systemPrompt,
             // Disable all built-in Claude Code tools; we only want our MCP tool.

@@ -46,7 +46,7 @@ export interface SdkTurn {
 
 export interface SdkClient {
   startSession(args: { resume?: string; model: string }): Promise<{ id: string }>;
-  sendTurn(sessionId: string, text: string, signal: AbortSignal, resumeId?: string): SdkTurn;
+  sendTurn(sessionId: string, text: string, attachments: Array<Extract<ContentBlock, { type: 'image-ref' }>>, signal: AbortSignal, resumeId?: string): SdkTurn;
 }
 
 type Emitter = (event: SessionEvent) => void;
@@ -95,14 +95,14 @@ export class SessionManager {
     return { sessionId: sdkSession.id };
   }
 
-  async send(args: { sessionId: string; text: string }): Promise<void> {
+  async send(args: { sessionId: string; text: string; attachments?: Array<Extract<ContentBlock, { type: 'image-ref' }>> }): Promise<void> {
     const { sessionId, text } = args;
-    const user = this.repo.appendMessage({ ...newUserMessage(text), sessionId });
+    const user = this.repo.appendMessage({ ...newUserMessage(text, args.attachments ?? []), sessionId });
     // Broadcast the user turn so subscribers (desktop renderer, PWA over the
     // bridge, etc.) can render a user bubble. The desktop renderer also adds
     // an optimistic bubble when YOU submit via the local UI — it dedupes by
     // messageId to avoid double-rendering.
-    this.emit({ type: 'user-message', sessionId, messageId: user.id, text });
+    this.emit({ type: 'user-message', sessionId, messageId: user.id, text, content: user.content });
     this.repo.setSessionTitleIfMissing(sessionId, text.slice(0, 80));
     this.repo.updateSessionActivity(sessionId, Date.now(), 'active');
 
@@ -122,7 +122,7 @@ export class SessionManager {
 
     try {
       const resumeId = this.repo.getSession(sessionId)?.sdkSessionId ?? undefined;
-      const turn = this.sdk.sendTurn(sessionId, text, controller.signal, resumeId);
+      const turn = this.sdk.sendTurn(sessionId, text, args.attachments ?? [], controller.signal, resumeId);
       for await (const ev of turn.events()) {
         switch (ev.type) {
           case 'message-start':

@@ -8,7 +8,7 @@ export type ResolveResult =
   | { ok: false; status: 404 };
 
 const SAFE_SESSION = /^[A-Za-z0-9_-]+$/;
-const SAFE_FILE = /^[A-Za-z0-9_-]+\.png$/;
+const SAFE_FILE = /^[A-Za-z0-9_-]+\.(png|jpg|jpeg|webp|gif)$/;
 
 export function resolveImageRequest(rawUrl: string, root: string): ResolveResult {
   let url: URL;
@@ -35,6 +35,22 @@ export function registerOttoImageSchemePrivileges(): void {
 export function registerOttoImageProtocol(root: string): void {
   protocol.handle('otto-image', (req) => {
     const r = resolveImageRequest(req.url, root);
+    if (!r.ok) return new Response(null, { status: 404 });
+    return net.fetch(pathToFileURL(r.absPath).toString());
+  });
+}
+
+export function registerOttoUserImageSchemePrivileges(): void {
+  protocol.registerSchemesAsPrivileged([
+    { scheme: 'otto-user-image', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  ]);
+}
+
+export function registerOttoUserImageProtocol(root: string): void {
+  protocol.handle('otto-user-image', (req) => {
+    // Reuse the pure resolver. It expects an otto-image:// URL so it can parse
+    // the hostname/path the same way — rewrite the scheme before resolving.
+    const r = resolveImageRequest(req.url.replace(/^otto-user-image:/, 'otto-image:'), root);
     if (!r.ok) return new Response(null, { status: 404 });
     return net.fetch(pathToFileURL(r.absPath).toString());
   });

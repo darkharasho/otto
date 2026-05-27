@@ -1,6 +1,7 @@
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState, useRef } from 'react';
 import { ipc } from './ipc';
 import { useOttoStore } from './state/store';
+import type { ContentBlock } from '@shared/messages';
 import { CommandBar } from './components/CommandBar';
 import { Panel } from './components/Panel';
 import { MessageList } from './components/MessageList';
@@ -54,30 +55,44 @@ export function App() {
   }, []);
 
 
+  type ImageRef = Extract<ContentBlock, { type: 'image-ref' }>;
+
+  // Holds an in-flight session.start promise so concurrent callers (e.g.
+  // stageFile paste and handleSubmit racing) always await the same promise
+  // and end up with the same sessionId.
+  const inFlightSessionStart = useRef<Promise<string> | null>(null);
+
+  const ensureSession = useCallback(async (): Promise<string> => {
+    if (activeSession?.id) return activeSession.id;
+    if (inFlightSessionStart.current) return inFlightSessionStart.current;
+    // eslint-disable-next-line no-console
+    console.debug('[otto] session.start (ensureSession)', { model });
+    const p = ipc.invoke('session.start', { model }).then(({ sessionId: newId }) => {
+      beginSession(newId);
+      inFlightSessionStart.current = null;
+      return newId;
+    });
+    inFlightSessionStart.current = p;
+    return p;
+  }, [activeSession, beginSession, model]);
+
   const handleSubmit = useCallback(
-    async (text: string) => {
+    async ({ text, attachments }: { text: string; attachments: ImageRef[] }) => {
       try {
         setWindowMode('panel');
         void ipc.invoke('window.setMode', { mode: 'panel' });
-        let sessionId = activeSession?.id;
-        if (!sessionId) {
-          // eslint-disable-next-line no-console
-          console.debug('[otto] session.start', { model });
-          const { sessionId: newId } = await ipc.invoke('session.start', { model });
-          sessionId = newId;
-          beginSession(newId);
-        }
-        appendUserMessage(crypto.randomUUID(), text);
+        const sessionId = await ensureSession();
+        appendUserMessage(crypto.randomUUID(), text, attachments);
         // eslint-disable-next-line no-console
-        console.debug('[otto] session.send', { sessionId, len: text.length });
-        await ipc.invoke('session.send', { sessionId, text });
+        console.debug('[otto] session.send', { sessionId, len: text.length, attachments: attachments.length });
+        await ipc.invoke('session.send', { sessionId, text, attachments });
         void ipc.invoke('session.list', undefined).then(setSessions);
       } catch (err) {
         // eslint-disable-next-line no-console
         console.error('[otto] handleSubmit failed', err);
       }
     },
-    [activeSession, beginSession, appendUserMessage, setWindowMode, setSessions, model]
+    [ensureSession, appendUserMessage, setWindowMode, setSessions]
   );
 
   const handleSelectSession = useCallback(
@@ -162,6 +177,7 @@ export function App() {
       <div key={`bar-${enterTick}`} className="w-screen h-screen p-1 otto-enter">
         <CommandBar
           onSubmit={handleSubmit}
+          ensureSession={ensureSession}
           onStop={handleStop}
           busy={streaming}
           welcome={isFreshSession}
@@ -186,6 +202,7 @@ export function App() {
           <div className="flex flex-col gap-2">
             <CommandBar
               onSubmit={handleSubmit}
+              ensureSession={ensureSession}
               onStop={handleStop}
               busy={streaming}
               welcome={isFreshSession}

@@ -88,11 +88,12 @@ async function startElectron(): Promise<void> {
   const { loadRemoteSettings, saveRemoteSettings } = await import('./remote/settings');
   const { ImageCache } = await import('./image-cache/cache');
   const { registerImageProtocolPrivileges, registerImageProtocolHandler } = await import('./image-cache/protocol');
-  const { registerOttoImageSchemePrivileges, registerOttoImageProtocol } = await import('./screenshot/protocol');
+  const { registerOttoImageSchemePrivileges, registerOttoImageProtocol, registerOttoUserImageSchemePrivileges, registerOttoUserImageProtocol } = await import('./screenshot/protocol');
   const { randomBytes } = await import('node:crypto');
 
   registerImageProtocolPrivileges();
   registerOttoImageSchemePrivileges();
+  registerOttoUserImageSchemePrivileges();
 
   const SMART_RESUME_WINDOW_MS = 30 * 60 * 1000;
 
@@ -109,6 +110,7 @@ async function startElectron(): Promise<void> {
   const imageCache = new ImageCache({ cacheDir: path.join(ottoConfigDir, 'image-cache') });
   registerImageProtocolHandler(imageCache);
   registerOttoImageProtocol(path.join(ottoConfigDir, 'screenshots'));
+  registerOttoUserImageProtocol(path.join(ottoConfigDir, 'user-uploads'));
 
   let db;
   try {
@@ -136,16 +138,17 @@ async function startElectron(): Promise<void> {
     if (removed > 0) logger.info(`auto-deleted ${removed} session(s) older than ${autoDeleteDays}d`);
   }
 
-  // Non-blocking orphan screenshot sweep: remove any screenshot dirs that have
+  // Non-blocking orphan session-file sweep: remove any session dirs that have
   // no corresponding session in the database (e.g. left over from a hard kill).
   void (async () => {
     try {
-      const { sweepOrphanScreenshots } = await import('./screenshot/cleanup');
+      const { sweepOrphanSessionFiles } = await import('./screenshot/cleanup');
       const sessions = repo.listSessions();
       const known = new Set(sessions.map((s: { id: string }) => s.id));
-      await sweepOrphanScreenshots(path.join(ottoConfigDir, 'screenshots'), known);
+      await sweepOrphanSessionFiles(path.join(ottoConfigDir, 'screenshots'), known);
+      await sweepOrphanSessionFiles(path.join(ottoConfigDir, 'user-uploads'), known);
     } catch (err) {
-      console.warn('orphan screenshot sweep failed', err);
+      console.warn('orphan session-file sweep failed', err);
     }
   })();
 
@@ -392,7 +395,8 @@ async function startElectron(): Promise<void> {
       imageCache,
       activeSessionId: () => sessions.getActiveSessionId(),
       resolveApproval: (id, choice) => { broker.resolve(id, choice); return true; },
-      sendPrompt: async (text, _origin) => {
+      configDir: ottoConfigDir,
+      sendPrompt: async (text, _origin, attachments) => {
         // Errors here used to be swallowed by the bridge's fire-and-forget
         // `void sendPrompt(...)`. The PWA had already optimistically flipped
         // streaming=true and would wait forever for a 'done' event that never
@@ -404,7 +408,7 @@ async function startElectron(): Promise<void> {
             const started = await sessions.start({});
             sid = started.sessionId;
           }
-          await sessions.send({ sessionId: sid, text });
+          await sessions.send({ sessionId: sid, text, attachments: attachments.length > 0 ? attachments : undefined });
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           logger.error(`remote sendPrompt failed: ${msg}`);

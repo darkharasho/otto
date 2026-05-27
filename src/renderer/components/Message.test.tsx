@@ -134,3 +134,23 @@ describe('MessageView mark_task_complete suppression', () => {
     expect(screen.queryByText('noted')).not.toBeInTheDocument();
   });
 });
+
+describe('MessageView user image-ref blocks', () => {
+  it('renders an image-ref block in a user message via otto-user-image://', () => {
+    const message: Message = {
+      id: 'm1',
+      sessionId: 's1',
+      seq: 0,
+      createdAt: 0,
+      role: 'user',
+      content: [
+        { type: 'text', text: 'look' },
+        { type: 'image-ref', id: 'r1', sessionId: 's1', path: '/tmp/r1.png', width: 10, height: 10, mimeType: 'image/png', source: 'user' },
+      ],
+    };
+    render(<MessageView message={message} />);
+    expect(screen.getByText('look')).toBeInTheDocument();
+    const img = screen.getByRole('presentation', { hidden: true }) as HTMLImageElement;
+    expect(img.getAttribute('src')).toBe('otto-user-image://s1/r1.png');
+  });
+});

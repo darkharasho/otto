@@ -19,6 +19,9 @@ import type {
   SettingsView,
   ShortcutInfoView,
   AppInfo,
+  UploadsStageArgs,
+  UploadsStageResult,
+  UploadsDiscardArgs,
 } from '@shared/ipc-contract';
 import type { AutonomyMode, Message, SessionMeta } from '@shared/messages';
 import { emitAutonomyEvent } from './events';
@@ -62,6 +65,18 @@ export function registerIpcHandlers(deps: {
 
   ipcMain.handle('session.send', async (_e, args: SessionSendArgs): Promise<void> => {
     await sessions.send(args);
+  });
+
+  ipcMain.handle('uploads.stage', async (_e, args: UploadsStageArgs): Promise<UploadsStageResult> => {
+    const { saveUserUpload } = await import('../user-uploads/store');
+    return saveUserUpload(Buffer.from(args.bytes), args.mimeType, args.sessionId, deps.configDir);
+  });
+
+  ipcMain.handle('uploads.discard', async (_e, args: UploadsDiscardArgs): Promise<void> => {
+    // Security: only allow paths under <configDir>/user-uploads/<sessionId>/
+    const expectedPrefix = path.join(deps.configDir, 'user-uploads', args.sessionId) + path.sep;
+    if (!args.path.startsWith(expectedPrefix)) return;
+    await fsp.rm(args.path, { force: true });
   });
 
   ipcMain.handle('session.cancel', async (_e, args: SessionCancelArgs): Promise<void> => {
@@ -181,8 +196,9 @@ export function registerIpcHandlers(deps: {
 
   ipcMain.handle('settings.resetAllSessions', async (): Promise<{ deleted: number }> => {
     const deleted = repo.deleteAllSessions();
-    const { wipeAllScreenshots } = await import('../screenshot/cleanup');
-    await wipeAllScreenshots(path.join(deps.configDir, 'screenshots'));
+    const { wipeAllSessionFiles } = await import('../screenshot/cleanup');
+    await wipeAllSessionFiles(path.join(deps.configDir, 'screenshots'));
+    await wipeAllSessionFiles(path.join(deps.configDir, 'user-uploads'));
     return { deleted };
   });
 
