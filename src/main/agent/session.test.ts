@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, promises as fsp } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { openDatabase } from '../db/db';
@@ -23,7 +23,7 @@ beforeEach(() => {
   events = [];
   fakeSdk = {
     startSession: vi.fn(async () => ({ id: 'sdk-1' })),
-    sendTurn: vi.fn((_sid, _text, signal) => {
+    sendTurn: vi.fn((_sid, _text, _attachments, signal) => {
       const t: SdkTurn = {
         async *events() {
           yield { type: 'message-start' };
@@ -62,7 +62,7 @@ describe('SessionManager', () => {
   });
 
   it('records tool_use and tool_result blocks on the assistant message', async () => {
-    fakeSdk.sendTurn = vi.fn((_sid, _text, signal): SdkTurn => ({
+    fakeSdk.sendTurn = vi.fn((_sid, _text, _attachments, signal): SdkTurn => ({
       signal,
       async *events(): AsyncGenerator<SdkStreamEvent> {
         yield { type: 'message-start' };
@@ -83,7 +83,7 @@ describe('SessionManager', () => {
   });
 
   it('emits an error event when the SDK throws and persists the message as errored', async () => {
-    fakeSdk.sendTurn = vi.fn((_sid, _text, signal): SdkTurn => ({
+    fakeSdk.sendTurn = vi.fn((_sid, _text, _attachments, signal): SdkTurn => ({
       signal,
       async *events(): AsyncGenerator<SdkStreamEvent> {
         yield { type: 'message-start' };
@@ -100,7 +100,7 @@ describe('SessionManager', () => {
   });
 
   it('cancellation aborts the in-flight turn and marks the message cancelled', async () => {
-    fakeSdk.sendTurn = vi.fn((_sid, _text, signal): SdkTurn => ({
+    fakeSdk.sendTurn = vi.fn((_sid, _text, _attachments, signal): SdkTurn => ({
       signal,
       async *events(): AsyncGenerator<SdkStreamEvent> {
         yield { type: 'message-start' };
@@ -121,7 +121,7 @@ describe('SessionManager', () => {
   });
 
   it('persists the sdk session id when received, and passes it as resume on the next turn', async () => {
-    const sendTurnSpy = vi.fn((_sid: string, _text: string, signal: AbortSignal, _resumeId?: string): SdkTurn => ({
+    const sendTurnSpy = vi.fn((_sid: string, _text: string, _attachments: Array<Extract<ContentBlock, { type: 'image-ref' }>>, signal: AbortSignal, _resumeId?: string): SdkTurn => ({
       signal,
       async *events(): AsyncGenerator<SdkStreamEvent> {
         yield { type: 'message-start' };
@@ -135,9 +135,9 @@ describe('SessionManager', () => {
     const { sessionId } = await manager.start({});
     await manager.send({ sessionId, text: 'first' });
     expect(repo.getSession(sessionId)?.sdkSessionId).toBe('sdk-1');
-    expect(sendTurnSpy.mock.calls[0]![3]).toBeUndefined();
+    expect(sendTurnSpy.mock.calls[0]![4]).toBeUndefined();
     await manager.send({ sessionId, text: 'second' });
-    expect(sendTurnSpy.mock.calls[1]![3]).toBe('sdk-1');
+    expect(sendTurnSpy.mock.calls[1]![4]).toBe('sdk-1');
   });
 
   it('sets session title from the first user message', async () => {
@@ -162,7 +162,7 @@ describe('SessionManager', () => {
 
   it('rewrites image blocks in tool_result.result.content to image-ref blocks', async () => {
     // Override fakeSdk for this test to yield a tool-call-result with inline image content.
-    (fakeSdk.sendTurn as ReturnType<typeof vi.fn>).mockImplementationOnce((_sid, _text, signal) => ({
+    (fakeSdk.sendTurn as ReturnType<typeof vi.fn>).mockImplementationOnce((_sid, _text, _attachments, signal) => ({
       signal,
       async *events() {
         yield { type: 'message-start' };
@@ -216,6 +216,26 @@ describe('SessionManager listeners', () => {
     const { sessionId } = await manager.start({});
     await manager.send({ sessionId, text: 'hi' });
     expect(calls).toEqual([sessionId]);
+  });
+});
+
+describe('SDK attachment forwarding', () => {
+  it('SDK receives the attachments array when attachments are present', async () => {
+    const ref: Extract<ContentBlock, { type: 'image-ref' }> = {
+      type: 'image-ref', id: 'u1', sessionId: 'sdk-1', path: '/tmp/u1.png',
+      width: 10, height: 10, mimeType: 'image/png', source: 'user',
+    };
+    // Write a 1-byte file to disk so an actual loader (Task 7's iterator)
+    // can read it. We're spying on the fake SDK; bytes don't matter for
+    // this assertion, just the array shape.
+    await fsp.writeFile(ref.path, Buffer.from([0]));
+    const sendTurnSpy = vi.fn(fakeSdk.sendTurn);
+    fakeSdk.sendTurn = sendTurnSpy;
+    const { sessionId } = await manager.start({});
+    await manager.send({ sessionId, text: 'go', attachments: [ref] });
+    const callArgs = sendTurnSpy.mock.calls[0]!;
+    // New sendTurn signature: (sessionId, text, attachments, signal, resumeId)
+    expect(callArgs[2]).toEqual([ref]);
   });
 });
 

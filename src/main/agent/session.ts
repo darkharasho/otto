@@ -46,7 +46,7 @@ export interface SdkTurn {
 
 export interface SdkClient {
   startSession(args: { resume?: string; model: string }): Promise<{ id: string }>;
-  sendTurn(sessionId: string, text: string, signal: AbortSignal, resumeId?: string): SdkTurn;
+  sendTurn(sessionId: string, text: string, attachments: Array<Extract<ContentBlock, { type: 'image-ref' }>>, signal: AbortSignal, resumeId?: string): SdkTurn;
 }
 
 type Emitter = (event: SessionEvent) => void;
@@ -122,7 +122,7 @@ export class SessionManager {
 
     try {
       const resumeId = this.repo.getSession(sessionId)?.sdkSessionId ?? undefined;
-      const turn = this.sdk.sendTurn(sessionId, text, controller.signal, resumeId);
+      const turn = this.sdk.sendTurn(sessionId, text, args.attachments ?? [], controller.signal, resumeId);
       for await (const ev of turn.events()) {
         switch (ev.type) {
           case 'message-start':
