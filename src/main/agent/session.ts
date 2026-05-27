@@ -333,6 +333,10 @@ export class SessionManager {
       messageId: assistantId,
       queueDepth: stream.queueDepth(),
     });
+    // Emit message-start eagerly so the renderer creates the assistant
+    // placeholder and shows the thinking animation during the SDK round-trip.
+    // The consumer loop's ensureStarted() will see row.started=true and skip.
+    this.ensureStarted(sessionId, row);
     void user;
     await row.done;
   }
