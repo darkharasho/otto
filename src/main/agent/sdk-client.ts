@@ -26,7 +26,7 @@ const MAX_SCREENSHOT_EDGE = 1920;
 const MAX_SCREENSHOT_TILES = 8;
 import { save } from '../screenshot/store';
 import { tmpdir } from 'node:os';
-import { existsSync, promises as fsp } from 'node:fs';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 interface CallRefs { refs: import('@shared/messages').ContentBlock[]; }
@@ -594,13 +594,8 @@ function createFakeSdkClient(deps?: {
           try { await hooks.onPerMessageContext(next.messageId); } catch (err) {
             logger.warn(`onPerMessageContext threw: ${err instanceof Error ? err.message : err}`);
           }
-          try {
-            for await (const ev of turnEvents(next.text, abortController.signal)) {
-              yield { ...ev, messageId: next.messageId } as TaggedSdkStreamEvent;
-            }
-          } catch (err) {
-            // Re-throw so SessionManager's consumer catch attributes correctly.
-            throw err;
+          for await (const ev of turnEvents(next.text, abortController.signal)) {
+            yield { ...ev, messageId: next.messageId } as TaggedSdkStreamEvent;
           }
         }
       }

@@ -49,12 +49,8 @@ function makeFakeOpenStream(scriptByCall: Script[] | Script) {
           ? scriptByCall[Math.min(callIdx, scriptByCall.length - 1)]!
           : scriptByCall;
         callIdx++;
-        try {
-          for await (const ev of script({ text: next.text, signal: abortController.signal })) {
-            yield { ...ev, messageId: next.messageId } as TaggedSdkStreamEvent;
-          }
-        } catch (err) {
-          throw err;
+        for await (const ev of script({ text: next.text, signal: abortController.signal })) {
+          yield { ...ev, messageId: next.messageId } as TaggedSdkStreamEvent;
         }
       }
     }

@@ -1,3 +1,8 @@
+Version v0.8.2
+
+Fixes:
+- **Republish of v0.8.1.** The v0.8.1 release-artifact build failed lint (two `no-useless-catch` errors in the new SDK stream code) so no installers were produced. Lint is clean again on v0.8.2; same feature set as v0.8.1.
+
 Version v0.8.1
 
 Features:
