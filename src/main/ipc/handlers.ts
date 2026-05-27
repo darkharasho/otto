@@ -15,6 +15,7 @@ import type {
   SessionStartResult,
   SessionSendArgs,
   SessionCancelArgs,
+  SessionInterruptArgs,
   SessionLoadArgs,
   SettingsView,
   ShortcutInfoView,
@@ -80,7 +81,12 @@ export function registerIpcHandlers(deps: {
   });
 
   ipcMain.handle('session.cancel', async (_e, args: SessionCancelArgs): Promise<void> => {
-    sessions.cancel(args);
+    // Legacy channel kept for compatibility; routes to interrupt().
+    await sessions.interrupt(args);
+  });
+
+  ipcMain.handle('session.interrupt', async (_e, args: SessionInterruptArgs): Promise<void> => {
+    await sessions.interrupt(args);
   });
 
   ipcMain.handle('session.list', async (): Promise<SessionMeta[]> => {

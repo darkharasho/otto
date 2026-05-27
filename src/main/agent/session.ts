@@ -337,15 +337,19 @@ export class SessionManager {
     await row.done;
   }
 
-  cancel(args: { sessionId: string }): void {
-    // Interrupt the underlying query if available; this only cancels the
-    // currently streaming response, not the entire session.
-    const handle = this.streams.get(args.sessionId);
-    if (handle) {
-      void handle.interrupt().catch((err) => {
-        logger.warn(`interrupt threw: ${err instanceof Error ? err.message : err}`);
-      });
+  async interrupt(args: { sessionId: string }): Promise<void> {
+    // Interrupt the currently-streaming turn via the SDK stream handle.
+    // This ends the current turn but keeps the session subprocess alive so
+    // queued messages continue flowing. The AbortController is NOT aborted
+    // here — that is reserved for hard-shutdown (session close / app quit).
+    const stream = this.streams.get(args.sessionId);
+    if (stream) {
+      await stream.interrupt();
     }
+  }
+
+  /** @deprecated Use interrupt(). Hard-kills the underlying subprocess; kept for Task 6 closeSession path. */
+  cancel(args: { sessionId: string }): void {
     this.aborts.get(args.sessionId)?.abort();
   }
 }

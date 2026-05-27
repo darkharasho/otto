@@ -146,7 +146,9 @@ describe('SessionManager', () => {
     expect(assistant && 'errored' in assistant && assistant.errored).toBe(true);
   });
 
-  it('cancellation aborts the in-flight turn and marks the message cancelled', async () => {
+  it('interrupt() calls Query.interrupt on the stream handle', async () => {
+    const interruptFn = vi.fn(async () => {});
+    // Build a stream that stalls until the interrupt signal fires.
     const { openStream } = makeFakeOpenStream(async function* ({ signal }) {
       yield { type: 'text-delta', text: 'part' };
       await new Promise((r) => setTimeout(r, 10));
@@ -155,13 +157,59 @@ describe('SessionManager', () => {
       yield { type: 'message-end' };
       yield { type: 'done' };
     });
-    fakeSdk.openStream = openStream;
+    // Wrap the real interrupt() with our spy.
+    const origOpenStream = openStream;
+    fakeSdk.openStream = vi.fn((...args: Parameters<typeof origOpenStream>) => {
+      const handle = origOpenStream(...args);
+      const origInterrupt = handle.interrupt.bind(handle);
+      handle.interrupt = vi.fn(async () => { interruptFn(); await origInterrupt(); });
+      return handle;
+    });
     const { sessionId } = await manager.start({});
     const p = manager.send({ sessionId, text: 'long' });
-    setTimeout(() => manager.cancel({ sessionId }), 1);
+    setTimeout(() => void manager.interrupt({ sessionId }), 1);
     await p;
+    expect(interruptFn).toHaveBeenCalled();
     const assistant = repo.loadMessages(sessionId).find((m) => m.role === 'assistant');
     expect(assistant && 'cancelled' in assistant && assistant.cancelled).toBe(true);
+  });
+
+  it('interrupt() ends the current turn but second message still flows', async () => {
+    // Each call to openStream gets its own script:
+    //   1st handle (first openStream call): stalls — will be interrupted.
+    //   2nd handle (second openStream call, rebuilt after stream teardown): completes normally.
+    const scripts: Script[] = [
+      async function* ({ signal }) {
+        yield { type: 'text-delta', text: 'part' };
+        await new Promise((r) => setTimeout(r, 20));
+        if (signal.aborted) throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+        yield { type: 'text-delta', text: 'more' };
+        yield { type: 'message-end' };
+        yield { type: 'done' };
+      },
+      async function* () {
+        yield { type: 'text-delta', text: 'second' };
+        yield { type: 'message-end' };
+        yield { type: 'done' };
+      },
+    ];
+    // Each openStream invocation picks the next script (not per-message callIdx).
+    let streamCallCount = 0;
+    const fakeOpenStream = vi.fn((sessionId: string, resumeId: string | undefined, hooks: { onPerMessageContext: (messageId: string) => void | Promise<void> }): SessionStreamHandle => {
+      const script = scripts[Math.min(streamCallCount, scripts.length - 1)]!;
+      streamCallCount++;
+      return makeFakeOpenStream(script).openStream(sessionId, resumeId, hooks);
+    });
+    fakeSdk.openStream = fakeOpenStream;
+    const { sessionId } = await manager.start({});
+    // Send first message; interrupt quickly; then send second.
+    const p1 = manager.send({ sessionId, text: 'first' });
+    setTimeout(() => void manager.interrupt({ sessionId }), 2);
+    await p1;
+    await manager.send({ sessionId, text: 'second' });
+    const textDeltas = events.filter((e) => e.type === 'text-delta').map((e) => (e as { text: string }).text);
+    expect(textDeltas).toContain('second');
+    expect(fakeOpenStream).toHaveBeenCalledTimes(2); // stream was rebuilt after interrupt
   });
 
   it('persists the sdk session id when received, and passes it as resume on the next turn', async () => {

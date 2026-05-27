@@ -39,6 +39,11 @@ export interface SessionCancelArgs {
   sessionId: string;
 }
 
+/** @deprecated Use SessionInterruptArgs */
+export interface SessionInterruptArgs {
+  sessionId: string;
+}
+
 export interface SessionLoadArgs {
   sessionId: string;
 }
@@ -47,6 +52,7 @@ export type IpcRequest =
   | { channel: 'session.start'; args: SessionStartArgs; result: SessionStartResult }
   | { channel: 'session.send'; args: SessionSendArgs; result: void }
   | { channel: 'session.cancel'; args: SessionCancelArgs; result: void }
+  | { channel: 'session.interrupt'; args: SessionInterruptArgs; result: void }
   | { channel: 'session.list'; args: void; result: SessionMeta[] }
   | { channel: 'session.load'; args: SessionLoadArgs; result: Message[] }
   | { channel: 'window.setMode'; args: { mode: 'bar' | 'panel' }; result: void }

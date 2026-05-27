@@ -11,6 +11,8 @@ interface Props {
   onSubmit(args: { text: string; attachments: ImageRef[] }): void;
   ensureSession(): Promise<string>;
   onStop?(): void;
+  /** Called when Shift+Enter is pressed while busy — interrupts the current turn then sends. */
+  onInterruptAndSend?(args: { text: string; attachments: ImageRef[] }): void;
   autoFocus?: boolean;
   busy?: boolean;
   queueDepth?: number;
@@ -21,6 +23,7 @@ export function CommandBar({
   onSubmit,
   ensureSession,
   onStop,
+  onInterruptAndSend,
   autoFocus = true,
   busy = false,
   queueDepth = 0,
@@ -69,6 +72,25 @@ export function CommandBar({
       mimeType: file.type as AllowedMime,
     });
     setAttachments((a) => [...a, ref]);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    // Shift+Enter key-down semantics:
+    //   !busy + Shift+Enter  → default: no-op on a single-line input (no newline to insert)
+    //   busy  + Shift+Enter  → interrupt current turn and immediately send (preempt)
+    //
+    // Plain Enter is handled by the form's onSubmit; do not intercept it here.
+    if (e.key === 'Enter' && e.shiftKey && busy) {
+      e.preventDefault();
+      const trimmed = value.trim();
+      if ((trimmed.length > 0 || attachments.length > 0) && onInterruptAndSend) {
+        onInterruptAndSend({ text: trimmed, attachments });
+        setValue('');
+        setAttachments([]);
+        setSendTick((n) => n + 1);
+        inputRef.current?.focus();
+      }
+    }
   }
 
   function handleSubmit(e: FormEvent) {
@@ -154,6 +176,7 @@ export function CommandBar({
           type="text"
           value={value}
           onChange={(e) => setValue(e.target.value)}
+          onKeyDown={handleKeyDown}
           placeholder={placeholder}
           className="flex-1 bg-transparent outline-none text-base placeholder:text-muted text-text"
         />
@@ -225,7 +248,7 @@ export function CommandBar({
             onClick={onStop}
             disabled={!onStop}
             aria-label="Stop response"
-            title="Stop response (Esc)"
+            title="Stop response (Esc) · Shift+Enter to interrupt and send new message"
             className="group flex items-center gap-2 text-xs text-accent font-medium hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="flex items-center justify-center w-6 h-6 rounded-md bg-accent/15 group-hover:bg-accent text-accent group-hover:text-white transition-colors">

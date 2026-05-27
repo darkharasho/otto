@@ -117,8 +117,26 @@ export function App() {
 
   const handleStop = useCallback(() => {
     if (!activeSession?.id) return;
-    void ipc.invoke('session.cancel', { sessionId: activeSession.id });
+    void ipc.invoke('session.interrupt', { sessionId: activeSession.id });
   }, [activeSession?.id]);
+
+  const handleInterruptAndSend = useCallback(
+    async ({ text, attachments }: { text: string; attachments: ImageRef[] }) => {
+      if (!activeSession?.id) return;
+      try {
+        // Interrupt the current turn first, then enqueue the new message.
+        // The session subprocess stays alive so the new message flows immediately.
+        await ipc.invoke('session.interrupt', { sessionId: activeSession.id });
+        appendUserMessage(crypto.randomUUID(), text, attachments);
+        await ipc.invoke('session.send', { sessionId: activeSession.id, text, attachments });
+        void ipc.invoke('session.list', undefined).then(setSessions);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[otto] handleInterruptAndSend failed', err);
+      }
+    },
+    [activeSession?.id, appendUserMessage, setSessions]
+  );
 
   // One Esc handler with a priority order: cancel a streaming response, else
   // collapse panel→bar, else hide. Splitting into two listeners caused a
@@ -179,6 +197,7 @@ export function App() {
           onSubmit={handleSubmit}
           ensureSession={ensureSession}
           onStop={handleStop}
+          onInterruptAndSend={handleInterruptAndSend}
           busy={streaming}
           queueDepth={activeSession?.queueDepth ?? 0}
           welcome={isFreshSession}
@@ -205,6 +224,7 @@ export function App() {
               onSubmit={handleSubmit}
               ensureSession={ensureSession}
               onStop={handleStop}
+              onInterruptAndSend={handleInterruptAndSend}
               busy={streaming}
               queueDepth={activeSession?.queueDepth ?? 0}
               welcome={isFreshSession}
