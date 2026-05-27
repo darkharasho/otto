@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createMessageQueue } from './session-stream';
+import { createMessageQueue, createSessionStream, type QueryFactory } from './session-stream';
 
 describe('createMessageQueue', () => {
   it('yields pushed items in order across awaits', async () => {
@@ -24,5 +24,36 @@ describe('createMessageQueue', () => {
     q.close();
     const iter = q.iterable[Symbol.asyncIterator]();
     expect((await iter.next()).done).toBe(true);
+  });
+});
+
+describe('createSessionStream', () => {
+  it('forwards enqueued user messages to the query factory and tags events with messageId', async () => {
+    const yielded: string[] = [];
+    const factory: QueryFactory = ({ prompt }) => {
+      return {
+        async *[Symbol.asyncIterator]() {
+          for await (const m of prompt) {
+            yielded.push(m.message.content as string);
+            yield { type: 'assistant', message: { content: [{ type: 'text', text: `echo:${m.message.content}` }] }, session_id: 's', uuid: 'u' };
+          }
+        },
+        interrupt: async () => {},
+      } as unknown as ReturnType<QueryFactory>;
+    };
+
+    const stream = createSessionStream({ sessionId: 's', queryFactory: factory });
+    stream.enqueueUserMessage({ messageId: 'm1', text: 'hello', attachments: [] });
+    stream.enqueueUserMessage({ messageId: 'm2', text: 'world', attachments: [] });
+
+    const events: Array<{ messageId: string; type: string }> = [];
+    const iter = stream.events()[Symbol.asyncIterator]();
+    for (let i = 0; i < 2; i++) {
+      const { value } = await iter.next();
+      events.push({ messageId: value.messageId, type: value.type });
+    }
+    stream.close();
+    expect(yielded).toEqual(['hello', 'world']);
+    expect(events.map((e) => e.messageId)).toEqual(['m1', 'm2']);
   });
 });
