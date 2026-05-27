@@ -19,3 +19,4 @@ resources/embedding/*
 !resources/embedding/.gitkeep
 src/native/build/
 native/
+graphify-out/
