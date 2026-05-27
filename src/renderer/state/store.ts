@@ -40,6 +40,11 @@ interface OttoState {
 // session record has been loaded and set active.
 const attachInFlight = new Map<string, SessionEvent[]>();
 
+// Sessions the user has explicitly left (e.g. by hitting `/n` or the new-
+// conversation hotkey). Stragglers from these sessions must not yank the
+// renderer back via auto-attach.
+const abandonedSessions = new Set<string>();
+
 const MODEL_STORAGE_KEY = 'otto.model';
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 
@@ -83,14 +88,17 @@ export const useOttoStore = create<OttoState>((set, get) => ({
   },
 
   beginSession(id) {
-    // Drop any in-flight auto-attach work for sessions the user is leaving —
-    // otherwise stragglers from the previous session would yank activeSession
-    // back via attachSession().
+    // Mark the session we're leaving (if any) as abandoned so its remaining
+    // events don't yank activeSession back via auto-attach.
+    const prev = get().activeSession?.id;
+    if (prev && prev !== id) abandonedSessions.add(prev);
     attachInFlight.clear();
     set({ activeSession: { id, messages: [], currentTurnActive: false, queueDepth: 0, error: null } });
   },
 
   loadSession(id, messages) {
+    const prev = get().activeSession?.id;
+    if (prev && prev !== id) abandonedSessions.add(prev);
     attachInFlight.clear();
     set({ activeSession: { id, messages, currentTurnActive: false, queueDepth: 0, error: null } });
   },
@@ -121,6 +129,9 @@ export const useOttoStore = create<OttoState>((set, get) => ({
   applyEvent(event) {
     const session = get().activeSession;
     if (!session || event.sessionId !== session.id) {
+      // Drop events from sessions the user has explicitly left — auto-attach
+      // must not pull them back into focus.
+      if (event.sessionId && abandonedSessions.has(event.sessionId)) return;
       // Auto-attach to a session we don't currently track (e.g. one started
       // from the iPhone remote). Kick off the load and buffer this event so
       // it can be replayed once attach completes.
