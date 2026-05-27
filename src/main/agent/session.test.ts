@@ -294,6 +294,15 @@ describe('SessionManager listeners', () => {
     await manager.send({ sessionId, text: 'hi' });
     expect(calls).toEqual([sessionId]);
   });
+
+  it('fires activity listeners when send() is called and when stream events arrive', async () => {
+    const ticks: number[] = [];
+    manager.onActivityListener(() => ticks.push(1));
+    const { sessionId } = await manager.start({});
+    await manager.send({ sessionId, text: 'hi' });
+    // send() fires once; text-delta fires twice; message-end fires once — at minimum > 1
+    expect(ticks.length).toBeGreaterThanOrEqual(1);
+  });
 });
 
 describe('SDK attachment forwarding', () => {

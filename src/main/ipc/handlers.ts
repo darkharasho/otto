@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import type { Repo } from '../db/repo';
 import type { SessionManager } from '../agent/session';
+import type { ConversationPolicy } from '../agent/conversation-policy';
 import type { WindowManager } from '../window';
 import type { DecisionBroker } from '../autonomy/decision-broker';
 import type { Settings } from '../autonomy/settings';
@@ -17,6 +18,8 @@ import type {
   SessionCancelArgs,
   SessionInterruptArgs,
   SessionLoadArgs,
+  SessionEnsureForSubmitArgs,
+  SessionEnsureForSubmitResult,
   SettingsView,
   ShortcutInfoView,
   AppInfo,
@@ -42,6 +45,7 @@ export function registerIpcHandlers(deps: {
   broker: DecisionBroker;
   settings: Settings;
   registry: ProcessRegistry;
+  conversationPolicy: ConversationPolicy;
   appVersion: string;
   recommendedChord: string;
   hotkey: HotkeyManager;
@@ -58,7 +62,7 @@ export function registerIpcHandlers(deps: {
     applyRemoteCeiling?: (c: RemoteCeilingChoice) => void;
   };
 }): void {
-  const { repo, sessions, window, broker, settings, registry } = deps;
+  const { repo, sessions, window, broker, settings, registry, conversationPolicy } = deps;
 
   ipcMain.handle('session.start', async (_e, args: SessionStartArgs): Promise<SessionStartResult> => {
     return sessions.start(args);
@@ -88,6 +92,28 @@ export function registerIpcHandlers(deps: {
   ipcMain.handle('session.interrupt', async (_e, args: SessionInterruptArgs): Promise<void> => {
     await sessions.interrupt(args);
   });
+
+  ipcMain.handle(
+    'session.ensureForSubmit',
+    async (
+      _e,
+      args: SessionEnsureForSubmitArgs,
+    ): Promise<SessionEnsureForSubmitResult> => {
+      const current = args.current ?? sessions.getActiveSessionId();
+      if (!current) {
+        const { sessionId } = await sessions.start({ model: args.model });
+        conversationPolicy.recordActivity();
+        return { sessionId, isNew: true, reason: 'no-session' };
+      }
+      if (conversationPolicy.shouldStartFresh()) {
+        const { sessionId } = await sessions.start({ model: args.model });
+        conversationPolicy.recordActivity();
+        return { sessionId, isNew: true, reason: 'idle-timeout' };
+      }
+      conversationPolicy.recordActivity();
+      return { sessionId: current, isNew: false, reason: 'reused' };
+    },
+  );
 
   ipcMain.handle('session.list', async (): Promise<SessionMeta[]> => {
     return repo.listSessions();
@@ -193,6 +219,13 @@ export function registerIpcHandlers(deps: {
     'settings.setHideOnBlur',
     async (_e, args: { enabled: boolean }): Promise<void> => {
       await settings.setHideOnBlur(args.enabled);
+    }
+  );
+
+  ipcMain.handle(
+    'settings.setNewConversationIdleTimeoutMinutes',
+    async (_e, args: { minutes: number }): Promise<void> => {
+      await settings.setNewConversationIdleTimeoutMinutes(args.minutes);
     }
   );
 
