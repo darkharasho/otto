@@ -1,3 +1,17 @@
+Version v0.8.0
+
+Features:
+- **Attach images to your messages.** Paste, drag-and-drop, or click the paperclip on desktop to attach PNG/JPEG/WebP/GIF; on mobile, tap the paperclip to pick from camera or library, or paste from the clipboard. Multiple images per message; chips appear inline next to the input with a one-click remove. Image-only messages (no text) are allowed.
+- **Mobile attachments survive reconnect.** A new bridge `GET /user-upload` endpoint serves user-attached images over the same auth as `/history`, so previously-sent images on the phone render after a refresh or reconnect instead of vanishing.
+
+Fixes:
+- **~20 GB RAM leak in long screenshot sessions.** Screenshots are now referenced by id everywhere except at the API boundary, instead of being inlined as base64 in every layer (renderer store, SessionBus ring, and persisted messages all carried duplicate copies). A vitest memory probe verifies that 50 screenshot tool results now add < 1 MB of retained renderer memory (was +227 MB pre-fix).
+- **Process registry no longer holds onto exited processes forever.** Entries are evicted 5 minutes after exit instead of accumulating up to 4 MB of stdout buffer each for the lifetime of the app.
+- **SessionBus ring caps by bytes** (8 MB per session) in addition to event count, so a burst of large events can't pin memory.
+- **Tile-aware screenshot rendering.** Screenshots wider than 1920 px are tiled for the API; the renderer now correctly resolves the on-disk file for all tiles instead of showing a broken image.
+- **Startup orphan sweep** deletes per-session screenshot and user-upload directories that no longer correspond to a live session, and "Reset all sessions" wipes both roots.
+- **Bridge attachment staging gets a 10-minute TTL sweep** to prevent in-memory leak when a phone uploads but never sends a prompt.
+
 Version v0.7.1
 
 Features:
