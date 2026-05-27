@@ -159,7 +159,7 @@ describe('classifyResult', () => {
   it('classifies a result containing an image-ref block as an image view', () => {
     const result = {
       content: [
-        { type: 'image-ref', id: 'abc', sessionId: 's1', path: '/tmp/x.png', width: 100, height: 50, mimeType: 'image/png' },
+        { type: 'image-ref', id: 'abc', sessionId: 's1', path: '/tmp/x.png', width: 100, height: 50, mimeType: 'image/png', source: 'screenshot' as const },
         { type: 'text', text: '{"width":100}' },
       ],
     };

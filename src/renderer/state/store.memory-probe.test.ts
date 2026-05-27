@@ -67,7 +67,7 @@ describe('memory probe', () => {
         callId: `c${i}`,
         result: {
           content: [
-            { type: 'image-ref', id: `img${i}`, sessionId: 'sB', path: `/tmp/img${i}.png`, width: 1920, height: 1080, mimeType: 'image/png' },
+            { type: 'image-ref', id: `img${i}`, sessionId: 'sB', path: `/tmp/img${i}.png`, width: 1920, height: 1080, mimeType: 'image/png', source: 'screenshot' as const },
           ],
         },
         isError: false,

@@ -361,6 +361,7 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
             width: captured.width,
             height: captured.height,
             mimeType: 'image/png' as const,
+            source: 'screenshot' as const,
           }));
           screenshotRefsByCall.set(callId, { refs });
           // Bytes for the current turn's API call (transient — released after yield).

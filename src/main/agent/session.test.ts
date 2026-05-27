@@ -170,7 +170,7 @@ describe('SessionManager', () => {
 
     // Seed the per-call ref map as the screenshot tool would have.
     __setScreenshotRefsForTest('cs-1', [
-      { type: 'image-ref', id: 'img1', sessionId: 'sdk-1', path: '/tmp/img1.png', width: 100, height: 50, mimeType: 'image/png' },
+      { type: 'image-ref', id: 'img1', sessionId: 'sdk-1', path: '/tmp/img1.png', width: 100, height: 50, mimeType: 'image/png', source: 'screenshot' as const },
     ]);
 
     const { sessionId } = await manager.start({});
