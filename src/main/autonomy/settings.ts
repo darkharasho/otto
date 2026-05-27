@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { AutonomyMode } from '@shared/messages';
 
-const CURRENT_VERSION = 3;
+const CURRENT_VERSION = 4;
 const DEFAULT_MODE: AutonomyMode = 'balanced';
 const VALID_MODES: AutonomyMode[] = ['strict', 'balanced', 'full-allow'];
 
@@ -18,6 +18,10 @@ export interface NotificationPrefs {
   sound: boolean;
 }
 
+export interface NewConversationPrefs {
+  idleTimeoutMinutes: number; // 0 disables
+}
+
 export interface SettingsSnapshot {
   autonomy: { mode: AutonomyMode };
   notifications: NotificationPrefs;
@@ -26,6 +30,7 @@ export interface SettingsSnapshot {
   displayTarget: DisplayTarget;
   autoDeleteDays: number;
   hideOnBlur: boolean;
+  newConversation: NewConversationPrefs;
 }
 
 interface SettingsFileV1 {
@@ -41,7 +46,11 @@ interface SettingsFileV3 extends SettingsSnapshot {
   version: 3;
 }
 
-type SettingsFile = SettingsFileV1 | SettingsFileV2 | SettingsFileV3;
+interface SettingsFileV4 extends SettingsSnapshot {
+  version: 4;
+}
+
+type SettingsFile = SettingsFileV1 | SettingsFileV2 | SettingsFileV3 | SettingsFileV4;
 
 const DEFAULTS: SettingsSnapshot = {
   autonomy: { mode: DEFAULT_MODE },
@@ -51,6 +60,7 @@ const DEFAULTS: SettingsSnapshot = {
   displayTarget: 'cursor',
   autoDeleteDays: 0,
   hideOnBlur: false,
+  newConversation: { idleTimeoutMinutes: 60 },
 };
 
 type Listener = (snapshot: SettingsSnapshot) => void;
@@ -106,6 +116,9 @@ export class Settings {
   getHideOnBlur(): boolean {
     return this.state.hideOnBlur;
   }
+  getNewConversationIdleTimeoutMinutes(): number {
+    return this.state.newConversation.idleTimeoutMinutes;
+  }
   snapshot(): SettingsSnapshot {
     return {
       autonomy: { ...this.state.autonomy },
@@ -115,6 +128,7 @@ export class Settings {
       displayTarget: this.state.displayTarget,
       autoDeleteDays: this.state.autoDeleteDays,
       hideOnBlur: this.state.hideOnBlur,
+      newConversation: { ...this.state.newConversation },
     };
   }
 
@@ -157,6 +171,14 @@ export class Settings {
     await this.persist();
   }
 
+  async setNewConversationIdleTimeoutMinutes(minutes: number): Promise<void> {
+    if (!Number.isFinite(minutes) || minutes < 0) {
+      throw new Error(`invalid idleTimeoutMinutes: ${minutes}`);
+    }
+    this.state.newConversation = { idleTimeoutMinutes: Math.floor(minutes) };
+    await this.persist();
+  }
+
   onChange(fn: Listener): () => void {
     this.listeners.add(fn);
     return () => {
@@ -180,10 +202,12 @@ export class Settings {
       this.state = { ...DEFAULTS, autonomy: { mode: m } };
       return 'migrated';
     }
-    if (version === 2 || version === CURRENT_VERSION) {
-      const o = obj as Omit<SettingsFileV2, 'version'> & Partial<Omit<SettingsFileV3, 'version'>>;
+    if (version === 2 || version === 3 || version === CURRENT_VERSION) {
+      const o = obj as Omit<SettingsFileV2, 'version'> &
+        Partial<Omit<SettingsFileV4, 'version'>>;
       const m = o.autonomy?.mode;
       if (!m || !VALID_MODES.includes(m)) return false;
+      const idle = o.newConversation?.idleTimeoutMinutes;
       this.state = {
         autonomy: { mode: m },
         notifications: {
@@ -203,6 +227,12 @@ export class Settings {
             ? Math.floor(o.autoDeleteDays)
             : DEFAULTS.autoDeleteDays,
         hideOnBlur: typeof o.hideOnBlur === 'boolean' ? o.hideOnBlur : DEFAULTS.hideOnBlur,
+        newConversation: {
+          idleTimeoutMinutes:
+            Number.isFinite(idle) && (idle as number) >= 0
+              ? Math.floor(idle as number)
+              : DEFAULTS.newConversation.idleTimeoutMinutes,
+        },
       };
       return version === CURRENT_VERSION ? 'ok' : 'migrated';
     }
@@ -218,7 +248,7 @@ export class Settings {
     const dir = path.dirname(this.filePath);
     await fs.mkdir(dir, { recursive: true });
     const tmp = `${this.filePath}.tmp`;
-    const payload: SettingsFileV3 = { version: CURRENT_VERSION, ...this.snapshot() };
+    const payload: SettingsFileV4 = { version: CURRENT_VERSION, ...this.snapshot() };
     await fs.writeFile(tmp, JSON.stringify(payload, null, 2));
     await fs.rename(tmp, this.filePath);
   }

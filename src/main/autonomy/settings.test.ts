@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
+import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import os from 'node:os';
 import path from 'node:path';
 import { Settings } from './settings';
 
@@ -24,7 +26,7 @@ describe('Settings.load', () => {
     await s.load();
     expect(s.getMode()).toBe('balanced');
     const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
-    expect(written.version).toBe(3);
+    expect(written.version).toBe(4);
     expect(written.autonomy).toEqual({ mode: 'balanced' });
     expect(written.notifications).toEqual({ turnComplete: true, approval: true, sound: false });
     expect(written.startAtLogin).toBe(false);
@@ -50,7 +52,7 @@ describe('Settings.load', () => {
     await s.load();
     expect(s.getDisplayTarget()).toBe('cursor');
     const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
-    expect(written.version).toBe(3);
+    expect(written.version).toBe(4);
     expect(written.displayTarget).toBe('cursor');
   });
 
@@ -99,5 +101,55 @@ describe('Settings.setMode', () => {
     unsub();
     await s.setMode('full-allow');
     expect(events).toEqual(['strict']);
+  });
+});
+
+describe('Settings — newConversation', () => {
+  it('defaults idleTimeoutMinutes to 60 on fresh install', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'otto-settings-nc-'));
+    const s = new Settings(path.join(dir, 'settings.json'));
+    await s.load();
+    expect(s.getNewConversationIdleTimeoutMinutes()).toBe(60);
+  });
+
+  it('migrates a v3 file by adding the default idleTimeoutMinutes=60', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'otto-settings-nc-'));
+    const file = path.join(dir, 'settings.json');
+    await fs.writeFile(
+      file,
+      JSON.stringify({
+        version: 3,
+        autonomy: { mode: 'balanced' },
+        notifications: { turnComplete: true, approval: true, sound: false },
+        startAtLogin: false,
+        windowPosition: 'bottom-center',
+        displayTarget: 'cursor',
+        autoDeleteDays: 0,
+        hideOnBlur: false,
+      }),
+    );
+    const s = new Settings(file);
+    await s.load();
+    expect(s.getNewConversationIdleTimeoutMinutes()).toBe(60);
+    const raw = JSON.parse(await fs.readFile(file, 'utf8'));
+    expect(raw.version).toBe(4);
+    expect(raw.newConversation).toEqual({ idleTimeoutMinutes: 60 });
+  });
+
+  it('setNewConversationIdleTimeoutMinutes persists and rejects negatives', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'otto-settings-nc-'));
+    const s = new Settings(path.join(dir, 'settings.json'));
+    await s.load();
+    await s.setNewConversationIdleTimeoutMinutes(120);
+    expect(s.getNewConversationIdleTimeoutMinutes()).toBe(120);
+    await expect(s.setNewConversationIdleTimeoutMinutes(-1)).rejects.toThrow();
+  });
+
+  it('accepts 0 to disable idle-based new conversations', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'otto-settings-nc-'));
+    const s = new Settings(path.join(dir, 'settings.json'));
+    await s.load();
+    await s.setNewConversationIdleTimeoutMinutes(0);
+    expect(s.getNewConversationIdleTimeoutMinutes()).toBe(0);
   });
 });
