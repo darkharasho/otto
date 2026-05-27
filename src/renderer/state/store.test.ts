@@ -22,7 +22,8 @@ describe('useOttoStore', () => {
     expect(useOttoStore.getState().activeSession).toEqual({
       id: 's1',
       messages: [],
-      streaming: false,
+      currentTurnActive: false,
+      queueDepth: 0,
       error: null,
     });
   });
@@ -35,7 +36,7 @@ describe('useOttoStore', () => {
       messageId: 'm1',
     });
     const a = useOttoStore.getState().activeSession!;
-    expect(a.streaming).toBe(true);
+    expect(a.currentTurnActive).toBe(true);
     expect(a.messages).toHaveLength(1);
     expect(a.messages[0]).toMatchObject({ id: 'm1', role: 'assistant', content: [] });
   });
@@ -96,11 +97,21 @@ describe('useOttoStore', () => {
     expect(a.messages[0]!.content).toEqual([{ type: 'text', text: 'hello' }]);
   });
 
-  it('marks streaming false on done', () => {
+  it('marks currentTurnActive false on done', () => {
     useOttoStore.getState().beginSession('s1');
     useOttoStore.getState().applyEvent({ type: 'message-start', sessionId: 's1', messageId: 'm1' });
     useOttoStore.getState().applyEvent({ type: 'done', sessionId: 's1' });
-    expect(useOttoStore.getState().activeSession!.streaming).toBe(false);
+    expect(useOttoStore.getState().activeSession!.currentTurnActive).toBe(false);
+  });
+
+  it('tracks queueDepth across queued and consumed events', () => {
+    const s = useOttoStore.getState();
+    s.beginSession('sess');
+    s.applyEvent({ type: 'user-message-queued', sessionId: 'sess', messageId: 'm1', queueDepth: 1 });
+    s.applyEvent({ type: 'user-message-queued', sessionId: 'sess', messageId: 'm2', queueDepth: 2 });
+    expect(useOttoStore.getState().activeSession?.queueDepth).toBe(2);
+    s.applyEvent({ type: 'user-message-consumed', sessionId: 'sess', messageId: 'm1', queueDepth: 1 });
+    expect(useOttoStore.getState().activeSession?.queueDepth).toBe(1);
   });
 });
 

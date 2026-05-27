@@ -125,6 +125,13 @@ export class SessionManager {
         try { this.onAssistantMessageId(messageId); } catch (err) {
           logger.warn(`onAssistantMessageId threw: ${err instanceof Error ? err.message : err}`);
         }
+        // Emit user-message-consumed: the queued message is now being processed.
+        this.emit({
+          type: 'user-message-consumed',
+          sessionId,
+          messageId,
+          queueDepth: handle.queueDepth(),
+        });
       },
     });
     this.streams.set(sessionId, handle);
@@ -320,6 +327,12 @@ export class SessionManager {
     this.onAssistantMessageId(assistantId);
 
     stream.enqueue({ messageId: assistantId, text, attachments: args.attachments ?? [] });
+    this.emit({
+      type: 'user-message-queued',
+      sessionId,
+      messageId: assistantId,
+      queueDepth: stream.queueDepth(),
+    });
     void user;
     await row.done;
   }

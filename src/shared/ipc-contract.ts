@@ -226,7 +226,9 @@ export type SessionEvent =
       exitCode: number | null;
       signal: string | null;
     }
-  | { type: 'process-killed'; sessionId: string; messageId: string; handle: string };
+  | { type: 'process-killed'; sessionId: string; messageId: string; handle: string }
+  | { type: 'user-message-queued'; sessionId: string; messageId: string; queueDepth: number }
+  | { type: 'user-message-consumed'; sessionId: string; messageId: string; queueDepth: number };
 
 export const SESSION_EVENT_CHANNEL = 'session.event';
 

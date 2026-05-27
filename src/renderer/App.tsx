@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useState, useRef } from 'react';
 import { ipc } from './ipc';
-import { useOttoStore } from './state/store';
+import { useOttoStore, isSessionBusy } from './state/store';
 import type { ContentBlock } from '@shared/messages';
 import { CommandBar } from './components/CommandBar';
 import { Panel } from './components/Panel';
@@ -112,7 +112,7 @@ export function App() {
     void ipc.invoke('window.setMode', { mode: 'panel' });
   }, [beginSession, setWindowMode, model]);
 
-  const streaming = activeSession?.streaming ?? false;
+  const streaming = isSessionBusy(activeSession);
   const isFreshSession = !activeSession || activeSession.messages.length === 0;
 
   const handleStop = useCallback(() => {
@@ -180,6 +180,7 @@ export function App() {
           ensureSession={ensureSession}
           onStop={handleStop}
           busy={streaming}
+          queueDepth={activeSession?.queueDepth ?? 0}
           welcome={isFreshSession}
         />
       </div>
@@ -205,6 +206,7 @@ export function App() {
               ensureSession={ensureSession}
               onStop={handleStop}
               busy={streaming}
+              queueDepth={activeSession?.queueDepth ?? 0}
               welcome={isFreshSession}
             />
             <StatusFooter
@@ -218,7 +220,7 @@ export function App() {
         <MessageList
           sessionId={activeSession?.id ?? null}
           messages={activeSession?.messages ?? []}
-          streaming={streaming}
+          streaming={activeSession?.currentTurnActive ?? false}
         />
         {activeSession?.error && (
           <div className="px-4">

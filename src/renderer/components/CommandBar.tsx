@@ -13,6 +13,7 @@ interface Props {
   onStop?(): void;
   autoFocus?: boolean;
   busy?: boolean;
+  queueDepth?: number;
   welcome?: boolean;
 }
 
@@ -22,6 +23,7 @@ export function CommandBar({
   onStop,
   autoFocus = true,
   busy = false,
+  queueDepth = 0,
   welcome = false,
 }: Props) {
   const [value, setValue] = useState('');
@@ -39,7 +41,9 @@ export function CommandBar({
   }, []);
 
   useEffect(() => {
-    if (autoFocus && !busy) inputRef.current?.focus();
+    // Keep input focused when busy becomes true (user submitted while idle)
+    // and restore focus when busy clears — so the user can keep typing.
+    if (autoFocus) inputRef.current?.focus();
   }, [autoFocus, busy]);
 
   // Replay the send-bounce animation by toggling the class on each submit.
@@ -69,13 +73,14 @@ export function CommandBar({
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    if (busy) return;
     const trimmed = value.trim();
     if (trimmed.length === 0 && attachments.length === 0) return;
     onSubmit({ text: trimmed, attachments });
     setValue('');
     setAttachments([]);
     setSendTick((n) => n + 1);
+    // Keep the input focused so the user can immediately type a follow-up.
+    inputRef.current?.focus();
   }
 
   function handlePaste(e: React.ClipboardEvent<HTMLFormElement>) {
@@ -107,8 +112,8 @@ export function CommandBar({
     }
   }
 
-  const placeholder = busy ? 'Otto is working…' : 'Ask Otto to do something…';
-  const canSend = !busy && (value.trim().length > 0 || attachments.length > 0);
+  const placeholder = busy ? 'Otto is working — your message will queue' : 'Ask Otto to do something…';
+  const canSend = value.trim().length > 0 || attachments.length > 0;
 
   return (
     <form
@@ -150,12 +155,7 @@ export function CommandBar({
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder={placeholder}
-          disabled={busy}
-          aria-disabled={busy}
-          className={[
-            'flex-1 bg-transparent outline-none text-base placeholder:text-muted',
-            busy ? 'text-muted cursor-not-allowed' : 'text-text',
-          ].join(' ')}
+          className="flex-1 bg-transparent outline-none text-base placeholder:text-muted text-text"
         />
       </div>
       {/* Inline attachment chips — between input and action buttons */}
@@ -200,6 +200,12 @@ export function CommandBar({
           e.target.value = '';
         }}
       />
+      {/* Queue depth chip */}
+      {queueDepth > 0 && (
+        <span aria-live="polite" className="shrink-0 text-xs text-muted">
+          {queueDepth} queued
+        </span>
+      )}
       {/* Attach button */}
       {!busy && (
         <button

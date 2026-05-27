@@ -7,8 +7,13 @@ export type WindowMode = 'bar' | 'panel';
 export interface ActiveSessionState {
   id: string;
   messages: Message[];
-  streaming: boolean;
+  currentTurnActive: boolean;
+  queueDepth: number;
   error: StructuredError | null;
+}
+
+export function isSessionBusy(s: ActiveSessionState | null): boolean {
+  return !!s && (s.currentTurnActive || s.queueDepth > 0);
 }
 
 interface OttoState {
@@ -78,11 +83,11 @@ export const useOttoStore = create<OttoState>((set, get) => ({
   },
 
   beginSession(id) {
-    set({ activeSession: { id, messages: [], streaming: false, error: null } });
+    set({ activeSession: { id, messages: [], currentTurnActive: false, queueDepth: 0, error: null } });
   },
 
   loadSession(id, messages) {
-    set({ activeSession: { id, messages, streaming: false, error: null } });
+    set({ activeSession: { id, messages, currentTurnActive: false, queueDepth: 0, error: null } });
   },
 
   appendUserMessage(id, text, attachments = []) {
@@ -179,7 +184,7 @@ export const useOttoStore = create<OttoState>((set, get) => ({
           activeSession: {
             ...session,
             messages: [...session.messages, placeholder],
-            streaming: true,
+            currentTurnActive: true,
           },
         });
         return;
@@ -366,17 +371,25 @@ export const useOttoStore = create<OttoState>((set, get) => ({
         return;
       case 'message-cancelled': {
         const next = updateAssistant(session, event.messageId, (m) => ({ ...m, cancelled: true }));
-        set({ activeSession: { ...next, streaming: false } });
+        set({ activeSession: { ...next, currentTurnActive: false } });
         return;
       }
       case 'error': {
         set({
-          activeSession: { ...session, error: event.error, streaming: false },
+          activeSession: { ...session, error: event.error, currentTurnActive: false },
         });
         return;
       }
       case 'done': {
-        set({ activeSession: { ...session, streaming: false } });
+        set({ activeSession: { ...session, currentTurnActive: false } });
+        return;
+      }
+      case 'user-message-queued': {
+        set({ activeSession: { ...session, queueDepth: event.queueDepth } });
+        return;
+      }
+      case 'user-message-consumed': {
+        set({ activeSession: { ...session, queueDepth: event.queueDepth } });
         return;
       }
     }
@@ -397,7 +410,7 @@ export const useOttoStore = create<OttoState>((set, get) => ({
     }
     try {
       const messages = await window.otto.invoke('session.load', { sessionId });
-      set({ activeSession: { id: sessionId, messages, streaming: false, error: null }, windowMode: 'panel' });
+      set({ activeSession: { id: sessionId, messages, currentTurnActive: false, queueDepth: 0, error: null }, windowMode: 'panel' });
       // Phone-started turns need the desktop to expand from bar → panel so
       // the user can actually see the conversation that's unfolding.
       void window.otto.invoke('window.setMode', { mode: 'panel' }).catch(() => {});
