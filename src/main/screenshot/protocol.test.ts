@@ -44,4 +44,23 @@ describe('resolveImageRequest', () => {
   it('404s on symlink pointing outside root', () => {
     expect(resolveImageRequest('otto-image://s1/evil.png', root).ok).toBe(false);
   });
+
+  it('serves .jpg files', () => {
+    const sessDir = path.join(root, 's1');
+    writeFileSync(path.join(sessDir, 'photo.jpg'), 'jpg');
+    const r = resolveImageRequest('otto-image://s1/photo.jpg', root);
+    expect(r.ok).toBe(true);
+  });
+
+  it('serves .jpeg, .webp, .gif files', () => {
+    const sessDir = path.join(root, 's1');
+    for (const ext of ['jpeg', 'webp', 'gif']) {
+      writeFileSync(path.join(sessDir, `x.${ext}`), ext);
+      expect(resolveImageRequest(`otto-image://s1/x.${ext}`, root).ok).toBe(true);
+    }
+  });
+
+  it('still 404s on non-image extensions', () => {
+    expect(resolveImageRequest('otto-image://s1/good.txt', root).ok).toBe(false);
+  });
 });
