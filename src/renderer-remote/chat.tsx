@@ -1,15 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Menu } from 'lucide-react';
+import { Menu, Paperclip } from 'lucide-react';
 import { rehypeEmojiIcons } from '../renderer/components/rehype-emoji-icons';
 import { EMOJI_TO_ICON, fluentEmojiUrl } from '../renderer/components/emoji-icons';
 import { useRemoteStore } from './store';
-import { openWs, getHistory, loadMessages, type WsHandle } from './wire';
+import { openWs, getHistory, loadMessages, type WsHandle, type ImageRef } from './wire';
 import { ApprovalCard } from './approval-card';
 import { Screenshot } from './screenshot';
 import { SessionDrawer } from './SessionDrawer';
 import { describeTool, summarizeInput, classifyResult } from '../shared/tool-presenters';
+import { extFromMime } from '../shared/messages';
 import { ToolIcon } from './tool-icon';
 import { ToolResultRenderer } from './tool-result-renderer';
 import { toLocalImageSrc } from '../shared/image-src';
@@ -19,7 +20,7 @@ type ToolStatus = 'pending' | 'resolved' | 'denied';
 interface TextItem { kind: 'text'; id: string; text: string; done: boolean }
 interface ToolItem { kind: 'tool'; id: string; callId: string; name: string; input: unknown; status: ToolStatus; result?: unknown; isError?: boolean }
 interface ScreenshotItem { kind: 'screenshot'; id: string; shotId: string; signedUrl: string }
-interface UserItem { kind: 'user'; id: string; text: string }
+interface UserItem { kind: 'user'; id: string; text: string; content?: Array<{ type: string; [k: string]: unknown }> }
 type TranscriptItem = TextItem | ToolItem | ScreenshotItem | UserItem;
 
 interface PendingApproval { decisionId: string; tool: string; actionClass: string; summary: string }
@@ -258,6 +259,10 @@ export function Chat(): JSX.Element {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [unreachable, setUnreachable] = useState(false);
+  const [pendingUploads, setPendingUploads] = useState<Array<{ correlationId: string; mimeType: string; blobUrl: string }>>([]);
+  const [confirmedAttachments, setConfirmedAttachments] = useState<ImageRef[]>([]);
+  const [blobUrlByRefId, setBlobUrlByRefId] = useState<Map<string, string>>(new Map());
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const failedReconnectsRef = useRef(0);
   const streamWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -278,6 +283,33 @@ export function Chat(): JSX.Element {
       setErrorMsg('No response from Otto — try again.');
     }, 30_000);
   };
+
+  function bytesToBase64(bytes: Uint8Array): string {
+    let s = '';
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      s += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    }
+    return btoa(s);
+  }
+
+  async function stageFile(file: File): Promise<void> {
+    const ALLOWED = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const;
+    if (!(ALLOWED as readonly string[]).includes(file.type)) return;
+    const correlationId = crypto.randomUUID();
+    const blobUrl = URL.createObjectURL(file);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const bytesBase64 = bytesToBase64(bytes);
+    setPendingUploads((p) => [...p, { correlationId, mimeType: file.type, blobUrl }]);
+    wsRef.current?.send({
+      v: 1,
+      type: 'attach',
+      sessionId: sessionIdRef.current ?? '',
+      mimeType: file.type as 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif',
+      bytesBase64,
+      clientCorrelationId: correlationId,
+    });
+  }
 
   const wsRef = useRef<WsHandle | null>(null);
   const backoffRef = useRef(1000);
@@ -324,7 +356,9 @@ export function Chat(): JSX.Element {
             .filter((b) => b.type === 'text' && typeof b.text === 'string')
             .map((b) => String(b.text))
             .join('');
-          if (text) built.push({ kind: 'user', id: idBase, text });
+          const hasContent = text || content.some((b) => b.type === 'image-ref');
+          const typedContent = content as Array<{ type: string; [k: string]: unknown }>;
+          if (hasContent) built.push({ kind: 'user', id: idBase, text, content: typedContent });
           continue;
         }
         if (role === 'assistant') {
@@ -383,6 +417,30 @@ export function Chat(): JSX.Element {
       setErrorMsg(m);
       return;
     }
+    if (msg.type === 'attach_ok') {
+      const cid = typeof msg.clientCorrelationId === 'string' ? msg.clientCorrelationId : '';
+      const ref = msg.ref as ImageRef;
+      // Move blob URL from pendingUploads into blobUrlByRefId for the chip preview.
+      setPendingUploads((p) => {
+        const match = p.find((u) => u.correlationId === cid);
+        if (match) {
+          setBlobUrlByRefId((m) => new Map(m).set(ref.id, match.blobUrl));
+        }
+        return p.filter((u) => u.correlationId !== cid);
+      });
+      setConfirmedAttachments((c) => [...c, ref]);
+      return;
+    }
+    if (msg.type === 'attach_err') {
+      const cid = typeof msg.clientCorrelationId === 'string' ? msg.clientCorrelationId : '';
+      setPendingUploads((p) => {
+        const match = p.find((u) => u.correlationId === cid);
+        if (match) URL.revokeObjectURL(match.blobUrl);
+        return p.filter((u) => u.correlationId !== cid);
+      });
+      console.warn('attach failed', msg.message);
+      return;
+    }
     // Bridge wraps agent events as {type:'event', kind, ...origEvent}.
     if (msg.type !== 'event') return;
     const kind = msg.kind as string;
@@ -398,7 +456,8 @@ export function Chat(): JSX.Element {
       case 'user-message': {
         const id = String(msg.messageId ?? newId());
         const text = String(msg.text ?? '');
-        setItems((prev) => prev.some((it) => it.id === id) ? prev : [...prev, { kind: 'user', id, text }]);
+        const content = Array.isArray(msg.content) ? (msg.content as Array<{ type: string; [k: string]: unknown }>) : undefined;
+        setItems((prev) => prev.some((it) => it.id === id) ? prev : [...prev, { kind: 'user', id, text, content }]);
         return;
       }
       case 'message-start': {
@@ -563,12 +622,22 @@ export function Chat(): JSX.Element {
 
   const onSend = (): void => {
     const text = input.trim();
-    if (!text || streaming) return;
+    if (!text && confirmedAttachments.length === 0) return;
+    if (streaming) return;
+    if (pendingUploads.length > 0) return; // don't send while uploads in flight
     // sessionId may be empty on the first send; bridge will route via activeSessionId.
     const sid = sessionIdRef.current ?? '';
-    wsRef.current?.send({ v: 1, type: 'prompt', sessionId: sid, text });
+    wsRef.current?.send({
+      v: 1,
+      type: 'prompt',
+      sessionId: sid,
+      text,
+      attachmentIds: confirmedAttachments.length > 0 ? confirmedAttachments.map((r) => r.id) : undefined,
+    });
     setInput('');
     setErrorMsg(null);
+    // Revoke blob URLs for confirmed attachments after send (user message will use in-flight blobUrlByRefId).
+    setConfirmedAttachments([]);
     // Treat as streaming until the next 'done' event.
     setStreaming(true);
     armWatchdog();
@@ -644,12 +713,37 @@ export function Chat(): JSX.Element {
         )}
         {items.map((it) => {
           if (it.kind === 'user') {
+            const imageRefs = (it.content ?? []).filter((b) => b.type === 'image-ref') as Array<{ type: 'image-ref'; id: string; sessionId: string; mimeType: string; [k: string]: unknown }>;
             return (
               <div key={it.id} className="flex justify-end">
-                <div className="rounded-md bg-accent/15 text-text px-3 py-2 text-sm break-words max-w-[85%]">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeEmojiIcons]} components={mdComponents}>
-                    {it.text}
-                  </ReactMarkdown>
+                <div className="rounded-md bg-accent/15 text-text px-3 py-2 text-sm break-words max-w-[85%] space-y-1">
+                  {imageRefs.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-1">
+                      {imageRefs.map((ref) => {
+                        const localUrl = blobUrlByRefId.get(ref.id);
+                        if (localUrl) {
+                          return (
+                            <img
+                              key={ref.id}
+                              src={localUrl}
+                              alt=""
+                              loading="lazy"
+                              className="rounded-md max-h-40 object-contain border border-border"
+                            />
+                          );
+                        }
+                        // On mobile PWA without otto-user-image:// protocol: show placeholder.
+                        return (
+                          <span key={ref.id} className="text-muted text-xs italic">📷 image</span>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {it.text && (
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeEmojiIcons]} components={mdComponents}>
+                      {it.text}
+                    </ReactMarkdown>
+                  )}
                 </div>
               </div>
             );
@@ -701,25 +795,96 @@ export function Chat(): JSX.Element {
         </div>
       )}
 
-      <footer className="border-t border-border bg-surface p-2 flex items-end gap-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); }
-          }}
-          placeholder={connected ? 'Message Otto…' : 'Disconnected — reconnecting…'}
-          rows={1}
-          disabled={!connected}
-          className="flex-1 bg-bg border border-border rounded-md p-2 text-sm resize-none max-h-32 outline-none focus:border-accent disabled:opacity-50"
-        />
-        <button
-          onClick={onSend}
-          disabled={!connected || streaming || !input.trim()}
-          className="rounded-md bg-accent text-white px-4 py-2 text-sm font-medium disabled:opacity-50"
-        >
-          Send
-        </button>
+      <footer className="border-t border-border bg-surface pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+        {/* Chips row for staged attachments */}
+        {(pendingUploads.length > 0 || confirmedAttachments.length > 0) && (
+          <div className="flex gap-1 flex-wrap px-2 pt-2">
+            {confirmedAttachments.map((a) => {
+              const previewUrl = blobUrlByRefId.get(a.id);
+              return (
+                <div key={a.id} className="flex items-center gap-1 px-1.5 py-0.5 bg-bg/60 rounded text-[10px]">
+                  {previewUrl ? (
+                    <img src={previewUrl} alt="" className="h-4 w-4 object-cover rounded" />
+                  ) : (
+                    <img src={`otto-user-image://${a.sessionId}/${a.id}.${extFromMime(a.mimeType)}`} alt="" className="h-4 w-4 object-cover rounded" />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (previewUrl) URL.revokeObjectURL(previewUrl);
+                      setBlobUrlByRefId((m) => { const n = new Map(m); n.delete(a.id); return n; });
+                      setConfirmedAttachments((s) => s.filter((x) => x.id !== a.id));
+                    }}
+                    aria-label="Remove attachment"
+                  >×</button>
+                </div>
+              );
+            })}
+            {pendingUploads.map((p) => (
+              <div key={p.correlationId} className="flex items-center gap-1 px-1.5 py-0.5 bg-bg/60 rounded text-[10px] opacity-60">
+                <img src={p.blobUrl} alt="" className="h-4 w-4 object-cover rounded" />
+                <span>uploading…</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex items-end gap-2 p-2">
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files) {
+                for (const file of Array.from(e.target.files)) {
+                  void stageFile(file);
+                }
+              }
+              e.target.value = '';
+            }}
+          />
+          {/* Paperclip button */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={!connected}
+            className="flex-shrink-0 p-2 text-muted hover:text-text disabled:opacity-50"
+            aria-label="Attach image"
+          >
+            <Paperclip size={18} />
+          </button>
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend(); }
+            }}
+            onPaste={(e) => {
+              const items = Array.from(e.clipboardData?.items ?? []);
+              const imageItems = items.filter((item) => item.kind === 'file' && item.type.startsWith('image/'));
+              if (imageItems.length > 0) {
+                e.preventDefault();
+                for (const item of imageItems) {
+                  const file = item.getAsFile();
+                  if (file) void stageFile(file);
+                }
+              }
+            }}
+            placeholder={connected ? 'Message Otto…' : 'Disconnected — reconnecting…'}
+            rows={1}
+            disabled={!connected}
+            className="flex-1 bg-bg border border-border rounded-md p-2 text-sm resize-none max-h-32 outline-none focus:border-accent disabled:opacity-50"
+          />
+          <button
+            onClick={onSend}
+            disabled={!connected || streaming || (!input.trim() && confirmedAttachments.length === 0) || pendingUploads.length > 0}
+            className="rounded-md bg-accent text-white px-4 py-2 text-sm font-medium disabled:opacity-50"
+          >
+            Send
+          </button>
+        </div>
       </footer>
     </div>
   );
