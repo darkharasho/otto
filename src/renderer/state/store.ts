@@ -153,7 +153,7 @@ export const useOttoStore = create<OttoState>((set, get) => ({
           seq: session.messages.length,
           createdAt: Date.now(),
           role: 'user',
-          content: [{ type: 'text', text: event.text }],
+          content: event.content ?? [{ type: 'text', text: event.text }],
         };
         set({
           activeSession: {

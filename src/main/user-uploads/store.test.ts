@@ -45,4 +45,21 @@ describe('saveUserUpload', () => {
     expect(extOf('image/webp')).toBe('webp');
     expect(extOf('image/gif')).toBe('gif');
   });
+
+  it('rejects unsupported mime types at runtime', async () => {
+    vi.doMock('electron', () => ({
+      nativeImage: {
+        createFromBuffer: () => ({
+          getSize: () => ({ width: 1, height: 1 }),
+        }),
+      },
+    }));
+    vi.resetModules();
+    const { saveUserUpload: saveUserUploadMocked } = await import('./store');
+    await expect(
+      saveUserUploadMocked(Buffer.from([0]), 'image/avif' as unknown as 'image/png', 'sess-1', dir),
+    ).rejects.toThrow(/unsupported mimeType/);
+    vi.doUnmock('electron');
+    vi.resetModules();
+  });
 });

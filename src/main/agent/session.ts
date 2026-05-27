@@ -102,7 +102,7 @@ export class SessionManager {
     // bridge, etc.) can render a user bubble. The desktop renderer also adds
     // an optimistic bubble when YOU submit via the local UI — it dedupes by
     // messageId to avoid double-rendering.
-    this.emit({ type: 'user-message', sessionId, messageId: user.id, text });
+    this.emit({ type: 'user-message', sessionId, messageId: user.id, text, content: user.content });
     this.repo.setSessionTitleIfMissing(sessionId, text.slice(0, 80));
     this.repo.updateSessionActivity(sessionId, Date.now(), 'active');
 

@@ -215,7 +215,15 @@ export class BridgeServer {
       }
     });
 
-    ws.on('close', () => { const fn = unsub as (() => void) | null; if (fn) fn(); });
+    ws.on('close', () => {
+      const fn = unsub as (() => void) | null;
+      if (fn) fn();
+      // TODO: clear stagedAttachments for this connection's sessionId on disconnect.
+      // The connection closure handler doesn't track a per-connection sessionId
+      // (prompts can target any session). In-memory staging entries are cleaned
+      // up as refs are consumed by prompts; the orphan sweep at next startup
+      // removes any leftover on-disk files.
+    });
     // expose `device` and `unsub` via closure for subsequent tasks
     void device;
     void unsub;

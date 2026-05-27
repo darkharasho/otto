@@ -8,12 +8,15 @@ import { extFromMime, type ImageMimeType } from '@shared/messages';
 // Re-export so tests have a stable import surface without reaching into @shared.
 export const extOf = extFromMime;
 
+const ALLOWED_MIME: ReadonlySet<ImageMimeType> = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+
 export async function saveUserUpload(
   bytes: Buffer,
   mimeType: ImageMimeType,
   sessionId: string,
   configDir: string,
 ): Promise<Extract<ContentBlock, { type: 'image-ref' }>> {
+  if (!ALLOWED_MIME.has(mimeType)) throw new Error(`unsupported mimeType: ${mimeType}`);
   const dir = path.join(configDir, 'user-uploads', sessionId);
   await fsp.mkdir(dir, { recursive: true });
   const id = randomUUID();

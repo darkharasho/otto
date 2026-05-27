@@ -140,7 +140,10 @@ export function CommandBar({
               />
               <button
                 type="button"
-                onClick={() => setAttachments((s) => s.filter((x) => x.id !== a.id))}
+                onClick={() => {
+                  void window.otto.invoke('uploads.discard', { path: a.path, sessionId: a.sessionId });
+                  setAttachments((s) => s.filter((x) => x.id !== a.id));
+                }}
                 aria-label="Remove attachment"
               >
                 ×
