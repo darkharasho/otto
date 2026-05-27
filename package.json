@@ -1,6 +1,6 @@
 {
   "name": "otto",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "General-purpose computer coworking agent",
   "main": "out/main/index.js",
   "private": true,
