@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { ConversationPolicy } from './conversation-policy';
 
 function makePolicy(opts: { now: number; idleMinutes: number }) {

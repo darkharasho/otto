@@ -17,7 +17,7 @@ export function NewConversationSection({
         <div className="flex-1">
           <div className="text-sm">Start a new conversation after</div>
           <div className="text-[11px] text-muted">
-            Counts both your messages and Otto's activity. 0 disables.
+            Counts both your messages and Otto&apos;s activity. 0 disables.
           </div>
         </div>
         <NumberField
