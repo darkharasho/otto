@@ -12,6 +12,7 @@ import { ScreenshotUrlSigner } from './screenshot-urls';
 import { resolveImageRequest } from '../screenshot/protocol';
 
 type ImageRef = Extract<ContentBlock, { type: 'image-ref' }>;
+type StagedEntry = { ref: ImageRef; t: number };
 
 export interface BridgeServerOpts {
   tailnetIp: string | null;
@@ -49,8 +50,9 @@ export class BridgeServer {
   private readonly pairHits = new Map<string, number[]>();
   private readonly PAIR_WINDOW_MS = 60_000;
   private readonly PAIR_MAX = 10;
-  /** Per-session staging map: sessionId -> (refId -> ImageRef). Cleared as refs are consumed by prompts. */
-  private readonly stagedAttachments = new Map<string, Map<string, ImageRef>>();
+  /** Per-session staging map: sessionId -> (refId -> StagedEntry). Cleared as refs are consumed by prompts. */
+  private readonly stagedAttachments = new Map<string, Map<string, StagedEntry>>();
+  private static readonly STAGED_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
   private rateLimited(req: http.IncomingMessage): boolean {
     const ip = req.socket.remoteAddress ?? 'unknown';
@@ -71,6 +73,16 @@ export class BridgeServer {
   }
 
   signScreenshotUrl(id: string): string { return this.signer.sign(id); }
+
+  private sweepStagedAttachments(): void {
+    const cutoff = Date.now() - BridgeServer.STAGED_TTL_MS;
+    for (const [sid, m] of this.stagedAttachments) {
+      for (const [id, entry] of m) {
+        if (entry.t < cutoff) m.delete(id);
+      }
+      if (m.size === 0) this.stagedAttachments.delete(sid);
+    }
+  }
 
   async start(): Promise<{ port: number }> {
     if (!this.opts.tailnetIp) {
@@ -153,6 +165,7 @@ export class BridgeServer {
         const mimeType = msg.mimeType as 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
         const bytesBase64 = msg.bytesBase64 as string;
         const clientCorrelationId = msg.clientCorrelationId as string;
+        this.sweepStagedAttachments();
         void (async () => {
           try {
             const { saveUserUpload } = await import('../user-uploads/store');
@@ -161,7 +174,7 @@ export class BridgeServer {
             const ref = await saveUserUpload(bytes, mimeType, sessionId, configDir);
             let m = this.stagedAttachments.get(sessionId);
             if (!m) { m = new Map(); this.stagedAttachments.set(sessionId, m); }
-            m.set(ref.id, ref);
+            m.set(ref.id, { ref, t: Date.now() });
             ws.send(JSON.stringify({ v: 1, type: 'attach_ok', clientCorrelationId, ref }));
           } catch (err) {
             ws.send(JSON.stringify({ v: 1, type: 'attach_err', clientCorrelationId: msg.clientCorrelationId, message: err instanceof Error ? err.message : String(err) }));
@@ -176,9 +189,9 @@ export class BridgeServer {
           const m = this.stagedAttachments.get(typeof msg.sessionId === 'string' ? msg.sessionId : '');
           if (m) {
             for (const id of attachmentIds) {
-              const ref = m.get(id);
-              if (ref) {
-                attachments.push(ref);
+              const entry = m.get(id);
+              if (entry) {
+                attachments.push(entry.ref);
                 m.delete(id);
               }
             }

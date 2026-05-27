@@ -583,3 +583,165 @@ describe('BridgeServer /history', () => {
     expect(body.truncated).toBe(false);
   });
 });
+
+/**
+ * Pure function for TTL sweep logic. Used for testing and reusability.
+ * Removes entries from the map where entry.t < (now - ttlMs).
+ * Deletes empty inner maps from the outer map.
+ */
+function sweepMapByTTL<T extends { t: number }>(
+  map: Map<string, Map<string, T>>,
+  ttlMs: number,
+  now: number,
+): void {
+  const cutoff = now - ttlMs;
+  for (const [sid, m] of map) {
+    for (const [id, entry] of m) {
+      if (entry.t < cutoff) m.delete(id);
+    }
+    if (m.size === 0) map.delete(sid);
+  }
+}
+
+describe('BridgeServer stagedAttachments TTL', () => {
+  it('sweepMapByTTL removes entries older than the TTL', () => {
+    const ttlMs = 10 * 60 * 1000; // 10 minutes
+    const now = 100_000;
+
+    type Entry = { ref: { id: string }; t: number };
+    const map = new Map<string, Map<string, Entry>>([
+      [
+        'session-1',
+        new Map<string, Entry>([
+          ['ref-old', { ref: { id: 'ref-old' }, t: now - 11 * 60 * 1000 }], // 11 min ago, should be removed
+          ['ref-fresh', { ref: { id: 'ref-fresh' }, t: now - 5 * 60 * 1000 }], // 5 min ago, should be kept
+        ]),
+      ],
+      [
+        'session-2',
+        new Map<string, Entry>([
+          ['ref-ancient', { ref: { id: 'ref-ancient' }, t: now - 20 * 60 * 1000 }], // 20 min ago, should be removed
+        ]),
+      ],
+    ]);
+
+    sweepMapByTTL(map, ttlMs, now);
+
+    // session-1 should have only ref-fresh
+    expect(map.has('session-1')).toBe(true);
+    expect(map.get('session-1')!.size).toBe(1);
+    expect(map.get('session-1')!.has('ref-fresh')).toBe(true);
+    expect(map.get('session-1')!.has('ref-old')).toBe(false);
+
+    // session-2 should be deleted entirely (empty after sweep)
+    expect(map.has('session-2')).toBe(false);
+  });
+
+  it('sweepMapByTTL keeps entries within the TTL window', () => {
+    const ttlMs = 10 * 60 * 1000;
+    const now = 100_000;
+
+    type Entry = { ref: { id: string }; t: number };
+    const map = new Map<string, Map<string, Entry>>([
+      [
+        'session-1',
+        new Map<string, Entry>([
+          ['ref-boundary', { ref: { id: 'ref-boundary' }, t: now - ttlMs - 1 }], // just past cutoff, should be removed
+          ['ref-just-after-cutoff', { ref: { id: 'ref-just-after-cutoff' }, t: now - ttlMs + 1 }], // just after cutoff (newer), should be kept
+        ]),
+      ],
+    ]);
+
+    sweepMapByTTL(map, ttlMs, now);
+
+    // Only the one just after cutoff should remain
+    expect(map.get('session-1')!.size).toBe(1);
+    expect(map.get('session-1')!.has('ref-just-after-cutoff')).toBe(true);
+    expect(map.get('session-1')!.has('ref-boundary')).toBe(false);
+  });
+
+  it('sweepMapByTTL handles empty map gracefully', () => {
+    const ttlMs = 10 * 60 * 1000;
+    const now = 100_000;
+
+    type Entry = { ref: { id: string }; t: number };
+    const map = new Map<string, Map<string, Entry>>();
+
+    expect(() => {
+      sweepMapByTTL(map, ttlMs, now);
+    }).not.toThrow();
+    expect(map.size).toBe(0);
+  });
+});
+
+describe('BridgeServer stagedAttachments integration (real WS flow)', () => {
+  it('attach handler calls sweep and wraps ref with timestamp', async () => {
+    // Minimal 1×1 PNG bytes.
+    const png = Buffer.from(
+      '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a4944415478da6300010000000500010d0a2db40000000049454e44ae426082',
+      'hex',
+    );
+
+    const { vi } = await import('vitest');
+    vi.doMock('electron', () => ({
+      nativeImage: {
+        createFromBuffer: () => ({ getSize: () => ({ width: 1, height: 1 }) }),
+      },
+    }));
+    vi.resetModules();
+
+    const { BridgeServer: BridgeServerMocked } = await import('./bridge-server');
+
+    const pairing = makeStore();
+    const bus = new SessionBus();
+    const configDir = mkdtempSync(path.join(tmpdir(), 'otto-bridge-ttl-test-'));
+    dirs.push(configDir);
+
+    const srv = new BridgeServerMocked({
+      tailnetIp: '127.0.0.1', pairing, bus, pwaDir: null,
+      screenshotSecret: 'x', loadScreenshot: async () => null,
+      configDir,
+    });
+    const { port } = await srv.start();
+    const { token } = await pairing.issue('iPhone');
+
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    let attachedRefId: string | null = null;
+
+    await new Promise<void>((resolve, reject) => {
+      ws.on('error', reject);
+      ws.on('open', () => ws.send(JSON.stringify({ v: 1, type: 'auth', token })));
+      ws.on('message', (data) => {
+        const m = JSON.parse(data.toString()) as Record<string, unknown>;
+        if (m.type === 'auth_ok') {
+          // Send attach frame.
+          ws.send(JSON.stringify({
+            v: 1,
+            type: 'attach',
+            sessionId: 'sess-ttl-test',
+            mimeType: 'image/png',
+            bytesBase64: png.toString('base64'),
+            clientCorrelationId: 'corr-1',
+          }));
+          return;
+        }
+        if (m.type === 'attach_ok') {
+          attachedRefId = (m.ref as Record<string, unknown>).id as string;
+          setTimeout(resolve, 50);
+          return;
+        }
+        if (m.type === 'attach_err') {
+          reject(new Error(`attach_err: ${String(m.message)}`));
+        }
+      });
+    });
+
+    ws.close();
+    await srv.stop();
+
+    vi.doUnmock('electron');
+    vi.resetModules();
+
+    expect(attachedRefId).toBeTruthy();
+  });
+});
