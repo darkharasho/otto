@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useState } from 'react';
 import { ipc } from './ipc';
 import { useOttoStore } from './state/store';
+import type { ContentBlock } from '@shared/messages';
 import { CommandBar } from './components/CommandBar';
 import { Panel } from './components/Panel';
 import { MessageList } from './components/MessageList';
@@ -54,8 +55,19 @@ export function App() {
   }, []);
 
 
+  type ImageRef = Extract<ContentBlock, { type: 'image-ref' }>;
+
+  const ensureSession = useCallback(async (): Promise<string> => {
+    if (activeSession?.id) return activeSession.id;
+    // eslint-disable-next-line no-console
+    console.debug('[otto] session.start (ensureSession)', { model });
+    const { sessionId: newId } = await ipc.invoke('session.start', { model });
+    beginSession(newId);
+    return newId;
+  }, [activeSession, beginSession, model]);
+
   const handleSubmit = useCallback(
-    async (text: string) => {
+    async ({ text, attachments }: { text: string; attachments: ImageRef[] }) => {
       try {
         setWindowMode('panel');
         void ipc.invoke('window.setMode', { mode: 'panel' });
@@ -67,10 +79,10 @@ export function App() {
           sessionId = newId;
           beginSession(newId);
         }
-        appendUserMessage(crypto.randomUUID(), text);
+        appendUserMessage(crypto.randomUUID(), text, attachments);
         // eslint-disable-next-line no-console
-        console.debug('[otto] session.send', { sessionId, len: text.length });
-        await ipc.invoke('session.send', { sessionId, text });
+        console.debug('[otto] session.send', { sessionId, len: text.length, attachments: attachments.length });
+        await ipc.invoke('session.send', { sessionId, text, attachments });
         void ipc.invoke('session.list', undefined).then(setSessions);
       } catch (err) {
         // eslint-disable-next-line no-console
@@ -162,6 +174,7 @@ export function App() {
       <div key={`bar-${enterTick}`} className="w-screen h-screen p-1 otto-enter">
         <CommandBar
           onSubmit={handleSubmit}
+          ensureSession={ensureSession}
           onStop={handleStop}
           busy={streaming}
           welcome={isFreshSession}
@@ -186,6 +199,7 @@ export function App() {
           <div className="flex flex-col gap-2">
             <CommandBar
               onSubmit={handleSubmit}
+              ensureSession={ensureSession}
               onStop={handleStop}
               busy={streaming}
               welcome={isFreshSession}
