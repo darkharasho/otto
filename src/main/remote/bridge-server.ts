@@ -9,8 +9,10 @@ import type { PairingStore } from './pairing-store';
 import type { SessionBus } from './session-bus';
 import type { ContentBlock, Message, SessionMeta } from '@shared/messages';
 import { ScreenshotUrlSigner } from './screenshot-urls';
+import { resolveImageRequest } from '../screenshot/protocol';
 
 type ImageRef = Extract<ContentBlock, { type: 'image-ref' }>;
+type StagedEntry = { ref: ImageRef; t: number };
 
 export interface BridgeServerOpts {
   tailnetIp: string | null;
@@ -48,8 +50,9 @@ export class BridgeServer {
   private readonly pairHits = new Map<string, number[]>();
   private readonly PAIR_WINDOW_MS = 60_000;
   private readonly PAIR_MAX = 10;
-  /** Per-session staging map: sessionId -> (refId -> ImageRef). Cleared as refs are consumed by prompts. */
-  private readonly stagedAttachments = new Map<string, Map<string, ImageRef>>();
+  /** Per-session staging map: sessionId -> (refId -> StagedEntry). Cleared as refs are consumed by prompts. */
+  private readonly stagedAttachments = new Map<string, Map<string, StagedEntry>>();
+  private static readonly STAGED_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
   private rateLimited(req: http.IncomingMessage): boolean {
     const ip = req.socket.remoteAddress ?? 'unknown';
@@ -70,6 +73,16 @@ export class BridgeServer {
   }
 
   signScreenshotUrl(id: string): string { return this.signer.sign(id); }
+
+  private sweepStagedAttachments(): void {
+    const cutoff = Date.now() - BridgeServer.STAGED_TTL_MS;
+    for (const [sid, m] of this.stagedAttachments) {
+      for (const [id, entry] of m) {
+        if (entry.t < cutoff) m.delete(id);
+      }
+      if (m.size === 0) this.stagedAttachments.delete(sid);
+    }
+  }
 
   async start(): Promise<{ port: number }> {
     if (!this.opts.tailnetIp) {
@@ -152,6 +165,7 @@ export class BridgeServer {
         const mimeType = msg.mimeType as 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
         const bytesBase64 = msg.bytesBase64 as string;
         const clientCorrelationId = msg.clientCorrelationId as string;
+        this.sweepStagedAttachments();
         void (async () => {
           try {
             const { saveUserUpload } = await import('../user-uploads/store');
@@ -160,7 +174,7 @@ export class BridgeServer {
             const ref = await saveUserUpload(bytes, mimeType, sessionId, configDir);
             let m = this.stagedAttachments.get(sessionId);
             if (!m) { m = new Map(); this.stagedAttachments.set(sessionId, m); }
-            m.set(ref.id, ref);
+            m.set(ref.id, { ref, t: Date.now() });
             ws.send(JSON.stringify({ v: 1, type: 'attach_ok', clientCorrelationId, ref }));
           } catch (err) {
             ws.send(JSON.stringify({ v: 1, type: 'attach_err', clientCorrelationId: msg.clientCorrelationId, message: err instanceof Error ? err.message : String(err) }));
@@ -175,9 +189,9 @@ export class BridgeServer {
           const m = this.stagedAttachments.get(typeof msg.sessionId === 'string' ? msg.sessionId : '');
           if (m) {
             for (const id of attachmentIds) {
-              const ref = m.get(id);
-              if (ref) {
-                attachments.push(ref);
+              const entry = m.get(id);
+              if (entry) {
+                attachments.push(entry.ref);
                 m.delete(id);
               }
             }
@@ -249,6 +263,7 @@ export class BridgeServer {
       if (req.method === 'GET' && req.url?.startsWith('/sessions')) return await this.handleSessions(req, res);
       if (req.method === 'GET' && req.url?.startsWith('/screenshot/')) return await this.handleScreenshot(req, res);
       if (req.method === 'GET' && req.url?.startsWith('/image')) return await this.handleImage(req, res);
+      if (req.method === 'GET' && req.url?.startsWith('/user-upload/')) return await this.handleUserUpload(req, res);
       // Fall through to PWA static serving for any unmatched GET when a pwaDir
       // is configured. Reserved API prefixes above are matched first so the
       // bridge wire still works even if a static file happens to share a name.
@@ -315,6 +330,36 @@ export class BridgeServer {
       res.statusCode = status;
       res.end(reason);
     }
+  }
+
+  private async handleUserUpload(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    if (!this.opts.configDir) { res.statusCode = 404; res.end('disabled'); return; }
+    const url = new URL(req.url ?? '/', 'http://x');
+    // <img> tags can't send custom headers — the PWA appends the bearer as a
+    // query param, matching how /image does it.
+    const token = url.searchParams.get('token') ?? '';
+    if (!token || !(await this.opts.pairing.verify(token))) { res.statusCode = 401; res.end('unauthorized'); return; }
+    // Path shape: /user-upload/<sessionId>/<file>
+    const m = /^\/user-upload\/([^/?]+)\/([^/?]+)/.exec(url.pathname);
+    if (!m) { res.statusCode = 400; res.end('bad path'); return; }
+    const sessionId = m[1]!;
+    const file = m[2]!;
+    // Reuse the otto-image:// resolver — it expects that scheme so we synthesize one.
+    const root = nodePath.join(this.opts.configDir, 'user-uploads');
+    const r = resolveImageRequest(`otto-image://${sessionId}/${file}`, root);
+    if (!r.ok) { res.statusCode = 404; res.end('not found'); return; }
+    const ext = nodePath.extname(r.absPath).toLowerCase();
+    const contentType =
+      ext === '.png'  ? 'image/png'  :
+      ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' :
+      ext === '.webp' ? 'image/webp' :
+      ext === '.gif'  ? 'image/gif'  :
+      'application/octet-stream';
+    const buf = await fsp.readFile(r.absPath);
+    res.statusCode = 200;
+    res.setHeader('content-type', contentType);
+    res.setHeader('cache-control', 'private, max-age=86400');
+    res.end(buf);
   }
 
   private static readonly MIME: Record<string, string> = {
