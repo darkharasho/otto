@@ -18,6 +18,7 @@ export function App() {
   const setWindowMode = useOttoStore((s) => s.setWindowMode);
   const beginSession = useOttoStore((s) => s.beginSession);
   const loadSession = useOttoStore((s) => s.loadSession);
+  const abandonActiveSession = useOttoStore((s) => s.abandonActiveSession);
   const appendUserMessage = useOttoStore((s) => s.appendUserMessage);
   const applyEvent = useOttoStore((s) => s.applyEvent);
   const setSessions = useOttoStore((s) => s.setSessions);
@@ -116,29 +117,29 @@ export function App() {
 
   const handleNewConversation = useCallback(
     async ({ text, attachments }: { text: string; attachments: ImageRef[] }) => {
-      // Cut over from the previous session cleanly so any in-flight stream
-      // stops emitting events that could yank activeSession back via
-      // auto-attach.
       const prevId = useOttoStore.getState().activeSession?.id ?? null;
       if (prevId) {
         void ipc.invoke('session.interrupt', { sessionId: prevId }).catch(() => {});
       }
-      const { sessionId } = await ipc.invoke('session.start', { model });
-      beginSession(sessionId);
-      // No text yet → collapse to the bar so the user gets a clean starting
-      // surface instead of staring at the panel of the old conversation.
+      // Empty trigger (the common /n␣ + space case): just drop the old
+      // session and collapse to the bar. The next submit will lazily start a
+      // fresh session via ensureForSubmit, which keeps the empty bar entirely
+      // free of any in-flight stream's busy/queue state.
       if (text.length === 0 && attachments.length === 0) {
+        abandonActiveSession();
         setWindowMode('bar');
         void ipc.invoke('window.setMode', { mode: 'bar' });
         return;
       }
+      const { sessionId } = await ipc.invoke('session.start', { model });
+      beginSession(sessionId);
       setWindowMode('panel');
       void ipc.invoke('window.setMode', { mode: 'panel' });
       appendUserMessage(crypto.randomUUID(), text, attachments);
       await ipc.invoke('session.send', { sessionId, text, attachments });
       void ipc.invoke('session.list', undefined).then(setSessions);
     },
-    [beginSession, setWindowMode, setSessions, appendUserMessage, model],
+    [abandonActiveSession, beginSession, setWindowMode, setSessions, appendUserMessage, model],
   );
 
   const streaming = isSessionBusy(activeSession);

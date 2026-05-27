@@ -26,6 +26,7 @@ interface OttoState {
   setWindowMode(mode: WindowMode): void;
   beginSession(id: string): void;
   loadSession(id: string, messages: Message[]): void;
+  abandonActiveSession(): void;
   appendUserMessage(id: string, text: string, attachments?: Array<Extract<ContentBlock, { type: 'image-ref' }>>): void;
   applyEvent(event: SessionEvent): void;
   attachSession(sessionId: string): Promise<void>;
@@ -101,6 +102,13 @@ export const useOttoStore = create<OttoState>((set, get) => ({
     if (prev && prev !== id) abandonedSessions.add(prev);
     attachInFlight.clear();
     set({ activeSession: { id, messages, currentTurnActive: false, queueDepth: 0, error: null } });
+  },
+
+  abandonActiveSession() {
+    const prev = get().activeSession?.id;
+    if (prev) abandonedSessions.add(prev);
+    attachInFlight.clear();
+    set({ activeSession: null });
   },
 
   appendUserMessage(id, text, attachments = []) {
