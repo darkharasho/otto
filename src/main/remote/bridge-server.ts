@@ -9,6 +9,7 @@ import type { PairingStore } from './pairing-store';
 import type { SessionBus } from './session-bus';
 import type { ContentBlock, Message, SessionMeta } from '@shared/messages';
 import { ScreenshotUrlSigner } from './screenshot-urls';
+import { resolveImageRequest } from '../screenshot/protocol';
 
 type ImageRef = Extract<ContentBlock, { type: 'image-ref' }>;
 
@@ -249,6 +250,7 @@ export class BridgeServer {
       if (req.method === 'GET' && req.url?.startsWith('/sessions')) return await this.handleSessions(req, res);
       if (req.method === 'GET' && req.url?.startsWith('/screenshot/')) return await this.handleScreenshot(req, res);
       if (req.method === 'GET' && req.url?.startsWith('/image')) return await this.handleImage(req, res);
+      if (req.method === 'GET' && req.url?.startsWith('/user-upload/')) return await this.handleUserUpload(req, res);
       // Fall through to PWA static serving for any unmatched GET when a pwaDir
       // is configured. Reserved API prefixes above are matched first so the
       // bridge wire still works even if a static file happens to share a name.
@@ -315,6 +317,36 @@ export class BridgeServer {
       res.statusCode = status;
       res.end(reason);
     }
+  }
+
+  private async handleUserUpload(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    if (!this.opts.configDir) { res.statusCode = 404; res.end('disabled'); return; }
+    const url = new URL(req.url ?? '/', 'http://x');
+    // <img> tags can't send custom headers — the PWA appends the bearer as a
+    // query param, matching how /image does it.
+    const token = url.searchParams.get('token') ?? '';
+    if (!token || !(await this.opts.pairing.verify(token))) { res.statusCode = 401; res.end('unauthorized'); return; }
+    // Path shape: /user-upload/<sessionId>/<file>
+    const m = /^\/user-upload\/([^/?]+)\/([^/?]+)/.exec(url.pathname);
+    if (!m) { res.statusCode = 400; res.end('bad path'); return; }
+    const sessionId = m[1]!;
+    const file = m[2]!;
+    // Reuse the otto-image:// resolver — it expects that scheme so we synthesize one.
+    const root = nodePath.join(this.opts.configDir, 'user-uploads');
+    const r = resolveImageRequest(`otto-image://${sessionId}/${file}`, root);
+    if (!r.ok) { res.statusCode = 404; res.end('not found'); return; }
+    const ext = nodePath.extname(r.absPath).toLowerCase();
+    const contentType =
+      ext === '.png'  ? 'image/png'  :
+      ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg' :
+      ext === '.webp' ? 'image/webp' :
+      ext === '.gif'  ? 'image/gif'  :
+      'application/octet-stream';
+    const buf = await fsp.readFile(r.absPath);
+    res.statusCode = 200;
+    res.setHeader('content-type', contentType);
+    res.setHeader('cache-control', 'private, max-age=86400');
+    res.end(buf);
   }
 
   private static readonly MIME: Record<string, string> = {

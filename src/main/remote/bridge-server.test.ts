@@ -510,6 +510,61 @@ describe('BridgeServer WS session control', () => {
   });
 });
 
+describe('BridgeServer GET /user-upload', () => {
+  it('serves a user-upload file with valid token and rejects without', async () => {
+    const pairing = makeStore();
+    const configDir = mkdtempSync(path.join(tmpdir(), 'otto-upload-bridge-'));
+    dirs.push(configDir);
+
+    // Write a fake png at <configDir>/user-uploads/<sid>/<id>.png
+    const sid = 'sess-abc';
+    const uploadDir = path.join(configDir, 'user-uploads', sid);
+    const { mkdirSync, writeFileSync } = await import('node:fs');
+    mkdirSync(uploadDir, { recursive: true });
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
+    writeFileSync(path.join(uploadDir, 'img-1.png'), pngBytes);
+
+    server = new BridgeServer({
+      tailnetIp: '127.0.0.1', pairing, bus: new SessionBus(), pwaDir: null,
+      screenshotSecret: 'x', loadScreenshot: async () => null,
+      configDir,
+    });
+    const { port } = await server.start();
+    const { token } = await pairing.issue('iPhone');
+
+    // 1. No token → 401
+    const noToken = await fetch(`http://127.0.0.1:${port}/user-upload/${sid}/img-1.png`);
+    expect(noToken.status).toBe(401);
+
+    // 2. Invalid token → 401
+    const badToken = await fetch(`http://127.0.0.1:${port}/user-upload/${sid}/img-1.png?token=bogus`);
+    expect(badToken.status).toBe(401);
+
+    // 3. Valid token → 200 with correct content-type and bytes
+    const ok = await fetch(`http://127.0.0.1:${port}/user-upload/${sid}/img-1.png?token=${encodeURIComponent(token)}`);
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get('content-type')).toBe('image/png');
+    const buf = Buffer.from(await ok.arrayBuffer());
+    expect(buf.equals(pngBytes)).toBe(true);
+
+    // 4. Traversal attempt → 404 (resolveImageRequest rejects unsafe paths)
+    const traversal = await fetch(`http://127.0.0.1:${port}/user-upload/${sid}/..%2Fsecret.png?token=${encodeURIComponent(token)}`);
+    expect(traversal.status).toBe(404);
+  });
+
+  it('returns 404 when configDir is not set', async () => {
+    const pairing = makeStore();
+    server = new BridgeServer({
+      tailnetIp: '127.0.0.1', pairing, bus: new SessionBus(), pwaDir: null,
+      screenshotSecret: 'x', loadScreenshot: async () => null,
+      // configDir intentionally omitted
+    });
+    const { port } = await server.start();
+    const res = await fetch(`http://127.0.0.1:${port}/user-upload/s1/img.png?token=anything`);
+    expect(res.status).toBe(404);
+  });
+});
+
 describe('BridgeServer /history', () => {
   it('GET /history requires auth token and returns events from the ring', async () => {
     const pairing = makeStore();
