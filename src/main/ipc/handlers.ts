@@ -19,6 +19,8 @@ import type {
   SettingsView,
   ShortcutInfoView,
   AppInfo,
+  UploadsStageArgs,
+  UploadsStageResult,
 } from '@shared/ipc-contract';
 import type { AutonomyMode, Message, SessionMeta } from '@shared/messages';
 import { emitAutonomyEvent } from './events';
@@ -62,6 +64,11 @@ export function registerIpcHandlers(deps: {
 
   ipcMain.handle('session.send', async (_e, args: SessionSendArgs): Promise<void> => {
     await sessions.send(args);
+  });
+
+  ipcMain.handle('uploads.stage', async (_e, args: UploadsStageArgs): Promise<UploadsStageResult> => {
+    const { saveUserUpload } = await import('../user-uploads/store');
+    return saveUserUpload(Buffer.from(args.bytes), args.mimeType, args.sessionId, deps.configDir);
   });
 
   ipcMain.handle('session.cancel', async (_e, args: SessionCancelArgs): Promise<void> => {

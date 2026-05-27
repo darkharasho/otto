@@ -1,4 +1,4 @@
-import type { ActionClass, AutonomyMode, Message, SessionMeta } from './messages';
+import type { ActionClass, AutonomyMode, ContentBlock, Message, SessionMeta } from './messages';
 
 export type ErrorKind =
   | 'auth-missing'
@@ -23,7 +23,15 @@ export interface SessionStartResult {
 export interface SessionSendArgs {
   sessionId: string;
   text: string;
+  attachments?: Array<Extract<ContentBlock, { type: 'image-ref' }>>;
 }
+
+export interface UploadsStageArgs {
+  sessionId: string;
+  bytes: Uint8Array;
+  mimeType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
+}
+export type UploadsStageResult = Extract<ContentBlock, { type: 'image-ref' }>;
 
 export interface SessionCancelArgs {
   sessionId: string;
@@ -100,7 +108,8 @@ export type IpcRequest =
   | { channel: 'remote:setRemoteCeiling'; args: { ceiling: RemoteCeilingChoice }; result: void }
   | { channel: 'remote:mintPairingCode'; args: undefined; result: PairingCodePayload }
   | { channel: 'remote:listDevices'; args: undefined; result: PairedDeviceSummary[] }
-  | { channel: 'remote:revokeDevice'; args: { deviceId: string }; result: void };
+  | { channel: 'remote:revokeDevice'; args: { deviceId: string }; result: void }
+  | { channel: 'uploads.stage'; args: UploadsStageArgs; result: UploadsStageResult };
 
 export type RemoteCeilingChoice = 'match' | 'strict' | 'balanced' | 'full-allow';
 
