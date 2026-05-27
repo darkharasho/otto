@@ -63,15 +63,17 @@ export function App() {
   const inFlightSessionStart = useRef<Promise<string> | null>(null);
 
   const ensureSession = useCallback(async (): Promise<string> => {
-    if (activeSession?.id) return activeSession.id;
     if (inFlightSessionStart.current) return inFlightSessionStart.current;
-    // eslint-disable-next-line no-console
-    console.debug('[otto] session.start (ensureSession)', { model });
-    const p = ipc.invoke('session.start', { model }).then(({ sessionId: newId }) => {
-      beginSession(newId);
-      inFlightSessionStart.current = null;
-      return newId;
-    });
+    const p = ipc
+      .invoke('session.ensureForSubmit', {
+        current: activeSession?.id ?? null,
+        model,
+      })
+      .then(({ sessionId, isNew }) => {
+        if (isNew) beginSession(sessionId);
+        inFlightSessionStart.current = null;
+        return sessionId;
+      });
     inFlightSessionStart.current = p;
     return p;
   }, [activeSession, beginSession, model]);
@@ -111,6 +113,21 @@ export function App() {
     setWindowMode('panel');
     void ipc.invoke('window.setMode', { mode: 'panel' });
   }, [beginSession, setWindowMode, model]);
+
+  const handleNewConversation = useCallback(
+    async ({ text, attachments }: { text: string; attachments: ImageRef[] }) => {
+      const { sessionId } = await ipc.invoke('session.start', { model });
+      beginSession(sessionId);
+      setWindowMode('panel');
+      void ipc.invoke('window.setMode', { mode: 'panel' });
+      if (text.length > 0 || attachments.length > 0) {
+        appendUserMessage(crypto.randomUUID(), text, attachments);
+        await ipc.invoke('session.send', { sessionId, text, attachments });
+        void ipc.invoke('session.list', undefined).then(setSessions);
+      }
+    },
+    [beginSession, setWindowMode, setSessions, appendUserMessage, model],
+  );
 
   const streaming = isSessionBusy(activeSession);
   const isFreshSession = !activeSession || activeSession.messages.length === 0;
@@ -190,6 +207,18 @@ export function App() {
     return () => window.removeEventListener('keydown', handler);
   }, [windowMode, setWindowMode]);
 
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.shiftKey && (e.key === 'N' || e.key === 'n')) {
+        e.preventDefault();
+        void handleNewConversation({ text: '', attachments: [] });
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [handleNewConversation]);
+
   if (windowMode === 'bar') {
     return (
       <div key={`bar-${enterTick}`} className="w-screen h-screen p-1 otto-enter">
@@ -198,6 +227,7 @@ export function App() {
           ensureSession={ensureSession}
           onStop={handleStop}
           onInterruptAndSend={handleInterruptAndSend}
+          onNewConversation={handleNewConversation}
           busy={streaming}
           queueDepth={activeSession?.queueDepth ?? 0}
           welcome={isFreshSession}
@@ -225,6 +255,7 @@ export function App() {
               ensureSession={ensureSession}
               onStop={handleStop}
               onInterruptAndSend={handleInterruptAndSend}
+              onNewConversation={handleNewConversation}
               busy={streaming}
               queueDepth={activeSession?.queueDepth ?? 0}
               welcome={isFreshSession}

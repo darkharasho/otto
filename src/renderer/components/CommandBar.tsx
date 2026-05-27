@@ -4,6 +4,7 @@ import { OttoMark } from './OttoMark';
 import { ipc } from '../ipc';
 import { extFromMime } from '@shared/messages';
 import type { ContentBlock } from '@shared/messages';
+import { parseNewConversationPrefix } from '@shared/manual-prefix';
 
 type ImageRef = Extract<ContentBlock, { type: 'image-ref' }>;
 
@@ -13,6 +14,7 @@ interface Props {
   onStop?(): void;
   /** Called when Shift+Enter is pressed while busy — interrupts the current turn then sends. */
   onInterruptAndSend?(args: { text: string; attachments: ImageRef[] }): void;
+  onNewConversation?(args: { text: string; attachments: ImageRef[] }): void;
   autoFocus?: boolean;
   busy?: boolean;
   queueDepth?: number;
@@ -24,6 +26,7 @@ export function CommandBar({
   ensureSession,
   onStop,
   onInterruptAndSend,
+  onNewConversation,
   autoFocus = true,
   busy = false,
   queueDepth = 0,
@@ -95,6 +98,16 @@ export function CommandBar({
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
+    const parsed = parseNewConversationPrefix(value);
+    if (parsed && onNewConversation) {
+      const remainder = parsed.remainder.trimEnd();
+      onNewConversation({ text: remainder, attachments });
+      setValue('');
+      setAttachments([]);
+      setSendTick((n) => n + 1);
+      inputRef.current?.focus();
+      return;
+    }
     const trimmed = value.trim();
     if (trimmed.length === 0 && attachments.length === 0) return;
     onSubmit({ text: trimmed, attachments });
