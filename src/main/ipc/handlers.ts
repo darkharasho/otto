@@ -101,7 +101,10 @@ export function registerIpcHandlers(deps: {
       _e,
       args: SessionEnsureForSubmitArgs,
     ): Promise<SessionEnsureForSubmitResult> => {
-      const current = args.current ?? sessions.getActiveSessionId();
+      // The renderer is authoritative about which session the user is in —
+      // don't fall back to main's last-active id, which can be stale (e.g.
+      // after the user abandons via /n).
+      const current = args.current;
       if (!current) {
         const { sessionId } = await sessions.start({ model: args.model });
         conversationPolicy.recordActivity();
