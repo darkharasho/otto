@@ -138,16 +138,17 @@ async function startElectron(): Promise<void> {
     if (removed > 0) logger.info(`auto-deleted ${removed} session(s) older than ${autoDeleteDays}d`);
   }
 
-  // Non-blocking orphan screenshot sweep: remove any screenshot dirs that have
+  // Non-blocking orphan session-file sweep: remove any session dirs that have
   // no corresponding session in the database (e.g. left over from a hard kill).
   void (async () => {
     try {
-      const { sweepOrphanScreenshots } = await import('./screenshot/cleanup');
+      const { sweepOrphanSessionFiles } = await import('./screenshot/cleanup');
       const sessions = repo.listSessions();
       const known = new Set(sessions.map((s: { id: string }) => s.id));
-      await sweepOrphanScreenshots(path.join(ottoConfigDir, 'screenshots'), known);
+      await sweepOrphanSessionFiles(path.join(ottoConfigDir, 'screenshots'), known);
+      await sweepOrphanSessionFiles(path.join(ottoConfigDir, 'user-uploads'), known);
     } catch (err) {
-      console.warn('orphan screenshot sweep failed', err);
+      console.warn('orphan session-file sweep failed', err);
     }
   })();
 
