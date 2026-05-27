@@ -21,7 +21,10 @@ export class TrayManager {
     if (!this.tray) return;
     try {
       let img = nativeImage.createFromPath(this.iconPath());
-      if (process.platform === 'darwin') img = img.resize({ width: 16, height: 16 });
+      if (process.platform === 'darwin') {
+        img = img.resize({ width: 16, height: 16 });
+        img.setTemplateImage(true);
+      }
       if (!img.isEmpty()) this.tray.setImage(img);
     } catch (err) {
       logger.warn(`tray setImage failed: ${err instanceof Error ? err.message : err}`);
@@ -40,6 +43,7 @@ export class TrayManager {
       // 32×32 base which renders too large. Resize to the correct dimensions.
       if (process.platform === 'darwin') {
         icon = icon.resize({ width: 16, height: 16 });
+        icon.setTemplateImage(true);
       }
     } catch (err) {
       logger.warn(`tray icon load failed: ${err instanceof Error ? err.message : err}`);
