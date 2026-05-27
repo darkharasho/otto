@@ -1,4 +1,6 @@
-import type { SdkClient, SdkStreamEvent, SdkTurn } from './session';
+import type { SdkClient, SdkStreamEvent, SessionStreamHandle, TaggedSdkStreamEvent } from './session';
+import { createSessionStream, type QueryFactory } from './session-stream';
+import type { SDKMessage, SDKUserMessage, Options, Query } from '@anthropic-ai/claude-agent-sdk';
 import {
   buildInputTools, buildKnowledgeTool, buildScreenshotTool, buildShellTools, stubTools,
   buildRecallTool, buildMarkTaskCompleteTool,
@@ -437,15 +439,40 @@ function createFakeSdkClient(deps?: {
       counter += 1;
       return { id: `fake-${counter}` };
     },
-    sendTurn(sid, text, _attachments, signal, _resumeId) {
+    openStream(sid, _resumeId, hooks): SessionStreamHandle {
       const fakeSdkId = `fake-sdk-${(counter += 1)}`;
+      const abortController = new AbortController();
+      type Enqueued = { messageId: string; text: string; attachments: Array<Extract<import('@shared/messages').ContentBlock, { type: 'image-ref' }>> };
+      const inbox: Enqueued[] = [];
+      const waiters: Array<(item: Enqueued | null) => void> = [];
+      let closed = false;
+      let firstTurn = true;
+      function pumpNext(): Promise<Enqueued | null> {
+        if (inbox.length > 0) return Promise.resolve(inbox.shift()!);
+        if (closed) return Promise.resolve(null);
+        return new Promise((resolve) => {
+          waiters.push(resolve);
+        });
+      }
+      function enqueue(m: Enqueued): void {
+        if (closed) return;
+        const w = waiters.shift();
+        if (w) w(m);
+        else inbox.push(m);
+      }
+      function closeAll(): void {
+        closed = true;
+        while (waiters.length > 0) waiters.shift()!(null);
+      }
+      async function* turnEvents(text: string, signal: AbortSignal): AsyncIterable<SdkStreamEvent> {
       const wantsShell = text.includes('[shell]') && !!deps?.broker;
       const wantsSpawn = text.includes('[spawn]') && !!deps?.broker && !!deps?.getRegistry;
       const wantsMutate = text.includes('[mutate]') && !!deps?.broker;
       const wantsScreenshot = text.includes('[screenshot]') && !!deps?.broker;
-      async function* events(): AsyncIterable<SdkStreamEvent> {
-        yield { type: 'message-start' };
-        yield { type: 'session-id', id: fakeSdkId };
+        if (firstTurn) {
+          yield { type: 'session-id', id: fakeSdkId };
+          firstTurn = false;
+        }
         for (const ch of `echo: ${text}`) {
           if (signal.aborted) return;
           yield { type: 'text-delta', text: ch };
@@ -559,7 +586,32 @@ function createFakeSdkClient(deps?: {
         yield { type: 'message-end' };
         yield { type: 'done' };
       }
-      return { signal, events };
+
+      async function* taggedEvents(): AsyncIterable<TaggedSdkStreamEvent> {
+        while (!closed) {
+          const next = await pumpNext();
+          if (!next) break;
+          try { await hooks.onPerMessageContext(next.messageId); } catch (err) {
+            logger.warn(`onPerMessageContext threw: ${err instanceof Error ? err.message : err}`);
+          }
+          try {
+            for await (const ev of turnEvents(next.text, abortController.signal)) {
+              yield { ...ev, messageId: next.messageId } as TaggedSdkStreamEvent;
+            }
+          } catch (err) {
+            // Re-throw so SessionManager's consumer catch attributes correctly.
+            throw err;
+          }
+        }
+      }
+
+      return {
+        enqueue(args) { enqueue(args); },
+        async interrupt() { abortController.abort(); },
+        events: taggedEvents,
+        close() { abortController.abort(); closeAll(); },
+        queueDepth() { return inbox.length; },
+      };
     },
   };
 }
@@ -596,25 +648,32 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
       return { id };
     },
 
-    sendTurn(sessionId, text, attachments, signal, resumeId): SdkTurn {
-      // The SDK takes an AbortController, not a raw AbortSignal. Bridge by
-      // creating a controller and aborting it when the upstream signal fires.
+    openStream(sessionId, resumeId, hooks): SessionStreamHandle {
       const abortController = new AbortController();
-      if (signal.aborted) {
-        abortController.abort();
-      } else {
-        signal.addEventListener('abort', () => abortController.abort(), { once: true });
+      const spawnOverrides = getSdkSpawnOverrides();
+      const { markdown: knowledge, ids: pinnedIds } = deps.factsForPrompt();
+      if (pinnedIds.length > 0) deps.bumpFactUse(pinnedIds, sessionId);
+      const memCounts = deps.memoryCounts();
+      const memLine = `Memory currently holds ${memCounts.factsPinned} pinned facts (of ${memCounts.factsTotal} learned), ${memCounts.playbook} playbooks, ${memCounts.anti_pattern} anti-patterns, ${memCounts.heuristic} heuristics.`;
+      const parts = [SYSTEM_PROMPT, '', '---', memLine];
+      if (knowledge.trim().length > 0) {
+        parts.push('Known about this machine and user (pinned facts):');
+        parts.push(knowledge.trim());
       }
+      const systemPrompt = parts.join('\n');
 
-      async function* events(): AsyncIterable<SdkStreamEvent> {
-        yield { type: 'message-start' };
-        const sdk = await loadAgentSdk();
-        // Rebuild MCP server per turn so the closure captures a fresh
-        // { sessionId, messageId, broker } context.
-        const ottoMcp = buildOttoMcpServer(sdk, {
+      let queryHandle: Query | null = null;
+      // Lazily-resolved SDK module — we need it to (re)build MCP servers in the
+      // per-message hook. The first build happens during queryFactory; we
+      // cache the module reference here so the hook can rebuild later.
+      let sdkModule: AgentSdkModule | null = null;
+
+      const buildMcp = (messageId: string) => {
+        if (!sdkModule) throw new Error('SDK module not yet loaded');
+        return buildOttoMcpServer(sdkModule, {
           broker: deps.broker,
           sessionId,
-          messageId: deps.currentMessageId(),
+          messageId,
           getRegistry: deps.getRegistry,
           getConfigDir: deps.getConfigDir,
           recall: deps.recall,
@@ -623,69 +682,119 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
           appendKnowledge: deps.appendKnowledge,
           onMarkTaskComplete: deps.onMarkTaskComplete,
         });
-        const spawnOverrides = getSdkSpawnOverrides();
-        const { markdown: knowledge, ids: pinnedIds } = deps.factsForPrompt();
-        if (pinnedIds.length > 0) deps.bumpFactUse(pinnedIds, sessionId);
-        const memCounts = deps.memoryCounts();
-        const memLine = `Memory currently holds ${memCounts.factsPinned} pinned facts (of ${memCounts.factsTotal} learned), ${memCounts.playbook} playbooks, ${memCounts.anti_pattern} anti-patterns, ${memCounts.heuristic} heuristics.`;
-        const parts = [SYSTEM_PROMPT, '', '---', memLine];
-        if (knowledge.trim().length > 0) {
-          parts.push('Known about this machine and user (pinned facts):');
-          parts.push(knowledge.trim());
+      };
+
+      const queryFactory: QueryFactory = ({ prompt, options }) => {
+        // queryFactory is invoked synchronously by createSessionStream, but we
+        // need the dynamic-imported SDK module first. Wrap into an async
+        // generator that loads the SDK on first iteration.
+        let inner: Query | null = null;
+        async function ensureQuery(): Promise<Query> {
+          if (inner) return inner;
+          sdkModule = await loadAgentSdk();
+          const initialMcp = buildOttoMcpServer(sdkModule, {
+            broker: deps.broker,
+            sessionId,
+            messageId: '<pending>',
+            getRegistry: deps.getRegistry,
+            getConfigDir: deps.getConfigDir,
+            recall: deps.recall,
+            factsForPrompt: deps.factsForPrompt,
+            bumpFactUse: deps.bumpFactUse,
+            appendKnowledge: deps.appendKnowledge,
+            onMarkTaskComplete: deps.onMarkTaskComplete,
+          });
+          inner = sdkModule.query({
+            prompt: prompt as AsyncIterable<SDKUserMessage>,
+            options: {
+              ...(options as Options),
+              systemPrompt,
+              tools: ['WebSearch', 'WebFetch'],
+              allowedTools,
+              mcpServers: { 'otto-tools': initialMcp },
+              abortController,
+              ...(resumeId ? { resume: resumeId } : {}),
+              ...(spawnOverrides ?? {}),
+            },
+          }) as Query;
+          queryHandle = inner;
+          return inner;
         }
-        const systemPrompt = parts.join('\n');
-        const promptInput: string | AsyncIterable<unknown> = attachments.length === 0
-          ? text
-          : (async function* () {
-              const imageBlocks = await Promise.all(attachments.map(async (a) => ({
-                type: 'image' as const,
-                source: {
-                  type: 'base64' as const,
-                  media_type: a.mimeType,
-                  data: (await fsp.readFile(a.path)).toString('base64'),
-                },
-              })));
-              const content: unknown[] = [];
-              if (text.length > 0) content.push({ type: 'text', text });
-              for (const b of imageBlocks) content.push(b);
-              yield {
-                type: 'user' as const,
-                message: { role: 'user' as const, content },
-                parent_tool_use_id: null,
-                session_id: sessionId,
-              };
-            })();
-        const iter = sdk.query({
-          prompt: promptInput as Parameters<typeof sdk.query>[0]['prompt'],
-          options: {
-            systemPrompt,
-            // Disable all built-in Claude Code tools; we only want our MCP tool.
-            tools: ['WebSearch', 'WebFetch'],
-            allowedTools,
-            mcpServers: { 'otto-tools': ottoMcp },
-            abortController,
-            // Session continuity: pass a captured SDK session id to resume the
-            // prior conversation. On the first turn this is undefined; we'll
-            // capture the id from the init system message below.
-            ...(resumeId ? { resume: resumeId } : {}),
-            // In packaged builds, override the SDK's spawn target so it uses
-            // Electron-as-Node and reads cli.js from the unpacked location.
-            ...(spawnOverrides ?? {}),
+
+        const wrapped = {
+          async *[Symbol.asyncIterator](): AsyncGenerator<SDKMessage, void> {
+            const q = await ensureQuery();
+            for await (const msg of q) {
+              yield msg;
+            }
           },
-        });
-        try {
-          for await (const msg of iter) {
-            for (const ev of mapSdkMessage(msg)) {
-              yield ev;
+          async interrupt(): Promise<void> {
+            const q = await ensureQuery();
+            await q.interrupt();
+          },
+          async setMcpServers(servers: Record<string, unknown>): Promise<unknown> {
+            const q = await ensureQuery();
+            return q.setMcpServers(servers as Parameters<Query['setMcpServers']>[0]);
+          },
+        };
+        return wrapped as unknown as ReturnType<QueryFactory>;
+      };
+
+      const stream = createSessionStream({
+        sessionId,
+        queryFactory,
+        onPerMessageContext: async (messageId: string) => {
+          // Notify upstream callers (SessionManager → main/index.ts) so
+          // `currentMessageId()` returns the right id for any consumers that
+          // still rely on the deps callback.
+          try { hooks.onPerMessageContext(messageId); } catch (err) {
+            logger.warn(`onPerMessageContext threw: ${err instanceof Error ? err.message : err}`);
+          }
+          // Swap the MCP server so the next user message's tool calls capture
+          // a fresh closure with { sessionId, messageId, broker }.
+          if (queryHandle && sdkModule) {
+            try {
+              const fresh = buildMcp(messageId);
+              await queryHandle.setMcpServers({ 'otto-tools': fresh });
+            } catch (err) {
+              logger.warn(`setMcpServers failed: ${err instanceof Error ? err.message : err}`);
             }
           }
-        } finally {
-          yield { type: 'message-end' };
-          yield { type: 'done' };
+        },
+      });
+
+      // Adapt the SessionStream into the SessionStreamHandle protocol expected
+      // by SessionManager. We re-map raw SDK messages into the fine-grained
+      // SdkStreamEvent stream (text-delta, tool-call-start, ...), then tag
+      // each event with the active messageId.
+      async function* eventsTagged(): AsyncIterable<TaggedSdkStreamEvent> {
+        for await (const se of stream.events()) {
+          const mapped = mapSdkMessage(se.raw);
+          for (const ev of mapped) {
+            yield { ...ev, messageId: se.messageId } as TaggedSdkStreamEvent;
+          }
+          if (se.type === 'result') {
+            // End-of-turn marker for this messageId.
+            yield { type: 'message-end', messageId: se.messageId };
+            yield { type: 'done', messageId: se.messageId };
+          }
         }
       }
 
-      return { signal, events };
+      return {
+        enqueue(args) {
+          // Persist attachments via the createSessionStream path (it handles
+          // reading bytes off disk and inlining base64).
+          stream.enqueueUserMessage(args);
+        },
+        interrupt: () => stream.interrupt(),
+        events: eventsTagged,
+        close: () => {
+          abortController.abort();
+          stream.close();
+        },
+        queueDepth: () => stream.queueDepth(),
+      };
     },
   };
 }

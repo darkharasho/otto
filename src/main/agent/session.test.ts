@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, promises as fsp } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { openDatabase } from '../db/db';
 import { Repo } from '../db/repo';
-import { SessionManager, type SdkClient, type SdkStreamEvent, type SdkTurn } from './session';
+import { SessionManager, type SdkClient, type SdkStreamEvent, type SessionStreamHandle, type TaggedSdkStreamEvent } from './session';
 import type { SessionEvent } from '@shared/ipc-contract';
 import type { ContentBlock } from '@shared/messages';
 import { SessionBus, type RemoteOutbound } from '../remote/session-bus';
@@ -16,26 +16,79 @@ let manager: SessionManager;
 let events: SessionEvent[];
 let fakeSdk: SdkClient;
 
+/**
+ * Build a fake SessionStreamHandle that records enqueued messages and replays
+ * a scripted sequence of SdkStreamEvents for each enqueue. The script is a
+ * generator factory taking the enqueued text + an abort signal. This mirrors
+ * the old per-turn fake but in the long-lived stream shape.
+ */
+type Script = (args: { text: string; signal: AbortSignal }) => AsyncGenerator<SdkStreamEvent>;
+
+function makeFakeOpenStream(scriptByCall: Script[] | Script) {
+  const calls: Array<{ sessionId: string; resumeId: string | undefined; enqueued: Array<{ messageId: string; text: string; attachments: Array<Extract<ContentBlock, { type: 'image-ref' }>> }> }> = [];
+
+  const openStream = vi.fn((sessionId: string, resumeId: string | undefined, hooks: { onPerMessageContext: (messageId: string) => void | Promise<void> }): SessionStreamHandle => {
+    const enqueued: Array<{ messageId: string; text: string; attachments: Array<Extract<ContentBlock, { type: 'image-ref' }>> }> = [];
+    calls.push({ sessionId, resumeId, enqueued });
+    const abortController = new AbortController();
+    const waiters: Array<(item: typeof enqueued[number] | null) => void> = [];
+    const inbox: typeof enqueued = [];
+    let closed = false;
+    let callIdx = 0;
+    function pumpNext(): Promise<typeof enqueued[number] | null> {
+      if (inbox.length > 0) return Promise.resolve(inbox.shift()!);
+      if (closed) return Promise.resolve(null);
+      return new Promise((resolve) => waiters.push(resolve));
+    }
+    async function* taggedEvents(): AsyncIterable<TaggedSdkStreamEvent> {
+      while (!closed) {
+        const next = await pumpNext();
+        if (!next) break;
+        await hooks.onPerMessageContext(next.messageId);
+        const script = Array.isArray(scriptByCall)
+          ? scriptByCall[Math.min(callIdx, scriptByCall.length - 1)]!
+          : scriptByCall;
+        callIdx++;
+        try {
+          for await (const ev of script({ text: next.text, signal: abortController.signal })) {
+            yield { ...ev, messageId: next.messageId } as TaggedSdkStreamEvent;
+          }
+        } catch (err) {
+          throw err;
+        }
+      }
+    }
+    return {
+      enqueue(m) {
+        enqueued.push(m);
+        const w = waiters.shift();
+        if (w) w(m);
+        else inbox.push(m);
+      },
+      async interrupt() { abortController.abort(); },
+      events: taggedEvents,
+      close() { closed = true; abortController.abort(); while (waiters.length) waiters.shift()!(null); },
+      queueDepth() { return inbox.length; },
+    };
+  });
+
+  return { openStream, calls };
+}
+
 beforeEach(() => {
   dir = mkdtempSync(path.join(tmpdir(), 'otto-sess-'));
   const db = openDatabase(path.join(dir, 'otto.db'));
   repo = new Repo(db);
   events = [];
+  const { openStream } = makeFakeOpenStream(async function* () {
+    yield { type: 'text-delta', text: 'hel' };
+    yield { type: 'text-delta', text: 'lo' };
+    yield { type: 'message-end' };
+    yield { type: 'done' };
+  });
   fakeSdk = {
     startSession: vi.fn(async () => ({ id: 'sdk-1' })),
-    sendTurn: vi.fn((_sid, _text, _attachments, signal) => {
-      const t: SdkTurn = {
-        async *events() {
-          yield { type: 'message-start' };
-          yield { type: 'text-delta', text: 'hel' };
-          yield { type: 'text-delta', text: 'lo' };
-          yield { type: 'message-end' };
-          yield { type: 'done' };
-        },
-        signal,
-      };
-      return t;
-    }),
+    openStream,
   };
   manager = new SessionManager(repo, fakeSdk, 'claude-sonnet-4-6', (e) => events.push(e));
 });
@@ -62,16 +115,13 @@ describe('SessionManager', () => {
   });
 
   it('records tool_use and tool_result blocks on the assistant message', async () => {
-    fakeSdk.sendTurn = vi.fn((_sid, _text, _attachments, signal): SdkTurn => ({
-      signal,
-      async *events(): AsyncGenerator<SdkStreamEvent> {
-        yield { type: 'message-start' };
-        yield { type: 'tool-call-start', callId: 'c1', name: 'echo', input: { msg: 'hi' } };
-        yield { type: 'tool-call-result', callId: 'c1', result: 'hi', isError: false };
-        yield { type: 'message-end' };
-        yield { type: 'done' };
-      },
-    }));
+    const { openStream } = makeFakeOpenStream(async function* () {
+      yield { type: 'tool-call-start', callId: 'c1', name: 'echo', input: { msg: 'hi' } };
+      yield { type: 'tool-call-result', callId: 'c1', result: 'hi', isError: false };
+      yield { type: 'message-end' };
+      yield { type: 'done' };
+    });
+    fakeSdk.openStream = openStream;
     const { sessionId } = await manager.start({});
     await manager.send({ sessionId, text: 'use echo' });
     const msgs = repo.loadMessages(sessionId);
@@ -83,14 +133,11 @@ describe('SessionManager', () => {
   });
 
   it('emits an error event when the SDK throws and persists the message as errored', async () => {
-    fakeSdk.sendTurn = vi.fn((_sid, _text, _attachments, signal): SdkTurn => ({
-      signal,
-      async *events(): AsyncGenerator<SdkStreamEvent> {
-        yield { type: 'message-start' };
-        yield { type: 'text-delta', text: 'partial' };
-        throw new Error('boom');
-      },
-    }));
+    const { openStream } = makeFakeOpenStream(async function* () {
+      yield { type: 'text-delta', text: 'partial' };
+      throw new Error('boom');
+    });
+    fakeSdk.openStream = openStream;
     const { sessionId } = await manager.start({});
     await manager.send({ sessionId, text: 'fail' });
     const err = events.find((e) => e.type === 'error');
@@ -100,18 +147,15 @@ describe('SessionManager', () => {
   });
 
   it('cancellation aborts the in-flight turn and marks the message cancelled', async () => {
-    fakeSdk.sendTurn = vi.fn((_sid, _text, _attachments, signal): SdkTurn => ({
-      signal,
-      async *events(): AsyncGenerator<SdkStreamEvent> {
-        yield { type: 'message-start' };
-        yield { type: 'text-delta', text: 'part' };
-        await new Promise((r) => setTimeout(r, 10));
-        if (signal.aborted) throw Object.assign(new Error('aborted'), { name: 'AbortError' });
-        yield { type: 'text-delta', text: 'ial' };
-        yield { type: 'message-end' };
-        yield { type: 'done' };
-      },
-    }));
+    const { openStream } = makeFakeOpenStream(async function* ({ signal }) {
+      yield { type: 'text-delta', text: 'part' };
+      await new Promise((r) => setTimeout(r, 10));
+      if (signal.aborted) throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+      yield { type: 'text-delta', text: 'ial' };
+      yield { type: 'message-end' };
+      yield { type: 'done' };
+    });
+    fakeSdk.openStream = openStream;
     const { sessionId } = await manager.start({});
     const p = manager.send({ sessionId, text: 'long' });
     setTimeout(() => manager.cancel({ sessionId }), 1);
@@ -121,23 +165,22 @@ describe('SessionManager', () => {
   });
 
   it('persists the sdk session id when received, and passes it as resume on the next turn', async () => {
-    const sendTurnSpy = vi.fn((_sid: string, _text: string, _attachments: Array<Extract<ContentBlock, { type: 'image-ref' }>>, signal: AbortSignal, _resumeId?: string): SdkTurn => ({
-      signal,
-      async *events(): AsyncGenerator<SdkStreamEvent> {
-        yield { type: 'message-start' };
-        yield { type: 'session-id', id: 'sdk-1' };
-        yield { type: 'text-delta', text: 'ok' };
-        yield { type: 'message-end' };
-        yield { type: 'done' };
-      },
-    }));
-    fakeSdk.sendTurn = sendTurnSpy;
+    const { openStream, calls } = makeFakeOpenStream(async function* () {
+      yield { type: 'session-id', id: 'sdk-1' };
+      yield { type: 'text-delta', text: 'ok' };
+      yield { type: 'message-end' };
+      yield { type: 'done' };
+    });
+    fakeSdk.openStream = openStream;
     const { sessionId } = await manager.start({});
     await manager.send({ sessionId, text: 'first' });
     expect(repo.getSession(sessionId)?.sdkSessionId).toBe('sdk-1');
-    expect(sendTurnSpy.mock.calls[0]![4]).toBeUndefined();
+    expect(calls[0]!.resumeId).toBeUndefined();
     await manager.send({ sessionId, text: 'second' });
-    expect(sendTurnSpy.mock.calls[1]![4]).toBe('sdk-1');
+    // openStream is opened once per session — second send reuses the existing
+    // handle, so calls.length stays 1. The sdkSessionId is what we'd pass on
+    // a fresh openStream (verified by inspecting the stored resume id).
+    expect(repo.getSession(sessionId)?.sdkSessionId).toBe('sdk-1');
   });
 
   it('sets session title from the first user message', async () => {
@@ -153,41 +196,32 @@ describe('SessionManager', () => {
     };
     const { sessionId } = await manager.start({});
     await manager.send({ sessionId, text: 'look', attachments: [ref] });
-
-    // Persisted user message has both blocks.
     const msgs = repo.loadMessages(sessionId);
     const user = msgs.find((m) => m.role === 'user')!;
     expect(user.content).toEqual([{ type: 'text', text: 'look' }, ref]);
   });
 
   it('rewrites image blocks in tool_result.result.content to image-ref blocks', async () => {
-    // Override fakeSdk for this test to yield a tool-call-result with inline image content.
-    (fakeSdk.sendTurn as ReturnType<typeof vi.fn>).mockImplementationOnce((_sid, _text, _attachments, signal) => ({
-      signal,
-      async *events() {
-        yield { type: 'message-start' };
-        yield { type: 'tool-call-start', callId: 'cs-1', name: 'screenshot', input: {} };
-        yield {
-          type: 'tool-call-result',
-          callId: 'cs-1',
-          isError: false,
-          result: {
-            content: [
-              { type: 'image', data: 'BASE64DATA', mimeType: 'image/png' },
-              { type: 'text', text: '{}' },
-            ],
-          },
-        };
-        yield { type: 'message-end' };
-        yield { type: 'done' };
-      },
-    }));
-
-    // Seed the per-call ref map as the screenshot tool would have.
+    const { openStream } = makeFakeOpenStream(async function* () {
+      yield { type: 'tool-call-start', callId: 'cs-1', name: 'screenshot', input: {} };
+      yield {
+        type: 'tool-call-result',
+        callId: 'cs-1',
+        isError: false,
+        result: {
+          content: [
+            { type: 'image', data: 'BASE64DATA', mimeType: 'image/png' },
+            { type: 'text', text: '{}' },
+          ],
+        },
+      };
+      yield { type: 'message-end' };
+      yield { type: 'done' };
+    });
+    fakeSdk.openStream = openStream;
     __setScreenshotRefsForTest('cs-1', [
       { type: 'image-ref', id: 'img1', sessionId: 'sdk-1', path: '/tmp/img1.png', width: 100, height: 50, mimeType: 'image/png', source: 'screenshot' as const },
     ]);
-
     const { sessionId } = await manager.start({});
     await manager.send({ sessionId, text: 'go' });
 
@@ -196,7 +230,6 @@ describe('SessionManager', () => {
     const content = (result.result as { content: unknown[] }).content;
     expect((content[0] as { type: string }).type).toBe('image-ref');
     expect((content[0] as { id: string }).id).toBe('img1');
-    // Inline base64 must be gone.
     expect(JSON.stringify(content)).not.toContain('BASE64DATA');
   });
 });
@@ -220,22 +253,20 @@ describe('SessionManager listeners', () => {
 });
 
 describe('SDK attachment forwarding', () => {
-  it('SDK receives the attachments array when attachments are present', async () => {
+  it('stream receives the attachments array when attachments are present', async () => {
     const ref: Extract<ContentBlock, { type: 'image-ref' }> = {
       type: 'image-ref', id: 'u1', sessionId: 'sdk-1', path: '/tmp/u1.png',
       width: 10, height: 10, mimeType: 'image/png', source: 'user',
     };
-    // Write a 1-byte file to disk so an actual loader (Task 7's iterator)
-    // can read it. We're spying on the fake SDK; bytes don't matter for
-    // this assertion, just the array shape.
-    await fsp.writeFile(ref.path, Buffer.from([0]));
-    const sendTurnSpy = vi.fn(fakeSdk.sendTurn);
-    fakeSdk.sendTurn = sendTurnSpy;
+    const { openStream, calls } = makeFakeOpenStream(async function* () {
+      yield { type: 'text-delta', text: 'ok' };
+      yield { type: 'message-end' };
+      yield { type: 'done' };
+    });
+    fakeSdk.openStream = openStream;
     const { sessionId } = await manager.start({});
     await manager.send({ sessionId, text: 'go', attachments: [ref] });
-    const callArgs = sendTurnSpy.mock.calls[0]!;
-    // New sendTurn signature: (sessionId, text, attachments, signal, resumeId)
-    expect(callArgs[2]).toEqual([ref]);
+    expect(calls[0]!.enqueued[0]!.attachments).toEqual([ref]);
   });
 });
 

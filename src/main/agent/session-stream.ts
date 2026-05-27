@@ -56,7 +56,7 @@ export interface SessionStreamEvent {
 export type QueryFactory = (params: {
   prompt: AsyncIterable<SDKUserMessage>;
   options: Options;
-}) => AsyncIterable<SDKMessage> & { interrupt: () => Promise<void> };
+}) => AsyncIterable<SDKMessage> & { interrupt: () => Promise<void>; setMcpServers?: (servers: Record<string, unknown>) => Promise<unknown> };
 
 export interface SessionStream {
   enqueueUserMessage(msg: EnqueuedMessage): void;
@@ -70,6 +70,13 @@ export function createSessionStream(args: {
   sessionId: string;
   queryFactory: QueryFactory;
   options?: Partial<Options>;
+  /**
+   * Called with each new messageId BEFORE the SDK consumes that user message
+   * from the prompt iterable. Used by the real client to swap the MCP server
+   * so each user turn's tool closures capture a fresh { sessionId, messageId,
+   * broker } context. May be async; the pump awaits it before yielding.
+   */
+  onPerMessageContext?: (messageId: string) => void | Promise<void>;
 }): SessionStream {
   const inbox = createMessageQueue<EnqueuedMessage>();
   let currentMessageId: string | null = null;
@@ -77,6 +84,9 @@ export function createSessionStream(args: {
   async function* promptIterable(): AsyncIterable<SDKUserMessage> {
     for await (const m of inbox.iterable) {
       currentMessageId = m.messageId;
+      if (args.onPerMessageContext) {
+        await args.onPerMessageContext(m.messageId);
+      }
       let content: unknown;
       if (m.attachments.length === 0) {
         // No attachments — pass text directly as a string (simpler, matches SDK string-prompt behaviour)
