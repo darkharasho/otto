@@ -71,6 +71,7 @@ export class SessionManager {
   private readonly aborts = new Map<string, AbortController>();
   private readonly streams = new Map<string, SessionStreamHandle>();
   private readonly assistants = new Map<string, Map<string, ActiveAssistant>>(); // sessionId -> (messageId -> active)
+  private readonly cancelling = new Map<string, Set<string>>(); // sessionId -> set of messageIds awaiting cancelled-finalize
   private readonly seenSdkSessionId = new Set<string>();
   private activeSessionId: string | null = null;
   private readonly doneListeners: Array<(sessionId: string) => void> = [];
@@ -224,8 +225,16 @@ export class SessionManager {
             break;
           }
           case 'message-end': {
-            // Per-message completion: flush the assistant row, emit message-end + done.
-            this.finalizeMessage(sessionId, messageId, { errored: false, cancelled: false });
+            // If interrupt() flagged this message before the SDK closed it
+            // out, finalize as cancelled so in-flight tool cards get
+            // synthetic results and the renderer marks the message cancelled.
+            const pending = this.cancelling.get(sessionId);
+            const wasCancelled = pending?.has(messageId) ?? false;
+            if (pending) {
+              pending.delete(messageId);
+              if (pending.size === 0) this.cancelling.delete(sessionId);
+            }
+            this.finalizeMessage(sessionId, messageId, { errored: false, cancelled: wasCancelled });
             break;
           }
           case 'done': {
@@ -368,9 +377,20 @@ export class SessionManager {
     // queued messages continue flowing. The AbortController is NOT aborted
     // here — that is reserved for hard-shutdown (session close / app quit).
     const stream = this.streams.get(args.sessionId);
-    if (stream) {
-      await stream.interrupt();
+    if (!stream) return;
+    // Mark all in-flight assistant rows as pending-cancel; the consumer
+    // loop's message-end case will route them through the cancellation
+    // finalize path so unmatched tool calls get synthetic results.
+    const perSession = this.assistants.get(args.sessionId);
+    if (perSession && perSession.size > 0) {
+      let pending = this.cancelling.get(args.sessionId);
+      if (!pending) {
+        pending = new Set<string>();
+        this.cancelling.set(args.sessionId, pending);
+      }
+      for (const id of perSession.keys()) pending.add(id);
     }
+    await stream.interrupt();
   }
 
   /** @deprecated Use interrupt(). Hard-kills the underlying subprocess; kept for Task 6 closeSession path. */
