@@ -1,6 +1,7 @@
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Message as MessageType, ContentBlock } from '@shared/messages';
+import { extFromMime } from '@shared/messages';
 import { ToolCallCard } from './ToolCallCard';
 import { ApprovalCard } from './ApprovalCard';
 import { ProcessCard } from './ProcessCard';
@@ -128,7 +129,23 @@ export function MessageView({ message, isStreamingTarget = false }: Props) {
     return (
       <div data-testid="message-user" className="otto-msg-enter flex justify-end my-3">
         <div className="max-w-[80%] rounded-2xl rounded-br-md bg-accent/20 border border-accent/30 px-4 py-2 text-sm">
-          {renderText(message.content)}
+          {message.content.map((b, i) => {
+            if (b.type === 'text') return <span key={i}>{b.text}</span>;
+            if (b.type === 'image-ref') {
+              const scheme = b.source === 'user' ? 'otto-user-image' : 'otto-image';
+              const src = `${scheme}://${b.sessionId}/${b.id}.${extFromMime(b.mimeType)}`;
+              return (
+                <img
+                  key={i}
+                  src={src}
+                  alt=""
+                  className="max-w-[200px] rounded mt-1 block"
+                  loading="lazy"
+                />
+              );
+            }
+            return null;
+          })}
         </div>
       </div>
     );
@@ -160,12 +177,6 @@ export function MessageView({ message, isStreamingTarget = false }: Props) {
   );
 }
 
-function renderText(content: ContentBlock[]): string {
-  return content
-    .filter((b): b is { type: 'text'; text: string } => b.type === 'text')
-    .map((b) => b.text)
-    .join('');
-}
 
 function isSilentTool(name: string): boolean {
   // mark_task_complete only triggers a background reflection pass; the user
