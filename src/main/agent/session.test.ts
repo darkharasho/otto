@@ -6,6 +6,7 @@ import { openDatabase } from '../db/db';
 import { Repo } from '../db/repo';
 import { SessionManager, type SdkClient, type SdkStreamEvent, type SdkTurn } from './session';
 import type { SessionEvent } from '@shared/ipc-contract';
+import type { ContentBlock } from '@shared/messages';
 import { SessionBus, type RemoteOutbound } from '../remote/session-bus';
 import { __setScreenshotRefsForTest } from './sdk-client';
 
@@ -143,6 +144,20 @@ describe('SessionManager', () => {
     const { sessionId } = await manager.start({});
     await manager.send({ sessionId, text: 'first prompt here' });
     expect(repo.getSession(sessionId)?.title).toBe('first prompt here');
+  });
+
+  it('user message gets text + image-ref content when attachments are passed', async () => {
+    const ref: Extract<ContentBlock, { type: 'image-ref' }> = {
+      type: 'image-ref', id: 'u1', sessionId: 'sdk-1', path: '/tmp/u1.png',
+      width: 10, height: 10, mimeType: 'image/png', source: 'user',
+    };
+    const { sessionId } = await manager.start({});
+    await manager.send({ sessionId, text: 'look', attachments: [ref] });
+
+    // Persisted user message has both blocks.
+    const msgs = repo.loadMessages(sessionId);
+    const user = msgs.find((m) => m.role === 'user')!;
+    expect(user.content).toEqual([{ type: 'text', text: 'look' }, ref]);
   });
 
   it('rewrites image blocks in tool_result.result.content to image-ref blocks', async () => {

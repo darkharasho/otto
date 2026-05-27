@@ -89,14 +89,20 @@ function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${counter.toString(36)}`;
 }
 
-export function newUserMessage(text: string): UserMessage {
+export function newUserMessage(
+  text: string,
+  attachments: Array<Extract<ContentBlock, { type: 'image-ref' }>> = [],
+): UserMessage {
+  const content: ContentBlock[] = [];
+  if (text.length > 0) content.push({ type: 'text', text });
+  for (const a of attachments) content.push(a);
   return {
     id: newId('msg'),
     sessionId: null,
     seq: 0,
     createdAt: Date.now(),
     role: 'user',
-    content: [{ type: 'text', text }],
+    content,
   };
 }
 
