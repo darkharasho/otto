@@ -272,6 +272,7 @@ export function App() {
           sessionId={activeSession?.id ?? null}
           messages={activeSession?.messages ?? []}
           streaming={activeSession?.currentTurnActive ?? false}
+          startedAt={activeSession?.startedAt ?? null}
         />
         {activeSession?.error && (
           <div className="px-4">

@@ -2,10 +2,20 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Message } from '@shared/messages';
 import { MessageView } from './Message';
 
+function formatTime(ts: number): string {
+  const d = new Date(ts);
+  const h = d.getHours();
+  const m = d.getMinutes().toString().padStart(2, '0');
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const h12 = ((h + 11) % 12) + 1;
+  return `${h12}:${m} ${ampm}`;
+}
+
 interface Props {
   sessionId: string | null;
   messages: Message[];
   streaming: boolean;
+  startedAt: number | null;
 }
 
 const STICK_THRESHOLD_PX = 80;
@@ -14,7 +24,7 @@ const STICK_THRESHOLD_PX = 80;
 // the renderer (good enough — full reloads start fresh).
 const scrollMemory = new Map<string, number>();
 
-export function MessageList({ sessionId, messages, streaming }: Props) {
+export function MessageList({ sessionId, messages, streaming, startedAt }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const stuckRef = useRef(true);
   const [stuck, setStuck] = useState(true);
@@ -94,6 +104,16 @@ export function MessageList({ sessionId, messages, streaming }: Props) {
   return (
     <div className="relative flex-1 min-h-0">
       <div ref={containerRef} className="absolute inset-0 overflow-y-auto px-4">
+        {startedAt !== null && (
+          <div
+            role="separator"
+            className="otto-conv-divider flex items-center gap-2 py-3 text-xs text-muted-foreground/70 select-none"
+          >
+            <div className="flex-1 h-px bg-border/60" />
+            <span>New conversation · {formatTime(startedAt)}</span>
+            <div className="flex-1 h-px bg-border/60" />
+          </div>
+        )}
         {messages.map((m) => (
           <MessageView
             key={m.id}
