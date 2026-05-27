@@ -109,6 +109,16 @@ export class WindowManager {
     win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     win.removeMenu();
 
+    // Dev-only: F12 toggles DevTools (removeMenu() stripped the default
+    // Cmd/Ctrl+Shift+I binding).
+    if (!app.isPackaged) {
+      win.webContents.on('before-input-event', (_e, input) => {
+        if (input.type === 'keyDown' && input.key === 'F12') {
+          win.webContents.toggleDevTools();
+        }
+      });
+    }
+
     if (rendererUrl.startsWith('http')) {
       win.loadURL(rendererUrl);
     } else {

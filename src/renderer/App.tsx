@@ -118,6 +118,8 @@ export function App() {
   const handleNewConversation = useCallback(
     async ({ text, attachments }: { text: string; attachments: ImageRef[] }) => {
       const prevId = useOttoStore.getState().activeSession?.id ?? null;
+      // eslint-disable-next-line no-console
+      console.debug('[otto/new-conv] handleNewConversation', { prevId, textLen: text.length, attachmentCount: attachments.length });
       if (prevId) {
         void ipc.invoke('session.interrupt', { sessionId: prevId }).catch(() => {});
       }
