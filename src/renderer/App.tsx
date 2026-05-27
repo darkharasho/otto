@@ -1,4 +1,4 @@
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState, useRef } from 'react';
 import { ipc } from './ipc';
 import { useOttoStore } from './state/store';
 import type { ContentBlock } from '@shared/messages';
@@ -57,13 +57,23 @@ export function App() {
 
   type ImageRef = Extract<ContentBlock, { type: 'image-ref' }>;
 
+  // Holds an in-flight session.start promise so concurrent callers (e.g.
+  // stageFile paste and handleSubmit racing) always await the same promise
+  // and end up with the same sessionId.
+  const inFlightSessionStart = useRef<Promise<string> | null>(null);
+
   const ensureSession = useCallback(async (): Promise<string> => {
     if (activeSession?.id) return activeSession.id;
+    if (inFlightSessionStart.current) return inFlightSessionStart.current;
     // eslint-disable-next-line no-console
     console.debug('[otto] session.start (ensureSession)', { model });
-    const { sessionId: newId } = await ipc.invoke('session.start', { model });
-    beginSession(newId);
-    return newId;
+    const p = ipc.invoke('session.start', { model }).then(({ sessionId: newId }) => {
+      beginSession(newId);
+      inFlightSessionStart.current = null;
+      return newId;
+    });
+    inFlightSessionStart.current = p;
+    return p;
   }, [activeSession, beginSession, model]);
 
   const handleSubmit = useCallback(
@@ -71,14 +81,7 @@ export function App() {
       try {
         setWindowMode('panel');
         void ipc.invoke('window.setMode', { mode: 'panel' });
-        let sessionId = activeSession?.id;
-        if (!sessionId) {
-          // eslint-disable-next-line no-console
-          console.debug('[otto] session.start', { model });
-          const { sessionId: newId } = await ipc.invoke('session.start', { model });
-          sessionId = newId;
-          beginSession(newId);
-        }
+        const sessionId = await ensureSession();
         appendUserMessage(crypto.randomUUID(), text, attachments);
         // eslint-disable-next-line no-console
         console.debug('[otto] session.send', { sessionId, len: text.length, attachments: attachments.length });
@@ -89,7 +92,7 @@ export function App() {
         console.error('[otto] handleSubmit failed', err);
       }
     },
-    [activeSession, beginSession, appendUserMessage, setWindowMode, setSessions, model]
+    [ensureSession, appendUserMessage, setWindowMode, setSessions]
   );
 
   const handleSelectSession = useCallback(
