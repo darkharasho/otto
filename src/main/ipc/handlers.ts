@@ -65,7 +65,9 @@ export function registerIpcHandlers(deps: {
   const { repo, sessions, window, broker, settings, registry, conversationPolicy } = deps;
 
   ipcMain.handle('session.start', async (_e, args: SessionStartArgs): Promise<SessionStartResult> => {
-    return sessions.start(args);
+    const result = await sessions.start(args);
+    conversationPolicy.recordActivity();
+    return result;
   });
 
   ipcMain.handle('session.send', async (_e, args: SessionSendArgs): Promise<void> => {

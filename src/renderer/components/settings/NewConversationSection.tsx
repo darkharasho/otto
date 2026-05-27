@@ -11,7 +11,7 @@ export function NewConversationSection({
   return (
     <SubsectionPage
       title="New conversations"
-      description="Start a fresh conversation automatically after total inactivity."
+      description="Start a fresh conversation automatically after a period with no activity from you or Otto."
     >
       <div className="flex items-center justify-between gap-3 py-1.5">
         <div className="flex-1">
