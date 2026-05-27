@@ -1,3 +1,16 @@
+Version v0.8.1
+
+Features:
+- **Submit messages while Otto is still responding.** The CommandBar (desktop) and the mobile chat input no longer disable while a turn is in flight. Additional submits queue and run as follow-up turns; a "N queued" chip shows when something is waiting. On desktop, **Shift+Enter while busy** interrupts the current turn and sends your new message immediately.
+- **Stop button now uses soft interrupt.** Hitting Stop ends just the current turn instead of killing the whole session subprocess, so queued messages keep flowing afterwards. Available on desktop and mobile.
+
+Under the hood:
+- **One long-lived Claude Code session per Otto session.** SDK turns are no longer per-`query()` — a single streaming-input `query()` is kept open and drains an in-memory user-message queue. MCP server is rebuilt per enqueued message via `Query.setMcpServers` so each turn's tool closures still capture a fresh `messageId`.
+
+Fixes:
+- **Interrupted tool calls no longer spin forever.** When you Stop mid-tool, any in-flight tool cards now resolve to a synthetic "Interrupted by user" error result instead of staying in the running state indefinitely.
+- **Thinking dots persist between tool calls.** The typing animation used to disappear after Otto produced any text and never came back; it now keeps animating during the gaps between tool calls while the model is generating its next block.
+
 Version v0.8.0
 
 Features:
