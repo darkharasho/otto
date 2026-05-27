@@ -281,6 +281,27 @@ export class SessionManager {
     if (!row) return;
     perSession!.delete(messageId);
     if (flags.cancelled) {
+      // Close out any in-flight tool calls so the renderer stops spinning
+      // their cards forever. Unmatched tool_use blocks get a synthetic
+      // cancellation tool_result.
+      const matched = new Set<string>();
+      for (const b of row.message.content) {
+        if (b.type === 'tool_result') matched.add(b.callId);
+      }
+      for (const b of row.message.content) {
+        if (b.type === 'tool_use' && !matched.has(b.callId)) {
+          const result = { content: [{ type: 'text', text: 'Interrupted by user.' }] };
+          row.message.content.push({ type: 'tool_result', callId: b.callId, result, isError: true });
+          this.emit({
+            type: 'tool-call-result',
+            sessionId,
+            messageId,
+            callId: b.callId,
+            result,
+            isError: true,
+          });
+        }
+      }
       row.message.cancelled = true;
       this.emit({ type: 'message-cancelled', sessionId, messageId });
     } else if (flags.errored) {

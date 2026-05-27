@@ -252,8 +252,12 @@ function renderBlocks(content: ContentBlock[], streamingTarget: boolean) {
   if (textBuffer) {
     const caretHere = streamingTarget && textBufferStartIdx <= lastTextIndex;
     elements.push(<MarkdownBlock key="t-tail" text={textBuffer} caret={caretHere} />);
-  } else if (streamingTarget && lastTextIndex === -1) {
-    // streaming has started but no text yet — show typing dots
+  }
+  // Thinking dots: streaming target whose last block isn't actively-streaming
+  // text — covers pre-first-token, gaps between tool calls, and pauses after
+  // a tool result while the model is generating the next block.
+  const lastBlock = content[content.length - 1];
+  if (streamingTarget && (!lastBlock || lastBlock.type !== 'text')) {
     elements.push(
       <div key="t-empty" className="text-accent otto-typing" aria-label="Otto is typing">
         <span />
