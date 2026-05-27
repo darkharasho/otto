@@ -4,7 +4,7 @@ import { OttoMark } from './OttoMark';
 import { ipc } from '../ipc';
 import { extFromMime } from '@shared/messages';
 import type { ContentBlock } from '@shared/messages';
-import { parseNewConversationPrefix } from '@shared/manual-prefix';
+import { parseNewConversationPrefix, NEW_CONVERSATION_PREFIX } from '@shared/manual-prefix';
 
 type ImageRef = Extract<ContentBlock, { type: 'image-ref' }>;
 
@@ -188,7 +188,19 @@ export function CommandBar({
           ref={inputRef}
           type="text"
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            const next = e.target.value;
+            // Typing the prefix triggers a new conversation immediately —
+            // don't wait for Enter. Without this, the user keeps typing into
+            // what visually still looks like the previous conversation.
+            if (next === NEW_CONVERSATION_PREFIX && onNewConversation) {
+              setValue('');
+              setAttachments([]);
+              onNewConversation({ text: '', attachments });
+              return;
+            }
+            setValue(next);
+          }}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
           className="flex-1 bg-transparent outline-none text-base placeholder:text-muted text-text"

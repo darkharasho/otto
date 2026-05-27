@@ -28,7 +28,7 @@ describe('CommandBar', () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
-  it('routes "/n " submit through onNewConversation with empty text', async () => {
+  it('fires onNewConversation immediately when input value becomes "/n "', async () => {
     const onSubmit = vi.fn();
     const onNewConversation = vi.fn();
     render(
@@ -38,31 +38,11 @@ describe('CommandBar', () => {
         onNewConversation={onNewConversation}
       />,
     );
-    const input = screen.getByRole('textbox');
+    const input = screen.getByRole('textbox') as HTMLInputElement;
     await userEvent.type(input, '/n ');
-    await userEvent.keyboard('{Enter}');
     expect(onNewConversation).toHaveBeenCalledWith({ text: '', attachments: [] });
     expect(onSubmit).not.toHaveBeenCalled();
-  });
-
-  it('routes "/n do thing" through onNewConversation with the remainder', async () => {
-    const onSubmit = vi.fn();
-    const onNewConversation = vi.fn();
-    render(
-      <CommandBar
-        onSubmit={onSubmit}
-        ensureSession={noopEnsure}
-        onNewConversation={onNewConversation}
-      />,
-    );
-    const input = screen.getByRole('textbox');
-    await userEvent.type(input, '/n do thing');
-    await userEvent.keyboard('{Enter}');
-    expect(onNewConversation).toHaveBeenCalledWith({
-      text: 'do thing',
-      attachments: [],
-    });
-    expect(onSubmit).not.toHaveBeenCalled();
+    expect(input.value).toBe('');
   });
 
   it('submits with attachments when only an image is staged via paste', async () => {

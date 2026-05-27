@@ -10,7 +10,6 @@ export interface ActiveSessionState {
   currentTurnActive: boolean;
   queueDepth: number;
   error: StructuredError | null;
-  startedAt: number | null;
 }
 
 export function isSessionBusy(s: ActiveSessionState | null): boolean {
@@ -84,11 +83,16 @@ export const useOttoStore = create<OttoState>((set, get) => ({
   },
 
   beginSession(id) {
-    set({ activeSession: { id, messages: [], currentTurnActive: false, queueDepth: 0, error: null, startedAt: Date.now() } });
+    // Drop any in-flight auto-attach work for sessions the user is leaving —
+    // otherwise stragglers from the previous session would yank activeSession
+    // back via attachSession().
+    attachInFlight.clear();
+    set({ activeSession: { id, messages: [], currentTurnActive: false, queueDepth: 0, error: null } });
   },
 
   loadSession(id, messages) {
-    set({ activeSession: { id, messages, currentTurnActive: false, queueDepth: 0, error: null, startedAt: null } });
+    attachInFlight.clear();
+    set({ activeSession: { id, messages, currentTurnActive: false, queueDepth: 0, error: null } });
   },
 
   appendUserMessage(id, text, attachments = []) {
@@ -411,7 +415,7 @@ export const useOttoStore = create<OttoState>((set, get) => ({
     }
     try {
       const messages = await window.otto.invoke('session.load', { sessionId });
-      set({ activeSession: { id: sessionId, messages, currentTurnActive: false, queueDepth: 0, error: null, startedAt: null }, windowMode: 'panel' });
+      set({ activeSession: { id: sessionId, messages, currentTurnActive: false, queueDepth: 0, error: null }, windowMode: 'panel' });
       // Phone-started turns need the desktop to expand from bar → panel so
       // the user can actually see the conversation that's unfolding.
       void window.otto.invoke('window.setMode', { mode: 'panel' }).catch(() => {});

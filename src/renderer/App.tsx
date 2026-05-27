@@ -116,15 +116,27 @@ export function App() {
 
   const handleNewConversation = useCallback(
     async ({ text, attachments }: { text: string; attachments: ImageRef[] }) => {
+      // Cut over from the previous session cleanly so any in-flight stream
+      // stops emitting events that could yank activeSession back via
+      // auto-attach.
+      const prevId = useOttoStore.getState().activeSession?.id ?? null;
+      if (prevId) {
+        void ipc.invoke('session.interrupt', { sessionId: prevId }).catch(() => {});
+      }
       const { sessionId } = await ipc.invoke('session.start', { model });
       beginSession(sessionId);
+      // No text yet → collapse to the bar so the user gets a clean starting
+      // surface instead of staring at the panel of the old conversation.
+      if (text.length === 0 && attachments.length === 0) {
+        setWindowMode('bar');
+        void ipc.invoke('window.setMode', { mode: 'bar' });
+        return;
+      }
       setWindowMode('panel');
       void ipc.invoke('window.setMode', { mode: 'panel' });
-      if (text.length > 0 || attachments.length > 0) {
-        appendUserMessage(crypto.randomUUID(), text, attachments);
-        await ipc.invoke('session.send', { sessionId, text, attachments });
-        void ipc.invoke('session.list', undefined).then(setSessions);
-      }
+      appendUserMessage(crypto.randomUUID(), text, attachments);
+      await ipc.invoke('session.send', { sessionId, text, attachments });
+      void ipc.invoke('session.list', undefined).then(setSessions);
     },
     [beginSession, setWindowMode, setSessions, appendUserMessage, model],
   );
@@ -272,7 +284,6 @@ export function App() {
           sessionId={activeSession?.id ?? null}
           messages={activeSession?.messages ?? []}
           streaming={activeSession?.currentTurnActive ?? false}
-          startedAt={activeSession?.startedAt ?? null}
         />
         {activeSession?.error && (
           <div className="px-4">

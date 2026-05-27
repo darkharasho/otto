@@ -25,7 +25,6 @@ describe('useOttoStore', () => {
       currentTurnActive: false,
       queueDepth: 0,
       error: null,
-      startedAt: expect.any(Number),
     });
   });
 
