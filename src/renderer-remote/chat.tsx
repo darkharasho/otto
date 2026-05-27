@@ -11,6 +11,10 @@ import { Screenshot } from './screenshot';
 import { SessionDrawer } from './SessionDrawer';
 import { describeTool, summarizeInput, classifyResult } from '../shared/tool-presenters';
 import { extFromMime } from '../shared/messages';
+
+function userImageUrl(ref: ImageRef, token: string): string {
+  return `/user-upload/${ref.sessionId}/${ref.id}.${extFromMime(ref.mimeType)}?token=${encodeURIComponent(token)}`;
+}
 import { ToolIcon } from './tool-icon';
 import { ToolResultRenderer } from './tool-result-renderer';
 import { toLocalImageSrc } from '../shared/image-src';
@@ -259,9 +263,8 @@ export function Chat(): JSX.Element {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [unreachable, setUnreachable] = useState(false);
-  const [pendingUploads, setPendingUploads] = useState<Array<{ correlationId: string; mimeType: string; blobUrl: string }>>([]);
+  const [pendingUploads, setPendingUploads] = useState<Array<{ correlationId: string; mimeType: string; previewUrl: string }>>([]);
   const [confirmedAttachments, setConfirmedAttachments] = useState<ImageRef[]>([]);
-  const [blobUrlByRefId, setBlobUrlByRefId] = useState<Map<string, string>>(new Map());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const failedReconnectsRef = useRef(0);
   const streamWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -297,10 +300,10 @@ export function Chat(): JSX.Element {
     const ALLOWED = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as const;
     if (!(ALLOWED as readonly string[]).includes(file.type)) return;
     const correlationId = crypto.randomUUID();
-    const blobUrl = URL.createObjectURL(file);
+    const previewUrl = URL.createObjectURL(file);
     const bytes = new Uint8Array(await file.arrayBuffer());
     const bytesBase64 = bytesToBase64(bytes);
-    setPendingUploads((p) => [...p, { correlationId, mimeType: file.type, blobUrl }]);
+    setPendingUploads((p) => [...p, { correlationId, mimeType: file.type, previewUrl }]);
     wsRef.current?.send({
       v: 1,
       type: 'attach',
@@ -420,12 +423,10 @@ export function Chat(): JSX.Element {
     if (msg.type === 'attach_ok') {
       const cid = typeof msg.clientCorrelationId === 'string' ? msg.clientCorrelationId : '';
       const ref = msg.ref as ImageRef;
-      // Move blob URL from pendingUploads into blobUrlByRefId for the chip preview.
+      // Revoke the pending preview blob URL — the HTTP URL is now canonical.
       setPendingUploads((p) => {
         const match = p.find((u) => u.correlationId === cid);
-        if (match) {
-          setBlobUrlByRefId((m) => new Map(m).set(ref.id, match.blobUrl));
-        }
+        if (match) URL.revokeObjectURL(match.previewUrl);
         return p.filter((u) => u.correlationId !== cid);
       });
       setConfirmedAttachments((c) => [...c, ref]);
@@ -435,7 +436,7 @@ export function Chat(): JSX.Element {
       const cid = typeof msg.clientCorrelationId === 'string' ? msg.clientCorrelationId : '';
       setPendingUploads((p) => {
         const match = p.find((u) => u.correlationId === cid);
-        if (match) URL.revokeObjectURL(match.blobUrl);
+        if (match) URL.revokeObjectURL(match.previewUrl);
         return p.filter((u) => u.correlationId !== cid);
       });
       console.warn('attach failed', msg.message);
@@ -636,7 +637,6 @@ export function Chat(): JSX.Element {
     });
     setInput('');
     setErrorMsg(null);
-    // Revoke blob URLs for confirmed attachments after send (user message will use in-flight blobUrlByRefId).
     setConfirmedAttachments([]);
     // Treat as streaming until the next 'done' event.
     setStreaming(true);
@@ -720,21 +720,19 @@ export function Chat(): JSX.Element {
                   {imageRefs.length > 0 && (
                     <div className="flex flex-wrap gap-1 mb-1">
                       {imageRefs.map((ref) => {
-                        const localUrl = blobUrlByRefId.get(ref.id);
-                        if (localUrl) {
+                        if (!token) {
                           return (
-                            <img
-                              key={ref.id}
-                              src={localUrl}
-                              alt=""
-                              loading="lazy"
-                              className="rounded-md max-h-40 object-contain border border-border"
-                            />
+                            <span key={ref.id} className="text-muted text-xs italic">📷 image</span>
                           );
                         }
-                        // On mobile PWA without otto-user-image:// protocol: show placeholder.
                         return (
-                          <span key={ref.id} className="text-muted text-xs italic">📷 image</span>
+                          <img
+                            key={ref.id}
+                            src={userImageUrl(ref as ImageRef, token)}
+                            alt=""
+                            loading="lazy"
+                            className="rounded-md max-h-40 object-contain border border-border"
+                          />
                         );
                       })}
                     </div>
@@ -799,30 +797,25 @@ export function Chat(): JSX.Element {
         {/* Chips row for staged attachments */}
         {(pendingUploads.length > 0 || confirmedAttachments.length > 0) && (
           <div className="flex gap-1 flex-wrap px-2 pt-2">
-            {confirmedAttachments.map((a) => {
-              const previewUrl = blobUrlByRefId.get(a.id);
-              return (
-                <div key={a.id} className="flex items-center gap-1 px-1.5 py-0.5 bg-bg/60 rounded text-[10px]">
-                  {previewUrl ? (
-                    <img src={previewUrl} alt="" className="h-4 w-4 object-cover rounded" />
-                  ) : (
-                    <img src={`otto-user-image://${a.sessionId}/${a.id}.${extFromMime(a.mimeType)}`} alt="" className="h-4 w-4 object-cover rounded" />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (previewUrl) URL.revokeObjectURL(previewUrl);
-                      setBlobUrlByRefId((m) => { const n = new Map(m); n.delete(a.id); return n; });
-                      setConfirmedAttachments((s) => s.filter((x) => x.id !== a.id));
-                    }}
-                    aria-label="Remove attachment"
-                  >×</button>
-                </div>
-              );
-            })}
+            {confirmedAttachments.map((a) => (
+              <div key={a.id} className="flex items-center gap-1 px-1.5 py-0.5 bg-bg/60 rounded text-[10px]">
+                {token ? (
+                  <img src={userImageUrl(a, token)} alt="" className="h-4 w-4 object-cover rounded" />
+                ) : (
+                  <img src={`otto-user-image://${a.sessionId}/${a.id}.${extFromMime(a.mimeType)}`} alt="" className="h-4 w-4 object-cover rounded" />
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmedAttachments((s) => s.filter((x) => x.id !== a.id));
+                  }}
+                  aria-label="Remove attachment"
+                >×</button>
+              </div>
+            ))}
             {pendingUploads.map((p) => (
               <div key={p.correlationId} className="flex items-center gap-1 px-1.5 py-0.5 bg-bg/60 rounded text-[10px] opacity-60">
-                <img src={p.blobUrl} alt="" className="h-4 w-4 object-cover rounded" />
+                <img src={p.previewUrl} alt="" className="h-4 w-4 object-cover rounded" />
                 <span>uploading…</span>
               </div>
             ))}
