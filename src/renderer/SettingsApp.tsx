@@ -13,6 +13,7 @@ import { StartupSection } from './components/settings/StartupSection';
 import { AutonomySection } from './components/settings/AutonomySection';
 import { NotificationsSection } from './components/settings/NotificationsSection';
 import { SessionHistorySection } from './components/settings/SessionHistorySection';
+import { NewConversationSection } from './components/settings/NewConversationSection';
 import { MemorySection, type MemoryKind } from './components/settings/MemorySection';
 import { AboutSection } from './components/settings/AboutSection';
 import { UpdatesSection } from './components/settings/UpdatesSection';
@@ -188,6 +189,16 @@ function renderSubsection(args: RenderArgs) {
           }}
           onResetAllSessions={async () => {
             await ipc.invoke('settings.resetAllSessions', undefined);
+          }}
+        />
+      );
+    if (activeSub === 'newConversation')
+      return (
+        <NewConversationSection
+          idleTimeoutMinutes={s.newConversation.idleTimeoutMinutes}
+          onIdleTimeoutChange={(minutes) => {
+            patch('newConversation', { idleTimeoutMinutes: minutes });
+            void ipc.invoke('settings.setNewConversationIdleTimeoutMinutes', { minutes });
           }}
         />
       );
