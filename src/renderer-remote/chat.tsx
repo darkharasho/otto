@@ -794,33 +794,6 @@ export function Chat(): JSX.Element {
       )}
 
       <footer className="border-t border-border bg-surface pb-[max(0.5rem,env(safe-area-inset-bottom))]">
-        {/* Chips row for staged attachments */}
-        {(pendingUploads.length > 0 || confirmedAttachments.length > 0) && (
-          <div className="flex gap-1 flex-wrap px-2 pt-2">
-            {confirmedAttachments.map((a) => (
-              <div key={a.id} className="flex items-center gap-1 px-1.5 py-0.5 bg-bg/60 rounded text-[10px]">
-                {token ? (
-                  <img src={userImageUrl(a, token)} alt="" className="h-4 w-4 object-cover rounded" />
-                ) : (
-                  <img src={`otto-user-image://${a.sessionId}/${a.id}.${extFromMime(a.mimeType)}`} alt="" className="h-4 w-4 object-cover rounded" />
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setConfirmedAttachments((s) => s.filter((x) => x.id !== a.id));
-                  }}
-                  aria-label="Remove attachment"
-                >×</button>
-              </div>
-            ))}
-            {pendingUploads.map((p) => (
-              <div key={p.correlationId} className="flex items-center gap-1 px-1.5 py-0.5 bg-bg/60 rounded text-[10px] opacity-60">
-                <img src={p.previewUrl} alt="" className="h-4 w-4 object-cover rounded" />
-                <span>uploading…</span>
-              </div>
-            ))}
-          </div>
-        )}
         <div className="flex items-end gap-2 p-2">
           {/* Hidden file input */}
           <input
@@ -870,6 +843,32 @@ export function Chat(): JSX.Element {
             disabled={!connected}
             className="flex-1 bg-bg border border-border rounded-md p-2 text-sm resize-none max-h-32 outline-none focus:border-accent disabled:opacity-50"
           />
+          {/* Inline attachment chips — between textarea and send button */}
+          {(pendingUploads.length > 0 || confirmedAttachments.length > 0) && (
+            <div className="flex gap-1 flex-wrap items-end shrink-0 max-w-[30%]">
+              {confirmedAttachments.map((a) => (
+                <div key={a.id} className="flex items-center gap-1 px-1.5 py-0.5 bg-bg/60 rounded text-[10px]">
+                  {token ? (
+                    <img src={userImageUrl(a, token)} alt="" className="h-5 w-5 object-cover rounded" />
+                  ) : (
+                    <img src={`otto-user-image://${a.sessionId}/${a.id}.${extFromMime(a.mimeType)}`} alt="" className="h-5 w-5 object-cover rounded" />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfirmedAttachments((s) => s.filter((x) => x.id !== a.id));
+                    }}
+                    aria-label="Remove attachment"
+                  >×</button>
+                </div>
+              ))}
+              {pendingUploads.map((p) => (
+                <div key={p.correlationId} className="flex items-center gap-1 px-1.5 py-0.5 bg-bg/60 rounded text-[10px] opacity-60">
+                  <img src={p.previewUrl} alt="" className="h-5 w-5 object-cover rounded" />
+                </div>
+              ))}
+            </div>
+          )}
           <button
             onClick={onSend}
             disabled={!connected || streaming || (!input.trim() && confirmedAttachments.length === 0) || pendingUploads.length > 0}

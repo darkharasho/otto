@@ -1,4 +1,5 @@
 import { useRef, useState, type FormEvent, useEffect } from 'react';
+import { Paperclip } from 'lucide-react';
 import { OttoMark } from './OttoMark';
 import { ipc } from '../ipc';
 import { extFromMime } from '@shared/messages';
@@ -118,43 +119,14 @@ export function CommandBar({
       onDrop={handleDrop}
       aria-busy={busy}
       className={[
-        'relative flex flex-col px-4 py-3 rounded-2xl border shadow-2xl transition-colors',
+        'relative flex items-center gap-3 px-4 py-3 rounded-2xl border shadow-2xl transition-colors',
         'focus-within:border-accent/70',
         busy
           ? 'bg-surface/80 border-accent/60 ring-1 ring-accent/40'
           : 'bg-surface border-border',
       ].join(' ')}
     >
-      {/* Attachment chips */}
-      {attachments.length > 0 && (
-        <div className="flex gap-1 flex-wrap mb-1">
-          {attachments.map((a) => (
-            <div
-              key={a.id}
-              className="flex items-center gap-1 px-1.5 py-0.5 bg-bg/60 rounded text-[10px]"
-            >
-              <img
-                src={`otto-user-image://${a.sessionId}/${a.id}.${extFromMime(a.mimeType)}`}
-                alt=""
-                className="h-4 w-4 object-cover rounded"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  void window.otto.invoke('uploads.discard', { path: a.path, sessionId: a.sessionId });
-                  setAttachments((s) => s.filter((x) => x.id !== a.id));
-                }}
-                aria-label="Remove attachment"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Main input row */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-1 min-w-0">
         <span
           className={[
             'relative flex items-center justify-center w-5 h-5 shrink-0',
@@ -185,60 +157,90 @@ export function CommandBar({
             busy ? 'text-muted cursor-not-allowed' : 'text-text',
           ].join(' ')}
         />
-        {/* Hidden file input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/gif"
-          multiple
-          style={{ display: 'none' }}
-          onChange={(e) => {
-            for (const f of Array.from(e.target.files ?? [])) void stageFile(f);
-            e.target.value = '';
-          }}
-        />
-        {/* Attach button */}
-        {!busy && (
+      </div>
+      {/* Inline attachment chips — between input and action buttons */}
+      {attachments.length > 0 && (
+        <>
+          <div className="w-px h-5 bg-border shrink-0" aria-hidden />
+          <div className="flex gap-1 flex-wrap shrink-0">
+            {attachments.map((a) => (
+              <div
+                key={a.id}
+                className="flex items-center gap-1 px-1.5 py-0.5 bg-bg/60 rounded text-[10px]"
+              >
+                <img
+                  src={`otto-user-image://${a.sessionId}/${a.id}.${extFromMime(a.mimeType)}`}
+                  alt=""
+                  className="h-5 w-5 object-cover rounded"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    void window.otto.invoke('uploads.discard', { path: a.path, sessionId: a.sessionId });
+                    setAttachments((s) => s.filter((x) => x.id !== a.id));
+                  }}
+                  aria-label="Remove attachment"
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        multiple
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          for (const f of Array.from(e.target.files ?? [])) void stageFile(f);
+          e.target.value = '';
+        }}
+      />
+      {/* Attach button */}
+      {!busy && (
+        <button
+          type="button"
+          aria-label="Attach image"
+          title="Attach image"
+          onClick={() => fileInputRef.current?.click()}
+          className="shrink-0 flex items-center justify-center w-6 h-6 text-muted hover:text-text transition-colors"
+        >
+          <Paperclip className="h-4 w-4" />
+        </button>
+      )}
+      <div className="flex items-center justify-end h-6 shrink-0">
+        {busy ? (
           <button
             type="button"
-            aria-label="Attach image"
-            title="Attach image"
-            onClick={() => fileInputRef.current?.click()}
-            className="shrink-0 flex items-center justify-center w-6 h-6 text-muted hover:text-text transition-colors"
+            onClick={onStop}
+            disabled={!onStop}
+            aria-label="Stop response"
+            title="Stop response (Esc)"
+            className="group flex items-center gap-2 text-xs text-accent font-medium hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            📎
+            <span className="flex items-center justify-center w-6 h-6 rounded-md bg-accent/15 group-hover:bg-accent text-accent group-hover:text-white transition-colors">
+              <span className="w-2.5 h-2.5 rounded-[2px] bg-current" aria-hidden />
+            </span>
+            <span className="group-hover:text-text">stop</span>
           </button>
+        ) : canSend ? (
+          <button
+            type="submit"
+            aria-label="Send"
+            className="flex items-center justify-center w-6 h-6 rounded-md bg-accent/90 hover:bg-accent text-white shadow transition-colors"
+          >
+            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 19V5" />
+              <path d="M5 12l7-7 7 7" />
+            </svg>
+          </button>
+        ) : (
+          <kbd className="text-xs text-muted border border-border rounded px-1.5 py-0.5">↵</kbd>
         )}
-        <div className="flex items-center justify-end h-6 shrink-0">
-          {busy ? (
-            <button
-              type="button"
-              onClick={onStop}
-              disabled={!onStop}
-              aria-label="Stop response"
-              title="Stop response (Esc)"
-              className="group flex items-center gap-2 text-xs text-accent font-medium hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <span className="flex items-center justify-center w-6 h-6 rounded-md bg-accent/15 group-hover:bg-accent text-accent group-hover:text-white transition-colors">
-                <span className="w-2.5 h-2.5 rounded-[2px] bg-current" aria-hidden />
-              </span>
-              <span className="group-hover:text-text">stop</span>
-            </button>
-          ) : canSend ? (
-            <button
-              type="submit"
-              aria-label="Send"
-              className="flex items-center justify-center w-6 h-6 rounded-md bg-accent/90 hover:bg-accent text-white shadow transition-colors"
-            >
-              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 19V5" />
-                <path d="M5 12l7-7 7 7" />
-              </svg>
-            </button>
-          ) : (
-            <kbd className="text-xs text-muted border border-border rounded px-1.5 py-0.5">↵</kbd>
-          )}
-        </div>
       </div>
       {busy && (
         <span
