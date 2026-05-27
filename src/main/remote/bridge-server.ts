@@ -7,8 +7,10 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { logger } from '../logger';
 import type { PairingStore } from './pairing-store';
 import type { SessionBus } from './session-bus';
-import type { Message, SessionMeta } from '@shared/messages';
+import type { ContentBlock, Message, SessionMeta } from '@shared/messages';
 import { ScreenshotUrlSigner } from './screenshot-urls';
+
+type ImageRef = Extract<ContentBlock, { type: 'image-ref' }>;
 
 export interface BridgeServerOpts {
   tailnetIp: string | null;
@@ -21,7 +23,7 @@ export interface BridgeServerOpts {
   /** Optional image cache for inline-image markdown. When unset, /image returns 404. */
   imageCache?: { get(url: string): Promise<{ path: string; contentType: string }> };
   resolveApproval?: (decisionId: string, choice: 'approve' | 'deny') => boolean;
-  sendPrompt?: (text: string, origin: 'desktop' | 'remote') => Promise<void>;
+  sendPrompt?: (text: string, origin: 'desktop' | 'remote', attachments: ImageRef[]) => Promise<void>;
   interruptTurn?: (sessionId?: string) => void;
   listSessions?: (limit: number) => Promise<SessionMeta[]>;
   loadMessages?: (sessionId: string) => Promise<Message[]>;
@@ -29,6 +31,8 @@ export interface BridgeServerOpts {
   newSession?: () => Promise<string>;
   /** Preferred TCP port to bind. Falls back to an ephemeral port if in use. Default: ephemeral (0); production callers pass 17829. */
   port?: number;
+  /** Directory where Otto config/data is stored; used to persist user-uploaded images. */
+  configDir?: string;
 }
 
 interface PairingCode {
@@ -44,6 +48,8 @@ export class BridgeServer {
   private readonly pairHits = new Map<string, number[]>();
   private readonly PAIR_WINDOW_MS = 60_000;
   private readonly PAIR_MAX = 10;
+  /** Per-session staging map: sessionId -> (refId -> ImageRef). Cleared as refs are consumed by prompts. */
+  private readonly stagedAttachments = new Map<string, Map<string, ImageRef>>();
 
   private rateLimited(req: http.IncomingMessage): boolean {
     const ip = req.socket.remoteAddress ?? 'unknown';
@@ -137,8 +143,47 @@ export class BridgeServer {
         });
         return;
       }
+      if (msg.type === 'attach' &&
+          typeof msg.sessionId === 'string' &&
+          typeof msg.mimeType === 'string' &&
+          typeof msg.bytesBase64 === 'string' &&
+          typeof msg.clientCorrelationId === 'string') {
+        const sessionId = msg.sessionId as string;
+        const mimeType = msg.mimeType as 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif';
+        const bytesBase64 = msg.bytesBase64 as string;
+        const clientCorrelationId = msg.clientCorrelationId as string;
+        void (async () => {
+          try {
+            const { saveUserUpload } = await import('../user-uploads/store');
+            const bytes = Buffer.from(bytesBase64, 'base64');
+            const configDir = this.opts.configDir ?? '';
+            const ref = await saveUserUpload(bytes, mimeType, sessionId, configDir);
+            let m = this.stagedAttachments.get(sessionId);
+            if (!m) { m = new Map(); this.stagedAttachments.set(sessionId, m); }
+            m.set(ref.id, ref);
+            ws.send(JSON.stringify({ v: 1, type: 'attach_ok', clientCorrelationId, ref }));
+          } catch (err) {
+            ws.send(JSON.stringify({ v: 1, type: 'attach_err', clientCorrelationId: msg.clientCorrelationId, message: err instanceof Error ? err.message : String(err) }));
+          }
+        })();
+        return;
+      }
       if (msg.type === 'prompt' && typeof msg.text === 'string') {
-        void this.opts.sendPrompt?.(msg.text, 'remote');
+        const attachments: ImageRef[] = [];
+        const attachmentIds = Array.isArray(msg.attachmentIds) ? msg.attachmentIds as string[] : [];
+        if (attachmentIds.length > 0) {
+          const m = this.stagedAttachments.get(typeof msg.sessionId === 'string' ? msg.sessionId : '');
+          if (m) {
+            for (const id of attachmentIds) {
+              const ref = m.get(id);
+              if (ref) {
+                attachments.push(ref);
+                m.delete(id);
+              }
+            }
+          }
+        }
+        void this.opts.sendPrompt?.(msg.text, 'remote', attachments);
         return;
       }
       if (msg.type === 'interrupt') {

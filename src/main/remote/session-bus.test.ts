@@ -111,7 +111,7 @@ describe('SessionBus byte cap', () => {
 describe('SessionBus input queue', () => {
   it('serializes concurrent enqueues per session', async () => {
     const order: string[] = [];
-    const runner = async (m: { type: 'prompt'; sessionId: string; text: string; origin: 'desktop' | 'remote' } | { type: 'approval'; decisionId: string; decision: 'approve' | 'deny' } | { type: 'interrupt'; sessionId: string }) => {
+    const runner = async (m: import('./session-bus').RemoteInbound) => {
       if (m.type === 'prompt') {
         order.push(`start:${m.text}`);
         await new Promise((r) => setTimeout(r, 20));
