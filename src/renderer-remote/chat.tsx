@@ -258,6 +258,8 @@ export function Chat(): JSX.Element {
   const [items, setItems] = useState<TranscriptItem[]>([]);
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const [streaming, setStreaming] = useState(false);
+  const [queueDepth, setQueueDepth] = useState(0);
+  const busy = streaming || queueDepth > 0;
   const [connected, setConnected] = useState(false);
   const [input, setInput] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -461,6 +463,16 @@ export function Chat(): JSX.Element {
         setItems((prev) => prev.some((it) => it.id === id) ? prev : [...prev, { kind: 'user', id, text, content }]);
         return;
       }
+      case 'user-message-queued': {
+        const depth = typeof msg.queueDepth === 'number' ? msg.queueDepth : 0;
+        setQueueDepth(depth);
+        return;
+      }
+      case 'user-message-consumed': {
+        const depth = typeof msg.queueDepth === 'number' ? msg.queueDepth : 0;
+        setQueueDepth(depth);
+        return;
+      }
       case 'message-start': {
         const id = newId();
         currentTextIdRef.current = id;
@@ -624,7 +636,6 @@ export function Chat(): JSX.Element {
   const onSend = (): void => {
     const text = input.trim();
     if (!text && confirmedAttachments.length === 0) return;
-    if (streaming) return;
     if (pendingUploads.length > 0) return; // don't send while uploads in flight
     // sessionId may be empty on the first send; bridge will route via activeSessionId.
     const sid = sessionIdRef.current ?? '';
@@ -651,6 +662,11 @@ export function Chat(): JSX.Element {
   const onUnpair = (): void => {
     wsRef.current?.close();
     setToken(null);
+  };
+
+  const onStop = (): void => {
+    const sid = sessionIdRef.current ?? '';
+    wsRef.current?.send({ v: 1, type: 'interrupt', sessionId: sid });
   };
 
   return (
@@ -786,6 +802,14 @@ export function Chat(): JSX.Element {
         <div ref={transcriptEndRef} />
       </main>
 
+      {queueDepth > 0 && (
+        <div
+          className="px-3 py-1 text-[11px] text-muted border-t border-border bg-surface/60"
+          aria-live="polite"
+        >
+          {queueDepth} queued
+        </div>
+      )}
       {errorMsg && (
         <div className="px-3 py-2 text-xs bg-danger/15 text-danger border-t border-danger/40 flex items-center justify-between gap-2">
           <span className="break-words">{errorMsg}</span>
@@ -838,7 +862,13 @@ export function Chat(): JSX.Element {
                 }
               }
             }}
-            placeholder={connected ? 'Message Otto…' : 'Disconnected — reconnecting…'}
+            placeholder={
+              !connected
+                ? 'Disconnected — reconnecting…'
+                : busy
+                  ? 'Otto is working — your message will queue'
+                  : 'Message Otto…'
+            }
             rows={1}
             disabled={!connected}
             className="flex-1 bg-bg border border-border rounded-md p-2 text-sm resize-none max-h-32 outline-none focus:border-accent disabled:opacity-50"
@@ -869,9 +899,18 @@ export function Chat(): JSX.Element {
               ))}
             </div>
           )}
+          {busy && (
+            <button
+              onClick={onStop}
+              className="rounded-md bg-danger/80 hover:bg-danger text-white px-3 py-2 text-sm font-medium"
+              aria-label="Stop current turn"
+            >
+              Stop
+            </button>
+          )}
           <button
             onClick={onSend}
-            disabled={!connected || streaming || (!input.trim() && confirmedAttachments.length === 0) || pendingUploads.length > 0}
+            disabled={!connected || (!input.trim() && confirmedAttachments.length === 0) || pendingUploads.length > 0}
             className="rounded-md bg-accent text-white px-4 py-2 text-sm font-medium disabled:opacity-50"
           >
             Send

@@ -419,7 +419,7 @@ async function startElectron(): Promise<void> {
       },
       interruptTurn: (sid) => {
         const target = sid ?? sessions.getActiveSessionId();
-        if (target) sessions.cancel({ sessionId: target });
+        if (target) void sessions.interrupt({ sessionId: target });
       },
       listSessions: async (limit) => repo.listSessions(limit),
       loadMessages: async (sessionId) => repo.loadMessages(sessionId),
