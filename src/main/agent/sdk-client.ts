@@ -188,7 +188,13 @@ export interface RealSdkClientDeps {
 interface ToolCtx {
   broker: DecisionBroker;
   sessionId: string;
-  messageId: string;
+  // Lazy so the MCP tool callback reads the *current* assistant messageId at
+  // invocation time. Capturing it at MCP-server build time was racy: the SDK
+  // sometimes fired tools against the initial server (built with a placeholder
+  // messageId) before `setMcpServers` swapped in a per-turn closure, so the
+  // pending event arrived with a messageId the renderer couldn't match and the
+  // ApprovalCard never rendered.
+  getMessageId: () => string;
   getRegistry: () => ProcessRegistry;
   getConfigDir: () => string;
   recall: RealSdkClientDeps['recall'];
@@ -293,10 +299,11 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
             ? String((_extra as { toolUseId?: unknown }).toolUseId ?? '')
             : '') || `${t.name}-${Date.now().toString(36)}`;
 
+        const messageId = ctx.getMessageId();
         const cls = t.actionClassFor ? t.actionClassFor(args) : t.actionClass;
         const outcome = await ctx.broker.decide({
           sessionId: ctx.sessionId,
-          messageId: ctx.messageId,
+          messageId,
           callId,
           toolName: t.name,
           actionClass: cls,
@@ -316,7 +323,7 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
           const cwd = spawnArgs.cwd ?? process.env.HOME ?? '/';
           const p = ctx.getRegistry().spawn({
             sessionId: ctx.sessionId,
-            messageId: ctx.messageId,
+            messageId,
             command: spawnArgs.command,
             cwd,
           });
@@ -657,27 +664,7 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
       }
       const systemPrompt = parts.join('\n');
 
-      let queryHandle: Query | null = null;
-      // Lazily-resolved SDK module — we need it to (re)build MCP servers in the
-      // per-message hook. The first build happens during queryFactory; we
-      // cache the module reference here so the hook can rebuild later.
       let sdkModule: AgentSdkModule | null = null;
-
-      const buildMcp = (messageId: string) => {
-        if (!sdkModule) throw new Error('SDK module not yet loaded');
-        return buildOttoMcpServer(sdkModule, {
-          broker: deps.broker,
-          sessionId,
-          messageId,
-          getRegistry: deps.getRegistry,
-          getConfigDir: deps.getConfigDir,
-          recall: deps.recall,
-          factsForPrompt: deps.factsForPrompt,
-          bumpFactUse: deps.bumpFactUse,
-          appendKnowledge: deps.appendKnowledge,
-          onMarkTaskComplete: deps.onMarkTaskComplete,
-        });
-      };
 
       const queryFactory: QueryFactory = ({ prompt, options }) => {
         // queryFactory is invoked synchronously by createSessionStream, but we
@@ -690,7 +677,7 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
           const initialMcp = buildOttoMcpServer(sdkModule, {
             broker: deps.broker,
             sessionId,
-            messageId: '<pending>',
+            getMessageId: deps.currentMessageId,
             getRegistry: deps.getRegistry,
             getConfigDir: deps.getConfigDir,
             recall: deps.recall,
@@ -712,7 +699,6 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
               ...(spawnOverrides ?? {}),
             },
           }) as Query;
-          queryHandle = inner;
           return inner;
         }
 
@@ -739,21 +725,13 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
         sessionId,
         queryFactory,
         onPerMessageContext: async (messageId: string) => {
-          // Notify upstream callers (SessionManager → main/index.ts) so
-          // `currentMessageId()` returns the right id for any consumers that
-          // still rely on the deps callback.
+          // Update `deps.currentMessageId` (via SessionManager → main/index.ts)
+          // so the MCP tool callbacks read the right id at invocation time.
+          // We no longer rebuild/swap the MCP server here — the closure reads
+          // messageId lazily via deps.currentMessageId, which dodges a race
+          // where the SDK fired tools against the pre-swap server.
           try { hooks.onPerMessageContext(messageId); } catch (err) {
             logger.warn(`onPerMessageContext threw: ${err instanceof Error ? err.message : err}`);
-          }
-          // Swap the MCP server so the next user message's tool calls capture
-          // a fresh closure with { sessionId, messageId, broker }.
-          if (queryHandle && sdkModule) {
-            try {
-              const fresh = buildMcp(messageId);
-              await queryHandle.setMcpServers({ 'otto-tools': fresh });
-            } catch (err) {
-              logger.warn(`setMcpServers failed: ${err instanceof Error ? err.message : err}`);
-            }
           }
         },
       });
