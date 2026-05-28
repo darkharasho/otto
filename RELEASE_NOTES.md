@@ -1,3 +1,8 @@
+Version v0.8.5
+
+Fixes:
+- **`UNIQUE constraint failed: messages.id` mid-turn.** Late stream events arriving after an assistant message was already finalized would rebuild a fresh placeholder row and trigger a second `INSERT` with the same id, surfacing the SQLite error in the conversation. The session consumer now drops events for already-finalized ids, and `Repo.appendMessage` is idempotent on duplicate ids (preserves the original `seq`, updates content in place) as defense-in-depth.
+
 Version v0.8.4
 
 Features:
