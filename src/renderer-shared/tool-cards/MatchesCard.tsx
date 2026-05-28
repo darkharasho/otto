@@ -14,7 +14,7 @@ export function MatchesCard({ view, compact }: { view: View; compact?: boolean }
       arr.push(f); m.set(f.path, arr);
     }
     return Array.from(m.entries());
-  }, [visible]);
+  }, [visible, view]);
   const fs = compact ? 'text-[10px]' : 'text-[11px]';
   return (
     <div className={`rounded bg-bg/60 p-2 font-mono ${fs}`}>

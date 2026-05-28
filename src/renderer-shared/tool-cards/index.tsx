@@ -20,6 +20,7 @@ import { TasksCard } from './TasksCard';
 import { JsonTreeCard } from './JsonTreeCard';
 
 // Each Card narrows `view` internally via Extract<ResultView, { kind: '...' }>.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyCard = (props: { view: any; compact?: boolean }) => JSX.Element | null;
 
 const RENDERERS: Record<ResultView['kind'], AnyCard> = {

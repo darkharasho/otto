@@ -9,7 +9,7 @@ const STATE_PILL: Record<string, string> = {
   draft:  'bg-zinc-500/15 text-zinc-300',
 };
 
-export function GithubCard({ view, compact }: { view: View; compact?: boolean }) {
+export function GithubCard({ view, compact: _compact }: { view: View; compact?: boolean }) {
   const pill = STATE_PILL[view.state ?? ''] ?? 'bg-surface/60 text-muted';
   return (
     <div className="rounded border border-border/50 p-2.5">

@@ -24,9 +24,9 @@ function Node({ name, value, depth }: { name?: string; value: unknown; depth: nu
   if (!isCollection) {
     return (
       <div className="flex gap-1.5" style={{ paddingLeft: depth * 12 }}>
-        {name !== undefined && <span className="text-sky-300">"{name}"</span>}
+        {name !== undefined && <span className="text-sky-300">{'"'}{name}{'"'}</span>}
         {name !== undefined && <span className="text-muted">:</span>}
-        <span className={valueColor(value)}>{typeof value === 'string' ? `"${value}"` : String(value)}</span>
+        <span className={valueColor(value)}>{typeof value === 'string' ? <>{'"'}{value}{'"'}</> : String(value)}</span>
       </div>
     );
   }
@@ -37,7 +37,7 @@ function Node({ name, value, depth }: { name?: string; value: unknown; depth: nu
     <div style={{ paddingLeft: depth * 12 }}>
       <button type="button" onClick={() => setOpen(o => !o)} className="text-left">
         <span className="text-muted mr-1">{open ? '▾' : '▸'}</span>
-        {name !== undefined && <span className="text-sky-300">"{name}"</span>}
+        {name !== undefined && <span className="text-sky-300">{'"'}{name}{'"'}</span>}
         {name !== undefined && <span className="text-muted mx-1">:</span>}
         <span className="text-muted">{summary(value)}</span>
       </button>

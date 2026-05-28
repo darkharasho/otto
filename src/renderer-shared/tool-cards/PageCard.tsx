@@ -3,7 +3,7 @@ import { favicon } from './url-helpers';
 
 type View = Extract<ResultView, { kind: 'page' }>;
 
-export function PageCard({ view, compact }: { view: View; compact?: boolean }) {
+export function PageCard({ view, compact: _compact }: { view: View; compact?: boolean }) {
   const fav = favicon(view.url);
   return (
     <div className="rounded border border-border/50 overflow-hidden">

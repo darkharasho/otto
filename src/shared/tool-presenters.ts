@@ -380,7 +380,7 @@ export function classifyResult(name: string, result: unknown, isError: boolean, 
         ? String((input as Record<string, unknown>)['query']) : '';
       const results: Array<{ title: string; url: string; snippet?: string }> = [];
       for (const line of result.split('\n')) {
-        const m = /^\s*\d+\.\s+(.+?)\s+\(([^)]+)\)(?:\s+[—\-]\s+(.+))?$/.exec(line);
+        const m = /^\s*\d+\.\s+(.+?)\s+\(([^)]+)\)(?:\s+[—-]\s+(.+))?$/.exec(line);
         if (m) {
           const title = m[1]!, url = m[2]!;
           const snippet = m[3];

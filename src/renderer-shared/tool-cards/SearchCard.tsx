@@ -7,7 +7,7 @@ export function SearchCard({ view, compact }: { view: View; compact?: boolean })
   const visible = view.results.slice(0, compact ? 3 : 5);
   return (
     <div className="space-y-2">
-      <div className="text-muted text-[10.5px]">"{view.query}"</div>
+      <div className="text-muted text-[10.5px]">{'"'}{view.query}{'"'}</div>
       {visible.map((r, i) => {
         const fav = favicon(r.url);
         return (
