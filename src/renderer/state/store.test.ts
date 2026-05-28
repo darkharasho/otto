@@ -108,7 +108,7 @@ describe('useOttoStore', () => {
     const s = useOttoStore.getState();
     s.beginSession('s1');
     s.appendUserMessage('opt-1', 'hello', [
-      { type: 'image-ref', id: 'img1', sessionId: 's1', path: '/tmp/x.png', mimeType: 'image/png' },
+      { type: 'image-ref', id: 'img1', sessionId: 's1', path: '/tmp/x.png', width: 10, height: 10, mimeType: 'image/png', source: 'user' },
     ]);
     s.applyEvent({
       type: 'user-message',
@@ -117,7 +117,7 @@ describe('useOttoStore', () => {
       text: 'hello',
       content: [
         { type: 'text', text: 'hello' },
-        { type: 'image-ref', id: 'img1', sessionId: 's1', path: '/tmp/x.png', mimeType: 'image/png' },
+        { type: 'image-ref', id: 'img1', sessionId: 's1', path: '/tmp/x.png', width: 10, height: 10, mimeType: 'image/png', source: 'user' },
       ],
     });
     expect(useOttoStore.getState().activeSession!.messages).toHaveLength(1);
