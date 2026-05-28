@@ -17,7 +17,7 @@ export function ToolCallCard({ name, input, result, isError }: Props) {
 
   const desc = describeTool(name);
   const summary = summarizeInput(name, input);
-  const view = result === undefined ? null : classifyResult(name, result, isError);
+  const view = result === undefined ? null : classifyResult(name, result, isError, input);
 
   const statusColor = {
     running: 'text-muted',

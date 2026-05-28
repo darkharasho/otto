@@ -264,6 +264,21 @@ export function classifyResult(name: string, result: unknown, isError: boolean, 
       case 'type':
         if (typeof i['text'] === 'string') return { kind: 'typed', text: i['text'] };
         break;
+      case 'NotebookEdit': {
+        if (typeof i['notebook_path'] === 'string' && typeof i['new_source'] === 'string') {
+          const ct = i['cell_type'] === 'markdown' ? 'markdown' as const : 'code' as const;
+          const op = i['edit_mode'] === 'insert' ? 'insert' as const
+                   : i['edit_mode'] === 'delete' ? 'delete' as const : 'replace' as const;
+          return {
+            kind: 'notebook', path: String(i['notebook_path']),
+            text: String(i['new_source']), cellType: ct, op,
+            ...(typeof i['cell_id'] === 'number' || typeof i['cell_id'] === 'string'
+              ? { cellIndex: Number(i['cell_id']) } : {}),
+            language: ct === 'code' ? 'python' : 'markdown',
+          };
+        }
+        break;
+      }
       case 'TodoWrite':
       case 'TaskCreate':
       case 'TaskUpdate': {

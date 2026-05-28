@@ -94,7 +94,7 @@ function ToolCard({ item }: { item: ToolItem }): JSX.Element {
 
   const desc = describeTool(item.name);
   const summary = summarizeInput(item.name, item.input);
-  const view = item.result === undefined ? null : classifyResult(item.name, item.result, Boolean(item.isError));
+  const view = item.result === undefined ? null : classifyResult(item.name, item.result, Boolean(item.isError), item.input);
 
   return (
     <div className="rounded-md border border-border bg-surface overflow-hidden">

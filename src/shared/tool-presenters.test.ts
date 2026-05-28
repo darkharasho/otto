@@ -256,6 +256,15 @@ describe('classifyResult — Edit/Write → diff', () => {
   });
 });
 
+describe('classifyResult — NotebookEdit', () => {
+  it('NotebookEdit → notebook view', () => {
+    const view = classifyResult('NotebookEdit', { success: true }, false,
+      { notebook_path: '/p/a.ipynb', cell_id: 4, cell_type: 'code', new_source: 'import x' });
+    expect(view).toMatchObject({ kind: 'notebook', path: '/p/a.ipynb', cellType: 'code',
+      text: 'import x', language: 'python' });
+  });
+});
+
 describe('classifyResult — web + github + tree', () => {
   it('WebSearch → search view', () => {
     const res = '1. Title One (https://a.com) — snippet one\n2. Title Two (https://b.com) — snippet two';
