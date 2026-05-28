@@ -147,14 +147,14 @@ describe('classifyResult', () => {
     });
   });
   it('small flat object → kv', () => {
-    expect(classifyResult('mcp__github__create_pr', { number: 287, url: 'x', state: 'open' }, false)).toEqual({
+    expect(classifyResult('mcp__some_server__do_thing', { number: 287, url: 'x', state: 'open' }, false)).toEqual({
       kind: 'kv',
       entries: [['number', '287'], ['url', 'x'], ['state', 'open']],
     });
   });
-  it('nested object → json fallback', () => {
+  it('nested object → tree fallback', () => {
     const big = { a: { b: { c: 1 } } };
-    expect(classifyResult('whatever', big, false)).toEqual({ kind: 'json', value: big });
+    expect(classifyResult('whatever', big, false)).toEqual({ kind: 'tree', value: big });
   });
   it('classifies a result containing an image-ref block as an image view', () => {
     const result = {
@@ -253,5 +253,41 @@ describe('classifyResult — Edit/Write → diff', () => {
     if (view.kind === 'diff') {
       expect(view.hunks[0]!.lines.some(l => l.kind === 'add' && l.text === 'BAZ')).toBe(true);
     }
+  });
+});
+
+describe('classifyResult — web + github + tree', () => {
+  it('WebSearch → search view', () => {
+    const res = '1. Title One (https://a.com) — snippet one\n2. Title Two (https://b.com) — snippet two';
+    const view = classifyResult('WebSearch', res, false, { query: 'electron' });
+    expect(view).toMatchObject({
+      kind: 'search', query: 'electron',
+      results: [
+        { title: 'Title One', url: 'https://a.com', snippet: 'snippet one' },
+        { title: 'Title Two', url: 'https://b.com', snippet: 'snippet two' },
+      ],
+    });
+  });
+  it('WebFetch → page view', () => {
+    const view = classifyResult('WebFetch', '# Hello\n\nIntro paragraph.', false,
+      { url: 'https://x.com/y' });
+    expect(view).toMatchObject({ kind: 'page', url: 'https://x.com/y', title: 'Hello' });
+  });
+  it('GitHub PR result → github view', () => {
+    const res = { number: 142, title: 'Beautiful tool cards', state: 'open',
+                  html_url: 'https://github.com/o/r/pull/142',
+                  additions: 234, deletions: 98, changed_files: 4,
+                  user: { login: 'darkharasho' } };
+    const view = classifyResult('mcp__github__create_pull_request', res, false,
+      { owner: 'o', repo: 'r', title: 'x' });
+    expect(view).toMatchObject({
+      kind: 'github', flavor: 'pr', repo: 'o/r', number: 142,
+      title: 'Beautiful tool cards', state: 'open', author: 'darkharasho',
+      stats: { added: 234, removed: 98, files: 4 },
+    });
+  });
+  it('large object → tree view (replaces json for objects)', () => {
+    const view = classifyResult('weird', { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7 }, false);
+    expect(view.kind).toBe('tree');
   });
 });

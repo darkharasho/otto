@@ -285,29 +285,25 @@ export function classifyResult(name: string, result: unknown, isError: boolean, 
         break;
       }
     }
-  }
-
-  // Edit / Write — synthesize diff from inputs (result is a confirmation string)
-  if (input && typeof input === 'object') {
-    const i2 = input as Record<string, unknown>;
-    if (bareNameForInput === 'Write' && typeof i2['file_path'] === 'string' && typeof i2['content'] === 'string') {
-      const lines = (i2['content'] as string).split('\n');
+    // Edit / Write — synthesize diff from inputs (result is a confirmation string)
+    if (bareNameForInput === 'Write' && typeof i['file_path'] === 'string' && typeof i['content'] === 'string') {
+      const lines = (i['content'] as string).split('\n');
       return {
-        kind: 'diff', path: String(i2['file_path']), isNew: true,
+        kind: 'diff', path: String(i['file_path']), isNew: true,
         added: lines.length, removed: 0,
         hunks: [{ oldStart: 0, newStart: 1, lines: lines.map(text => ({ kind: 'add' as const, text })) }],
       };
     }
     if (bareNameForInput === 'Edit'
-        && typeof i2['file_path'] === 'string'
-        && typeof i2['old_string'] === 'string'
-        && typeof i2['new_string'] === 'string') {
-      const oldLines = (i2['old_string'] as string).split('\n');
-      const newLines = (i2['new_string'] as string).split('\n');
+        && typeof i['file_path'] === 'string'
+        && typeof i['old_string'] === 'string'
+        && typeof i['new_string'] === 'string') {
+      const oldLines = (i['old_string'] as string).split('\n');
+      const newLines = (i['new_string'] as string).split('\n');
       const hunk = diffLines(oldLines, newLines);
       const added = hunk.lines.filter(l => l.kind === 'add').length;
       const removed = hunk.lines.filter(l => l.kind === 'del').length;
-      return { kind: 'diff', path: String(i2['file_path']), isNew: false, added, removed, hunks: [hunk] };
+      return { kind: 'diff', path: String(i['file_path']), isNew: false, added, removed, hunks: [hunk] };
     }
   }
 
@@ -363,6 +359,29 @@ export function classifyResult(name: string, result: unknown, isError: boolean, 
         if (m) files.push({ path: m[1]!, line: Number(m[2]), snippet: m[3] ?? '' });
       }
       return { kind: 'matches', pattern, files };
+    }
+    if (bareNameForInput === 'WebSearch') {
+      const query = typeof (input as Record<string, unknown> | undefined)?.['query'] === 'string'
+        ? String((input as Record<string, unknown>)['query']) : '';
+      const results: Array<{ title: string; url: string; snippet?: string }> = [];
+      for (const line of result.split('\n')) {
+        const m = /^\s*\d+\.\s+(.+?)\s+\(([^)]+)\)(?:\s+[—\-]\s+(.+))?$/.exec(line);
+        if (m) {
+          const title = m[1]!, url = m[2]!;
+          const snippet = m[3];
+          results.push(snippet !== undefined ? { title, url, snippet } : { title, url });
+        }
+      }
+      if (results.length > 0) return { kind: 'search', query, results };
+    }
+    if (bareNameForInput === 'WebFetch') {
+      const url = typeof (input as Record<string, unknown> | undefined)?.['url'] === 'string'
+        ? String((input as Record<string, unknown>)['url']) : '';
+      const m = /^\s*#\s+(.+)$/m.exec(result);
+      const title = m?.[1]?.trim();
+      const body = result.replace(/^\s*#.*$/m, '').trim();
+      const snippet = body.split('\n').filter(Boolean).slice(0, 3).join(' ').slice(0, 220);
+      return { kind: 'page', url, ...(title !== undefined ? { title } : {}), snippet };
     }
   }
 
@@ -421,6 +440,35 @@ export function classifyResult(name: string, result: unknown, isError: boolean, 
   if (typeof result === 'object' && result !== null && !Array.isArray(result)) {
     const o = result as Record<string, unknown>;
 
+    const parsedGh = parseMcpName(name);
+    if (parsedGh && /github/i.test(parsedGh.server)) {
+      const inObj = input && typeof input === 'object' ? input as Record<string, unknown> : null;
+      const owner = inObj?.['owner'];
+      const repoName = inObj?.['repo'];
+      const repo = typeof owner === 'string' && typeof repoName === 'string'
+        ? `${owner}/${repoName}`
+        : (typeof o['full_name'] === 'string' ? o['full_name'] : 'repo');
+      const flavor: 'pr' | 'issue' | 'release' | 'commit' =
+        /pull_request|pull/.test(parsedGh.tool) ? 'pr' :
+        /release/.test(parsedGh.tool) ? 'release' :
+        /commit/.test(parsedGh.tool) ? 'commit' : 'issue';
+      const userLogin = (o['user'] && typeof o['user'] === 'object')
+        ? (o['user'] as Record<string, unknown>)['login']
+        : undefined;
+      const view: ResultView = {
+        kind: 'github', flavor, repo,
+        ...(o['number'] !== undefined ? { number: o['number'] as number } : {}),
+        ...(typeof o['title'] === 'string' ? { title: o['title'] } : {}),
+        ...(typeof o['state'] === 'string' ? { state: o['state'] } : {}),
+        ...(typeof o['html_url'] === 'string' ? { htmlUrl: o['html_url'] } : {}),
+        ...(typeof userLogin === 'string' ? { author: userLogin } : {}),
+        ...(typeof o['additions'] === 'number' && typeof o['deletions'] === 'number'
+          ? { stats: { added: o['additions'] as number, removed: o['deletions'] as number,
+                       files: typeof o['changed_files'] === 'number' ? o['changed_files'] as number : 0 } } : {}),
+      };
+      return view;
+    }
+
     if (looksLikeShellResult(o)) {
       const view: ResultView = { kind: 'terminal' };
       if (typeof o['stdout'] === 'string') view.stdout = o['stdout'];
@@ -436,6 +484,9 @@ export function classifyResult(name: string, result: unknown, isError: boolean, 
     }
   }
 
+  if (typeof result === 'object' && result !== null) {
+    return { kind: 'tree', value: result };
+  }
   return { kind: 'json', value: result };
 }
 
