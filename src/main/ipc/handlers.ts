@@ -95,6 +95,10 @@ export function registerIpcHandlers(deps: {
     await sessions.interrupt(args);
   });
 
+  ipcMain.handle('session.close', async (_e, args: { sessionId: string }): Promise<void> => {
+    await sessions.close(args);
+  });
+
   ipcMain.handle(
     'session.ensureForSubmit',
     async (

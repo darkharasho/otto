@@ -108,8 +108,6 @@ export const useOttoStore = create<OttoState>((set, get) => ({
     const prev = get().activeSession?.id;
     if (prev) abandonedSessions.add(prev);
     attachInFlight.clear();
-    // eslint-disable-next-line no-console
-    console.debug('[otto/new-conv] abandonActiveSession', { prev, abandonedCount: abandonedSessions.size });
     set({ activeSession: null });
   },
 
@@ -141,11 +139,7 @@ export const useOttoStore = create<OttoState>((set, get) => ({
     if (!session || event.sessionId !== session.id) {
       // Drop events from sessions the user has explicitly left — auto-attach
       // must not pull them back into focus.
-      if (event.sessionId && abandonedSessions.has(event.sessionId)) {
-        // eslint-disable-next-line no-console
-        console.debug('[otto/new-conv] dropping abandoned event', { type: event.type, sessionId: event.sessionId });
-        return;
-      }
+      if (event.sessionId && abandonedSessions.has(event.sessionId)) return;
       // Auto-attach to a session we don't currently track (e.g. one started
       // from the iPhone remote). Kick off the load and buffer this event so
       // it can be replayed once attach completes.

@@ -118,10 +118,11 @@ export function App() {
   const handleNewConversation = useCallback(
     async ({ text, attachments }: { text: string; attachments: ImageRef[] }) => {
       const prevId = useOttoStore.getState().activeSession?.id ?? null;
-      // eslint-disable-next-line no-console
-      console.debug('[otto/new-conv] handleNewConversation', { prevId, textLen: text.length, attachmentCount: attachments.length });
       if (prevId) {
-        void ipc.invoke('session.interrupt', { sessionId: prevId }).catch(() => {});
+        // Use close (not interrupt) so the old SDK subprocess is fully torn
+        // down; interrupt only signals cancel and leaves the stream alive,
+        // which blocks new sessions from making progress.
+        void ipc.invoke('session.close', { sessionId: prevId }).catch(() => {});
       }
       // Empty trigger (the common /n␣ + space case): just drop the old
       // session and collapse to the bar. The next submit will lazily start a

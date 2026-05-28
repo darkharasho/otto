@@ -371,19 +371,46 @@ export class SessionManager {
 
     this.onAssistantMessageId(assistantId);
 
-    stream.enqueue({ messageId: assistantId, text, attachments: args.attachments ?? [] });
+    // Emit user-message-queued BEFORE enqueue so the renderer sees it before
+    // any user-message-consumed that fires synchronously from a waiting SDK
+    // pump. Without this, a brand-new stream's pump (already awaiting the
+    // inbox by the time we enqueue) can fire consumed first, leaving the
+    // renderer's queueDepth stuck at 1.
     this.emit({
       type: 'user-message-queued',
       sessionId,
       messageId: assistantId,
-      queueDepth: stream.queueDepth(),
+      queueDepth: stream.queueDepth() + 1,
     });
+    stream.enqueue({ messageId: assistantId, text, attachments: args.attachments ?? [] });
     // Emit message-start eagerly so the renderer creates the assistant
     // placeholder and shows the thinking animation during the SDK round-trip.
     // The consumer loop's ensureStarted() will see row.started=true and skip.
     this.ensureStarted(sessionId, row);
     void user;
     await row.done;
+  }
+
+  async close(args: { sessionId: string }): Promise<void> {
+    // Hard-shutdown: tear down the SDK stream and abort the controller. Used
+    // when the user explicitly leaves a conversation (e.g. /n) so the SDK
+    // subprocess releases its resources and a fresh session can start cleanly.
+    const stream = this.streams.get(args.sessionId);
+    if (stream) {
+      try { await stream.interrupt(); } catch { /* best effort */ }
+      try { stream.close(); } catch { /* best effort */ }
+      this.streams.delete(args.sessionId);
+    }
+    const abort = this.aborts.get(args.sessionId);
+    if (abort) {
+      abort.abort();
+      this.aborts.delete(args.sessionId);
+    }
+    this.assistants.delete(args.sessionId);
+    this.cancelling.delete(args.sessionId);
+    if (this.activeSessionId === args.sessionId) {
+      this.activeSessionId = null;
+    }
   }
 
   async interrupt(args: { sessionId: string }): Promise<void> {

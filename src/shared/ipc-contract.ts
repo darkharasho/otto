@@ -64,6 +64,7 @@ export type IpcRequest =
   | { channel: 'session.send'; args: SessionSendArgs; result: void }
   | { channel: 'session.cancel'; args: SessionCancelArgs; result: void }
   | { channel: 'session.interrupt'; args: SessionInterruptArgs; result: void }
+  | { channel: 'session.close'; args: { sessionId: string }; result: void }
   | { channel: 'session.list'; args: void; result: SessionMeta[] }
   | { channel: 'session.load'; args: SessionLoadArgs; result: Message[] }
   | {

@@ -190,8 +190,6 @@ export function CommandBar({
           value={value}
           onChange={(e) => {
             const next = e.target.value;
-            // eslint-disable-next-line no-console
-            console.debug('[otto/new-conv] onChange', { next, len: next.length, charCodes: Array.from(next).map((c) => c.charCodeAt(0)), hasCb: !!onNewConversation });
             // Typing the prefix triggers a new conversation immediately —
             // don't wait for Enter. Without this, the user keeps typing into
             // what visually still looks like the previous conversation.
