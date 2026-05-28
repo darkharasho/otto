@@ -1,0 +1,4 @@
+export const IDLE_GATE_MS = 5 * 60 * 1000;
+export const SIMILARITY_THRESHOLD = 0.35;
+export const CONTEXT_WINDOW_CHARS = 2000;
+export const TOPIC_SHIFT_EVALUATE_TIMEOUT_MS = 2000;
