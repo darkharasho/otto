@@ -13,6 +13,10 @@ import { MatchesCard } from './MatchesCard';
 import { SearchCard } from './SearchCard';
 import { PageCard } from './PageCard';
 import { GithubCard } from './GithubCard';
+import { ClickCard } from './ClickCard';
+import { KeyCapsCard } from './KeyCapsCard';
+import { TypedCard } from './TypedCard';
+import { TasksCard } from './TasksCard';
 
 // Each Card narrows `view` internally via Extract<ResultView, { kind: '...' }>.
 type AnyCard = (props: { view: any; compact?: boolean }) => JSX.Element | null;
@@ -33,10 +37,10 @@ const RENDERERS: Record<ResultView['kind'], AnyCard> = {
   search:   SearchCard,
   page:     PageCard,
   github:   GithubCard,
-  click:    ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
-  keypress: ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
-  typed:    ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
-  tasks:    ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
+  click:    ClickCard,
+  keypress: KeyCapsCard,
+  typed:    TypedCard,
+  tasks:    TasksCard,
   notebook: NotebookCard,
   tree:     ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
 };
