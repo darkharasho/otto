@@ -132,3 +132,112 @@ describe('TopicShiftDetector.buildContextWindow', () => {
     expect(d.buildContextWindow('s1')).toBe('user: part one part two');
   });
 });
+
+describe('TopicShiftDetector.evaluate', () => {
+  function makeEmbedder(map: Map<string, number[]>, isAvailable = true) {
+    return {
+      isAvailable,
+      async embedBatch(texts: string[]) {
+        return texts.map((t) => {
+          const vec = map.get(t);
+          if (!vec) throw new Error(`fake embedder: no vector for ${JSON.stringify(t)}`);
+          return new Float32Array(vec);
+        });
+      },
+    };
+  }
+
+  function fakeRepoWith(messages: Message[]) {
+    return { loadMessages: (_id: string) => messages };
+  }
+
+  const ALIGNED = [1, 0, 0]; // cosine to itself = 1.0
+  const ORTHOGONAL = [0, 1, 0]; // cosine vs ALIGNED = 0.0
+
+  it('returns suggest=false and NaN similarity when embedder is unavailable', async () => {
+    const d = new TopicShiftDetector({
+      repo: fakeRepoWith([userMsg('hello', 0)]),
+      embedder: makeEmbedder(new Map(), false),
+    });
+    const result = await d.evaluate('s1', 'new prompt');
+    expect(result.suggest).toBe(false);
+    expect(Number.isNaN(result.similarity)).toBe(true);
+  });
+
+  it('returns suggest=false when context window is empty (fresh session)', async () => {
+    const d = new TopicShiftDetector({
+      repo: fakeRepoWith([]),
+      embedder: makeEmbedder(new Map()),
+    });
+    const result = await d.evaluate('s1', 'anything');
+    expect(result.suggest).toBe(false);
+  });
+
+  it('returns suggest=true when similarity is clearly below threshold', async () => {
+    const messages = [userMsg('about cooking', 0)];
+    const map = new Map<string, number[]>([
+      ['user: about cooking', ALIGNED],
+      ['rocket science', ORTHOGONAL],
+    ]);
+    const d = new TopicShiftDetector({
+      repo: fakeRepoWith(messages),
+      embedder: makeEmbedder(map),
+    });
+    const result = await d.evaluate('s1', 'rocket science');
+    expect(result.suggest).toBe(true);
+    expect(result.similarity).toBeCloseTo(0.0, 5);
+  });
+
+  it('returns suggest=false when similarity is above threshold', async () => {
+    const messages = [userMsg('about cooking', 0)];
+    // cosine([1,0,0], [0.5, sqrt(0.75), 0]) = 0.5
+    const SIMILAR = [0.5, Math.sqrt(0.75), 0];
+    const map = new Map<string, number[]>([
+      ['user: about cooking', ALIGNED],
+      ['more about food', SIMILAR],
+    ]);
+    const d = new TopicShiftDetector({
+      repo: fakeRepoWith(messages),
+      embedder: makeEmbedder(map),
+    });
+    const result = await d.evaluate('s1', 'more about food');
+    expect(result.suggest).toBe(false);
+    expect(result.similarity).toBeCloseTo(0.5, 5);
+  });
+
+  it('treats similarity exactly at threshold as not-a-shift (strict less-than)', async () => {
+    const messages = [userMsg('about cooking', 0)];
+    // Use a value slightly above 0.35 to account for Float32Array precision loss:
+    // Float32Array([0.35, ...]) rounds 0.35 down to ~0.34999999, giving cosine < 0.35.
+    // 0.35001 survives float32 rounding at or above the threshold.
+    const AT_THRESHOLD = [0.35001, Math.sqrt(1 - 0.35001 * 0.35001), 0];
+    const map = new Map<string, number[]>([
+      ['user: about cooking', ALIGNED],
+      ['edge case', AT_THRESHOLD],
+    ]);
+    const d = new TopicShiftDetector({
+      repo: fakeRepoWith(messages),
+      embedder: makeEmbedder(map),
+    });
+    const result = await d.evaluate('s1', 'edge case');
+    expect(result.similarity).toBeGreaterThanOrEqual(0.35);
+    expect(result.suggest).toBe(false);
+  });
+
+  it('returns suggest=false when embedder throws', async () => {
+    const messages = [userMsg('about cooking', 0)];
+    const throwingEmbedder = {
+      isAvailable: true,
+      async embedBatch() {
+        throw new Error('inference exploded');
+      },
+    };
+    const d = new TopicShiftDetector({
+      repo: fakeRepoWith(messages),
+      embedder: throwingEmbedder,
+    });
+    const result = await d.evaluate('s1', 'anything');
+    expect(result.suggest).toBe(false);
+    expect(Number.isNaN(result.similarity)).toBe(true);
+  });
+});
