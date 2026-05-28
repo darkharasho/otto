@@ -96,15 +96,31 @@ export class Repo {
   }
 
   appendMessage(m: Message & { sessionId: string }): Message {
-    const nextSeq = this.nextSeq(m.sessionId);
-    const stored: Message = { ...m, seq: nextSeq };
-    this.db
-      .prepare(
-        `INSERT INTO messages (id, session_id, seq, role, content, created_at)
-         VALUES (?, ?, ?, ?, ?, ?)`
-      )
-      .run(stored.id, m.sessionId, nextSeq, stored.role, JSON.stringify(messageBody(stored)), stored.createdAt);
-    return stored;
+    const tx = this.db.transaction(() => {
+      const existing = this.db
+        .prepare(`SELECT * FROM messages WHERE id = ?`)
+        .get(m.id) as MessageRow | undefined;
+      if (existing) {
+        // Idempotent: a row with this id already exists. Update its content/
+        // role in case the caller has a more complete snapshot (e.g. a second
+        // finalize after late stream events), but keep the original seq so
+        // ordering remains stable.
+        this.db
+          .prepare(`UPDATE messages SET role = ?, content = ?, created_at = ? WHERE id = ?`)
+          .run(m.role, JSON.stringify(messageBody({ ...m, seq: existing.seq } as Message)), m.createdAt, m.id);
+        return { ...m, seq: existing.seq } as Message;
+      }
+      const nextSeq = this.nextSeq(m.sessionId);
+      const stored: Message = { ...m, seq: nextSeq };
+      this.db
+        .prepare(
+          `INSERT INTO messages (id, session_id, seq, role, content, created_at)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        )
+        .run(stored.id, m.sessionId, nextSeq, stored.role, JSON.stringify(messageBody(stored)), stored.createdAt);
+      return stored;
+    });
+    return tx();
   }
 
   loadMessages(sessionId: string): Message[] {

@@ -69,6 +69,17 @@ describe('Repo.messages', () => {
     expect(loaded[1]!.role).toBe('assistant');
   });
 
+  it('is idempotent when called twice with the same message id', () => {
+    repo.createSession({ id: 's1', model: 'm', createdAt: 1, lastActive: 1 });
+    const a = { ...newAssistantMessage(), sessionId: 's1' };
+    const first = repo.appendMessage(a);
+    expect(() => repo.appendMessage({ ...a, content: [{ type: 'text' as const, text: 'updated' }] })).not.toThrow();
+    const loaded = repo.loadMessages('s1');
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0]!.seq).toBe(first.seq);
+    expect(loaded[0]!.content).toEqual([{ type: 'text', text: 'updated' }]);
+  });
+
   it('round-trips content json', () => {
     repo.createSession({ id: 's1', model: 'm', createdAt: 1, lastActive: 1 });
     const a = {

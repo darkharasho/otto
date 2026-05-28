@@ -72,6 +72,7 @@ export class SessionManager {
   private readonly streams = new Map<string, SessionStreamHandle>();
   private readonly assistants = new Map<string, Map<string, ActiveAssistant>>(); // sessionId -> (messageId -> active)
   private readonly cancelling = new Map<string, Set<string>>(); // sessionId -> set of messageIds awaiting cancelled-finalize
+  private readonly finalizedMessages = new Map<string, Set<string>>(); // sessionId -> messageIds already persisted
   private readonly seenSdkSessionId = new Set<string>();
   private activeSessionId: string | null = null;
   private readonly doneListeners: Array<(sessionId: string) => void> = [];
@@ -153,7 +154,14 @@ export class SessionManager {
     return handle;
   }
 
-  private getOrCreateAssistant(sessionId: string, messageId: string): ActiveAssistant {
+  private getOrCreateAssistant(sessionId: string, messageId: string): ActiveAssistant | null {
+    if (this.finalizedMessages.get(sessionId)?.has(messageId)) {
+      // Late event for an already-persisted message. Dropping it prevents a
+      // fresh placeholder row from being recreated and re-finalized, which
+      // would attempt a duplicate INSERT (UNIQUE constraint on messages.id).
+      logger.warn(`dropping late event for finalized message ${messageId} in session ${sessionId}`);
+      return null;
+    }
     let perSession = this.assistants.get(sessionId);
     if (!perSession) {
       perSession = new Map();
@@ -195,6 +203,7 @@ export class SessionManager {
           }
           case 'text-delta': {
             const row = this.getOrCreateAssistant(sessionId, messageId);
+            if (!row) break;
             this.ensureStarted(sessionId, row);
             appendText(row.message.content, ev.text);
             this.emit({ type: 'text-delta', sessionId, messageId, text: ev.text });
@@ -203,6 +212,7 @@ export class SessionManager {
           }
           case 'tool-call-start': {
             const row = this.getOrCreateAssistant(sessionId, messageId);
+            if (!row) break;
             this.ensureStarted(sessionId, row);
             row.message.content.push({ type: 'tool_use', callId: ev.callId, name: ev.name, input: ev.input });
             this.emit({
@@ -218,6 +228,7 @@ export class SessionManager {
           }
           case 'tool-call-result': {
             const row = this.getOrCreateAssistant(sessionId, messageId);
+            if (!row) break;
             this.ensureStarted(sessionId, row);
             const normalizedResult = normalizeImageBlocks(ev.callId, ev.result);
             row.message.content.push({
@@ -333,6 +344,12 @@ export class SessionManager {
       this.emit({ type: 'message-end', sessionId, messageId });
     }
     this.repo.appendMessage(row.message);
+    let finalizedForSession = this.finalizedMessages.get(sessionId);
+    if (!finalizedForSession) {
+      finalizedForSession = new Set();
+      this.finalizedMessages.set(sessionId, finalizedForSession);
+    }
+    finalizedForSession.add(messageId);
     this.repo.updateSessionActivity(sessionId, Date.now(), row.message.errored ? 'idle' : 'active');
     this.emit({ type: 'done', sessionId });
     for (const cb of this.doneListeners) {
@@ -358,6 +375,7 @@ export class SessionManager {
     // send() can await per-message completion (preserving the previous
     // per-turn await semantics).
     const row = this.getOrCreateAssistant(sessionId, assistantId);
+    if (!row) throw new Error(`assistantId ${assistantId} unexpectedly collided with a finalized message`);
 
     // Session-level abort controller still exists so cancel() can tear down
     // the underlying query. Tasks 5/6 will revisit semantics.
@@ -408,6 +426,7 @@ export class SessionManager {
     }
     this.assistants.delete(args.sessionId);
     this.cancelling.delete(args.sessionId);
+    this.finalizedMessages.delete(args.sessionId);
     if (this.activeSessionId === args.sessionId) {
       this.activeSessionId = null;
     }
