@@ -132,18 +132,15 @@ export class ReflectionPipeline {
     }
 
     const rerank = factRepo.rerank();
-    const total = factsWritten + savedArtifacts;
-    if (total > 0) {
-      appendSystemNote(args.sessionId, {
-        type: 'memory-update',
-        facts: factsWritten,
-        playbooks: savedByKind.playbook,
-        antiPatterns: savedByKind.anti_pattern,
-        heuristics: savedByKind.heuristic,
-        promoted: rerank.promoted.length,
-        demoted: rerank.demoted.length,
-      });
-    }
+    appendSystemNote(args.sessionId, {
+      type: 'memory-update',
+      facts: factsWritten,
+      playbooks: savedByKind.playbook,
+      antiPatterns: savedByKind.anti_pattern,
+      heuristics: savedByKind.heuristic,
+      promoted: rerank.promoted.length,
+      demoted: rerank.demoted.length,
+    });
 
     return {
       savedFacts: factsWritten,

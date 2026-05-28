@@ -109,8 +109,6 @@ export function MessageView({ message, isStreamingTarget = false }: Props) {
   if (message.role === 'system') {
     const block = message.content[0];
     if (!block || block.type !== 'memory-update') return null;
-    const total = block.facts + block.playbooks + block.antiPatterns + block.heuristics;
-    if (total === 0) return null;
     const counts = {
       playbooks: block.playbooks,
       facts: block.facts,
@@ -178,22 +176,11 @@ export function MessageView({ message, isStreamingTarget = false }: Props) {
 }
 
 
-function isSilentTool(name: string): boolean {
-  // mark_task_complete only triggers a background reflection pass; the user
-  // sees a memory-update card iff something is actually saved, so the raw
-  // call/result is noise in the chat.
-  return name === 'mark_task_complete' || name.endsWith('__mark_task_complete');
-}
-
 function renderBlocks(content: ContentBlock[], streamingTarget: boolean) {
   const elements: React.ReactNode[] = [];
   const toolResults = new Map<string, { result: unknown; isError: boolean }>();
-  const hiddenCallIds = new Set<string>();
   for (const b of content) {
     if (b.type === 'tool_result') toolResults.set(b.callId, { result: b.result, isError: b.isError ?? false });
-    if ((b.type === 'tool_use' || b.type === 'pending_tool_use' || b.type === 'tool_denied') && isSilentTool(b.name)) {
-      hiddenCallIds.add(b.callId);
-    }
   }
 
   // Caret goes on the trailing text run only (visual cursor where new tokens land).
@@ -218,9 +205,6 @@ function renderBlocks(content: ContentBlock[], streamingTarget: boolean) {
       elements.push(<MarkdownBlock key={`t-${textBufferStartIdx}`} text={textBuffer} />);
       textBuffer = '';
       textBufferStartIdx = -1;
-    }
-    if ((b.type === 'tool_use' || b.type === 'pending_tool_use' || b.type === 'tool_denied' || b.type === 'tool_result') && hiddenCallIds.has(b.callId)) {
-      continue;
     }
     if (b.type === 'tool_use') {
       const res = toolResults.get(b.callId);

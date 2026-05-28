@@ -90,9 +90,10 @@ describe('MessageView system memory-update', () => {
     expect(screen.getByText('1 playbook, 3 facts, 2 anti-patterns, 4 heuristics')).toBeInTheDocument();
   });
 
-  it('renders nothing when all counts are zero', () => {
-    const { container } = renderSystem({ facts: 0, playbooks: 0, antiPatterns: 0, heuristics: 0 });
-    expect(container.textContent ?? '').toBe('');
+  it('still renders the card when all counts are zero', () => {
+    renderSystem({ facts: 0, playbooks: 0, antiPatterns: 0, heuristics: 0 });
+    expect(screen.getByTestId('message-memory-update')).toBeInTheDocument();
+    expect(screen.getByText('Memory updated')).toBeInTheDocument();
   });
 });
 
@@ -118,8 +119,8 @@ describe('MessageView inline markdown images', () => {
   });
 });
 
-describe('MessageView mark_task_complete suppression', () => {
-  it('hides mark_task_complete tool_use and its result', () => {
+describe('MessageView mark_task_complete visibility', () => {
+  it('renders mark_task_complete tool_use as a tool call card', () => {
     const m: Message = {
       ...baseAssistant,
       content: [
@@ -130,8 +131,7 @@ describe('MessageView mark_task_complete suppression', () => {
     };
     render(<MessageView message={m} />);
     expect(screen.getByText('all done')).toBeInTheDocument();
-    expect(screen.queryByText(/mark task complete/i)).not.toBeInTheDocument();
-    expect(screen.queryByText('noted')).not.toBeInTheDocument();
+    expect(screen.getByText(/mark task complete/i)).toBeInTheDocument();
   });
 });
 

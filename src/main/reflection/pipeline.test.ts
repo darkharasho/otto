@@ -74,7 +74,7 @@ describe('ReflectionPipeline.run', () => {
     });
   });
 
-  it('does not notify when reflector returns nothing', async () => {
+  it('still notifies with zero counts when reflector returns nothing', async () => {
     const appendSystemNote = vi.fn();
     const pipeline = new ReflectionPipeline({
       repo,
@@ -91,7 +91,15 @@ describe('ReflectionPipeline.run', () => {
     const out = await pipeline.run({ sessionId: 's1', sinceSeq: -1 });
     expect(out.savedFacts).toBe(0);
     expect(out.savedArtifacts).toBe(0);
-    expect(appendSystemNote).not.toHaveBeenCalled();
+    expect(appendSystemNote).toHaveBeenCalledWith('s1', {
+      type: 'memory-update',
+      facts: 0,
+      playbooks: 0,
+      antiPatterns: 0,
+      heuristics: 0,
+      promoted: expect.any(Number),
+      demoted: expect.any(Number),
+    });
   });
 
   it('silently drops on reflector failure', async () => {
