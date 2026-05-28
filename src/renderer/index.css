@@ -239,3 +239,6 @@ button {
 .md table { border-collapse: collapse; margin: 0.5rem 0; font-size: 0.85em; }
 .md th, .md td { border: 1px solid #2a2b2e; padding: 3px 6px; }
 .md th { background: rgba(255, 255, 255, 0.04); font-weight: 600; }
+
+@keyframes otto-blink { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
+.otto-blink { animation: otto-blink 1s steps(1) infinite }
