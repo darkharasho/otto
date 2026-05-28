@@ -6,6 +6,7 @@ import { KvCard } from './KvCard';
 import { ErrorCard } from './ErrorCard';
 import { JsonScalarCard } from './JsonScalarCard';
 
+// Each Card narrows `view` internally via Extract<ResultView, { kind: '...' }>.
 type AnyCard = (props: { view: any; compact?: boolean }) => JSX.Element | null;
 
 const RENDERERS: Record<ResultView['kind'], AnyCard> = {
