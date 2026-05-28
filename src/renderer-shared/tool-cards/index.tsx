@@ -8,6 +8,11 @@ import { JsonScalarCard } from './JsonScalarCard';
 import { CodeCard } from './CodeCard';
 import { DiffCard } from './DiffCard';
 import { NotebookCard } from './NotebookCard';
+import { PathsCard } from './PathsCard';
+import { MatchesCard } from './MatchesCard';
+import { SearchCard } from './SearchCard';
+import { PageCard } from './PageCard';
+import { GithubCard } from './GithubCard';
 
 // Each Card narrows `view` internally via Extract<ResultView, { kind: '...' }>.
 type AnyCard = (props: { view: any; compact?: boolean }) => JSX.Element | null;
@@ -23,11 +28,11 @@ const RENDERERS: Record<ResultView['kind'], AnyCard> = {
   // placeholders until later tasks — render via JsonScalarCard for now
   code:     CodeCard,
   diff:     DiffCard,
-  paths:    ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
-  matches:  ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
-  search:   ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
-  page:     ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
-  github:   ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
+  paths:    PathsCard,
+  matches:  MatchesCard,
+  search:   SearchCard,
+  page:     PageCard,
+  github:   GithubCard,
   click:    ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
   keypress: ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
   typed:    ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
