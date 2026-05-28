@@ -41,8 +41,8 @@ describe('ToolCallCard — result rendering', () => {
         isError={false}
       />,
     );
-    await userEvent.click(screen.getByRole('button'));
-    expect(screen.getByRole('img')).toHaveAttribute('src', 'file:///tmp/a.png');
+    await userEvent.click(screen.getAllByRole('button')[0]!);
+    expect(screen.getAllByRole('img')[0]!).toHaveAttribute('src', 'file:///tmp/a.png');
   });
 
   it('renders an <img> for an MCP tool returning a base64 data URL', async () => {
@@ -54,13 +54,13 @@ describe('ToolCallCard — result rendering', () => {
         isError={false}
       />,
     );
-    await userEvent.click(screen.getByRole('button'));
-    expect(screen.getByRole('img')).toHaveAttribute('src', 'data:image/png;base64,AAAA');
+    await userEvent.click(screen.getAllByRole('button')[0]!);
+    expect(screen.getAllByRole('img')[0]!).toHaveAttribute('src', 'data:image/png;base64,AAAA');
   });
 
   it('renders shell stdout as a terminal block', async () => {
     render(<ToolCallCard name="shell_exec" input={{ command: 'echo hi' }} result={{ stdout: 'hi\n', exitCode: 0 }} isError={false} />);
-    await userEvent.click(screen.getByRole('button'));
+    await userEvent.click(screen.getAllByRole('button')[0]!);
     expect(screen.getByText('hi')).toBeInTheDocument();
     expect(screen.getByText(/exited 0/)).toBeInTheDocument();
   });
