@@ -5,6 +5,9 @@ import { MarkdownCard } from './MarkdownCard';
 import { KvCard } from './KvCard';
 import { ErrorCard } from './ErrorCard';
 import { JsonScalarCard } from './JsonScalarCard';
+import { CodeCard } from './CodeCard';
+import { DiffCard } from './DiffCard';
+import { NotebookCard } from './NotebookCard';
 
 // Each Card narrows `view` internally via Extract<ResultView, { kind: '...' }>.
 type AnyCard = (props: { view: any; compact?: boolean }) => JSX.Element | null;
@@ -18,8 +21,8 @@ const RENDERERS: Record<ResultView['kind'], AnyCard> = {
   error:    ErrorCard,
   json:     JsonScalarCard,
   // placeholders until later tasks — render via JsonScalarCard for now
-  code:     ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
-  diff:     ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
+  code:     CodeCard,
+  diff:     DiffCard,
   paths:    ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
   matches:  ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
   search:   ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
@@ -29,7 +32,7 @@ const RENDERERS: Record<ResultView['kind'], AnyCard> = {
   keypress: ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
   typed:    ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
   tasks:    ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
-  notebook: ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
+  notebook: NotebookCard,
   tree:     ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
 };
 
