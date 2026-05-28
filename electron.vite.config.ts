@@ -20,6 +20,7 @@ export default defineConfig({
       alias: {
         '@shared': resolve('src/shared'),
         '@renderer': resolve('src/renderer'),
+        '@renderer-shared': resolve('src/renderer-shared'),
       },
     },
     build: { outDir: 'out/renderer', rollupOptions: { input: 'src/renderer/index.html' } },

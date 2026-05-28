@@ -14,8 +14,9 @@
     "baseUrl": ".",
     "paths": {
       "@shared/*": ["src/shared/*"],
-      "@renderer/*": ["src/renderer/*"]
+      "@renderer/*": ["src/renderer/*"],
+      "@renderer-shared/*": ["src/renderer-shared/*"]
     }
   },
-  "include": ["src/renderer/**/*", "src/renderer-remote/**/*", "src/shared/**/*", "src/preload/**/*"]
+  "include": ["src/renderer/**/*", "src/renderer-remote/**/*", "src/renderer-shared/**/*", "src/shared/**/*", "src/preload/**/*"]
 }
