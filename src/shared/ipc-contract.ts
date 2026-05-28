@@ -59,12 +59,27 @@ export interface SessionEnsureForSubmitResult {
   reason: 'reused' | 'idle-timeout' | 'manual' | 'no-session';
 }
 
+export interface TopicShiftEvaluateArgs {
+  sessionId: string;
+  newPrompt: string;
+}
+
+export interface TopicShiftEvaluateResult {
+  suggest: boolean;
+  similarity: number; // may be NaN if detector was unavailable/errored
+}
+
 export type IpcRequest =
   | { channel: 'session.start'; args: SessionStartArgs; result: SessionStartResult }
   | { channel: 'session.send'; args: SessionSendArgs; result: void }
   | { channel: 'session.cancel'; args: SessionCancelArgs; result: void }
   | { channel: 'session.interrupt'; args: SessionInterruptArgs; result: void }
   | { channel: 'session.close'; args: { sessionId: string }; result: void }
+  | {
+      channel: 'topicShift.evaluate';
+      args: TopicShiftEvaluateArgs;
+      result: TopicShiftEvaluateResult;
+    }
   | { channel: 'session.list'; args: void; result: SessionMeta[] }
   | { channel: 'session.load'; args: SessionLoadArgs; result: Message[] }
   | {
