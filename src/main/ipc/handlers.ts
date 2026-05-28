@@ -2,6 +2,7 @@ import { ipcMain } from 'electron';
 import type { Repo } from '../db/repo';
 import type { SessionManager } from '../agent/session';
 import type { ConversationPolicy } from '../agent/conversation-policy';
+import type { TopicShiftDetector } from '../agent/topic-shift-detector';
 import type { WindowManager } from '../window';
 import type { DecisionBroker } from '../autonomy/decision-broker';
 import type { Settings } from '../autonomy/settings';
@@ -26,6 +27,8 @@ import type {
   UploadsStageArgs,
   UploadsStageResult,
   UploadsDiscardArgs,
+  TopicShiftEvaluateArgs,
+  TopicShiftEvaluateResult,
 } from '@shared/ipc-contract';
 import type { AutonomyMode, Message, SessionMeta } from '@shared/messages';
 import { emitAutonomyEvent } from './events';
@@ -46,6 +49,7 @@ export function registerIpcHandlers(deps: {
   settings: Settings;
   registry: ProcessRegistry;
   conversationPolicy: ConversationPolicy;
+  topicShiftDetector: TopicShiftDetector;
   appVersion: string;
   recommendedChord: string;
   hotkey: HotkeyManager;
@@ -62,7 +66,7 @@ export function registerIpcHandlers(deps: {
     applyRemoteCeiling?: (c: RemoteCeilingChoice) => void;
   };
 }): void {
-  const { repo, sessions, window, broker, settings, registry, conversationPolicy } = deps;
+  const { repo, sessions, window, broker, settings, registry, conversationPolicy, topicShiftDetector } = deps;
 
   ipcMain.handle('session.start', async (_e, args: SessionStartArgs): Promise<SessionStartResult> => {
     const result = await sessions.start(args);
@@ -121,6 +125,16 @@ export function registerIpcHandlers(deps: {
       }
       conversationPolicy.recordActivity();
       return { sessionId: current, isNew: false, reason: 'reused' };
+    },
+  );
+
+  ipcMain.handle(
+    'topicShift.evaluate',
+    async (
+      _e,
+      args: TopicShiftEvaluateArgs,
+    ): Promise<TopicShiftEvaluateResult> => {
+      return topicShiftDetector.evaluate(args.sessionId, args.newPrompt);
     },
   );
 

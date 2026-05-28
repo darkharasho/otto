@@ -58,6 +58,7 @@ async function startElectron(): Promise<void> {
   const { getPlatformAdapter } = await import('./platform');
   const { SessionManager } = await import('./agent/session');
   const { ConversationPolicy } = await import('./agent/conversation-policy');
+  const { TopicShiftDetector } = await import('./agent/topic-shift-detector');
   const { createRealSdkClient } = await import('./agent/sdk-client');
   const { registerIpcHandlers } = await import('./ipc/handlers');
   const { setupUpdaterIpc, disposeUpdater } = await import('./ipc/updater');
@@ -373,6 +374,11 @@ async function startElectron(): Promise<void> {
     getIdleTimeoutMinutes: () => settings.getNewConversationIdleTimeoutMinutes(),
   });
   sessions.onActivityListener(() => conversationPolicy.recordActivity());
+
+  const topicShiftDetector = new TopicShiftDetector({
+    repo,
+    embedder: getEmbedder(),
+  });
   // Remote (iPhone) inputs no longer route through the bus input queue —
   // BridgeServer now invokes sendPrompt/interruptTurn callbacks directly
   // (see the makeBridge factory below). The bus stays as the output fan-out
@@ -478,6 +484,7 @@ async function startElectron(): Promise<void> {
     settings,
     registry,
     conversationPolicy,
+    topicShiftDetector,
     appVersion: app.getVersion(),
     recommendedChord: platform.defaultHotkey(),
     hotkey,
