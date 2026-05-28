@@ -104,6 +104,25 @@ describe('useOttoStore', () => {
     expect(useOttoStore.getState().activeSession!.currentTurnActive).toBe(false);
   });
 
+  it('dedupes backend user-message against an optimistic message with image attachments', () => {
+    const s = useOttoStore.getState();
+    s.beginSession('s1');
+    s.appendUserMessage('opt-1', 'hello', [
+      { type: 'image-ref', id: 'img1', sessionId: 's1', path: '/tmp/x.png', mimeType: 'image/png' },
+    ]);
+    s.applyEvent({
+      type: 'user-message',
+      sessionId: 's1',
+      messageId: 'backend-1',
+      text: 'hello',
+      content: [
+        { type: 'text', text: 'hello' },
+        { type: 'image-ref', id: 'img1', sessionId: 's1', path: '/tmp/x.png', mimeType: 'image/png' },
+      ],
+    });
+    expect(useOttoStore.getState().activeSession!.messages).toHaveLength(1);
+  });
+
   it('tracks queueDepth across queued and consumed events', () => {
     const s = useOttoStore.getState();
     s.beginSession('sess');

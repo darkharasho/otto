@@ -1,3 +1,8 @@
+Version v0.8.6
+
+Fixes:
+- **Pasting an image duplicated the message.** The renderer's optimistic user bubble carries the pasted/dropped `image-ref` blocks alongside the text, but the dedupe heuristic for the backend's `user-message` event only matched messages with a single text block — so the backend's copy (with a different `messageId`) was appended a second time. Dedupe now compares just the text portion, ignoring attachment blocks.
+
 Version v0.8.5
 
 Fixes:

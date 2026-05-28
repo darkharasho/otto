@@ -164,17 +164,17 @@ export const useOttoStore = create<OttoState>((set, get) => ({
         //   (1) exact messageId match, or
         //   (2) the immediately-prior message is a user msg with the same
         //       text — covers the desktop's optimistic add (different id).
+        //       Pasted/dropped images add image-ref blocks alongside the
+        //       text, so compare only the text portion.
         const messages = session.messages;
         if (messages.some((m) => m.id === event.messageId)) return;
         const last = messages[messages.length - 1];
-        if (
-          last &&
-          last.role === 'user' &&
-          last.content.length === 1 &&
-          last.content[0]!.type === 'text' &&
-          (last.content[0] as { type: 'text'; text: string }).text === event.text
-        ) {
-          return;
+        if (last && last.role === 'user') {
+          const lastText = last.content
+            .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
+            .map((c) => c.text)
+            .join('');
+          if (lastText === event.text) return;
         }
         const msg: UserMessage = {
           id: event.messageId,
