@@ -215,6 +215,52 @@ function isScalar(v: unknown): boolean {
 
 export function classifyResult(name: string, result: unknown, isError: boolean, input?: unknown): ResultView {
   if (isError) return { kind: 'error', text: extractError(result) };
+
+  // Input-driven (results are typically empty for these tools)
+  const bareNameForInput = parseMcpName(name)?.server === 'otto-tools'
+    ? parseMcpName(name)!.tool
+    : name;
+  if (input && typeof input === 'object') {
+    const i = input as Record<string, unknown>;
+    switch (bareNameForInput) {
+      case 'click':
+      case 'double_click':
+      case 'move':
+        if (typeof i['x'] === 'number' && typeof i['y'] === 'number') {
+          return { kind: 'click', x: i['x'], y: i['y'] };
+        }
+        break;
+      case 'key':
+        if (typeof i['combo'] === 'string') {
+          return { kind: 'keypress', keys: i['combo'].split('+').map(s => s.trim()) };
+        }
+        break;
+      case 'type':
+        if (typeof i['text'] === 'string') return { kind: 'typed', text: i['text'] };
+        break;
+      case 'TodoWrite':
+      case 'TaskCreate':
+      case 'TaskUpdate': {
+        const todos = Array.isArray(i['todos']) ? i['todos'] : null;
+        if (todos) {
+          const items = todos
+            .filter((t): t is Record<string, unknown> => !!t && typeof t === 'object')
+            .map(t => ({
+              status: (t['status'] === 'in_progress' || t['status'] === 'completed')
+                ? t['status'] as 'in_progress' | 'completed'
+                : 'pending' as const,
+              title: String(t['content'] ?? t['subject'] ?? t['title'] ?? ''),
+            }));
+          return { kind: 'tasks', items };
+        }
+        if (bareNameForInput === 'TaskCreate' && typeof i['subject'] === 'string') {
+          return { kind: 'tasks', items: [{ status: 'pending', title: String(i['subject']) }] };
+        }
+        break;
+      }
+    }
+  }
+
   if (result == null || result === '') return { kind: 'empty' };
 
   // Built-in screenshot with file path (handles `screenshot` or `mcp__otto-tools__screenshot`).

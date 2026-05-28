@@ -167,3 +167,29 @@ describe('classifyResult', () => {
     expect(view).toEqual({ kind: 'image', src: 'otto-image://s1/abc.png', meta: '100×50' });
   });
 });
+
+describe('classifyResult — input-driven cards', () => {
+  it('click → click view', () => {
+    expect(classifyResult('click', null, false, { x: 100, y: 200 }))
+      .toEqual({ kind: 'click', x: 100, y: 200 });
+  });
+  it('key → keypress view', () => {
+    expect(classifyResult('key', null, false, { combo: 'cmd+shift+p' }))
+      .toEqual({ kind: 'keypress', keys: ['cmd', 'shift', 'p'] });
+  });
+  it('type → typed view', () => {
+    expect(classifyResult('type', null, false, { text: 'hello' }))
+      .toEqual({ kind: 'typed', text: 'hello' });
+  });
+  it('TodoWrite → tasks view', () => {
+    const todos = [
+      { status: 'completed', content: 'Plan' },
+      { status: 'in_progress', content: 'Build' },
+    ];
+    expect(classifyResult('TodoWrite', null, false, { todos }))
+      .toEqual({ kind: 'tasks', items: [
+        { status: 'completed', title: 'Plan' },
+        { status: 'in_progress', title: 'Build' },
+      ]});
+  });
+});
