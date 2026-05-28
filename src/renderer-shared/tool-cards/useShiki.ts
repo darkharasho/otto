@@ -6,13 +6,14 @@ type AnyHighlighter = HighlighterGeneric<string, string>;
 
 let promise: Promise<AnyHighlighter> | undefined;
 
-async function load(): Promise<AnyHighlighter> {
+function load(): Promise<AnyHighlighter> {
   if (promise) return promise;
-  const { createHighlighter } = await import('shiki');
-  promise = createHighlighter({
-    themes: ['github-dark-dimmed'],
-    langs: ['ts', 'tsx', 'js', 'jsx', 'python', 'json', 'bash', 'markdown', 'html', 'css', 'go', 'rust'],
-  }) as Promise<AnyHighlighter>;
+  promise = import('shiki').then(({ createHighlighter }) =>
+    createHighlighter({
+      themes: ['github-dark-dimmed'],
+      langs: ['ts', 'tsx', 'js', 'jsx', 'python', 'json', 'bash', 'markdown', 'html', 'css', 'go', 'rust'],
+    }),
+  ) as Promise<AnyHighlighter>;
   return promise;
 }
 
@@ -23,6 +24,7 @@ export function useHighlighted(code: string, lang?: string): string {
     load().then(h => {
       if (cancelled) return;
       const loaded = h.getLoadedLanguages();
+      // 'text' is shiki's built-in no-highlight identifier; safe even though not in getLoadedLanguages()
       const useLang = lang && (loaded as string[]).includes(lang) ? lang : 'text';
       setHtml(h.codeToHtml(code, { lang: useLang, theme: 'github-dark-dimmed' }));
     }).catch(() => setHtml(''));
