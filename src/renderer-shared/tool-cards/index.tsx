@@ -17,6 +17,7 @@ import { ClickCard } from './ClickCard';
 import { KeyCapsCard } from './KeyCapsCard';
 import { TypedCard } from './TypedCard';
 import { TasksCard } from './TasksCard';
+import { JsonTreeCard } from './JsonTreeCard';
 
 // Each Card narrows `view` internally via Extract<ResultView, { kind: '...' }>.
 type AnyCard = (props: { view: any; compact?: boolean }) => JSX.Element | null;
@@ -42,7 +43,7 @@ const RENDERERS: Record<ResultView['kind'], AnyCard> = {
   typed:    TypedCard,
   tasks:    TasksCard,
   notebook: NotebookCard,
-  tree:     ({ view }) => <JsonScalarCard view={{ kind: 'json', value: view }} />,
+  tree:     JsonTreeCard,
 };
 
 export function ToolCardBody({ view, compact }: { view: ResultView; compact?: boolean }) {
