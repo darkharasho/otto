@@ -161,13 +161,32 @@ export function summarizeInput(name: string, input: unknown, maxLen = 80): strin
   return null;
 }
 
+export interface Hunk {
+  oldStart: number;
+  newStart: number;
+  lines: Array<{ kind: 'add' | 'del' | 'ctx'; text: string }>;
+}
+
 export type ResultView =
   | { kind: 'image';    src: string; alt?: string; meta?: string }
-  | { kind: 'terminal'; stdout?: string; stderr?: string; exitCode?: number; durationMs?: number }
+  | { kind: 'terminal'; stdout?: string; stderr?: string; exitCode?: number; durationMs?: number; streaming?: boolean }
   | { kind: 'markdown'; text: string }
   | { kind: 'kv';       entries: Array<[string, string]> }
-  | { kind: 'error';    text: string }
+  | { kind: 'error';    text: string; suggestion?: string }
   | { kind: 'empty' }
+  | { kind: 'code';     path?: string; language?: string; text: string; startLine?: number; totalLines?: number; truncated?: boolean }
+  | { kind: 'diff';     path: string; isNew?: boolean; hunks: Hunk[]; added: number; removed: number }
+  | { kind: 'paths';    pattern?: string; matches: string[]; truncated?: boolean }
+  | { kind: 'matches';  pattern: string; files: Array<{ path: string; line: number; snippet: string; matchStart?: number; matchEnd?: number }>; truncated?: boolean }
+  | { kind: 'search';   query: string; results: Array<{ title: string; url: string; snippet?: string }> }
+  | { kind: 'page';     url: string; title?: string; snippet?: string }
+  | { kind: 'github';   repo: string; flavor: 'pr' | 'issue' | 'release' | 'commit'; number?: number | string; title?: string; state?: string; author?: string; stats?: { added: number; removed: number; files: number }; htmlUrl?: string }
+  | { kind: 'click';    x: number; y: number; button?: string }
+  | { kind: 'keypress'; keys: string[] }
+  | { kind: 'typed';    text: string }
+  | { kind: 'tasks';    items: Array<{ status: 'pending' | 'in_progress' | 'completed'; title: string }> }
+  | { kind: 'notebook'; path: string; cellIndex?: number; cellType?: 'code' | 'markdown'; language?: string; text: string; op?: 'replace' | 'insert' | 'delete' }
+  | { kind: 'tree';     value: unknown }
   | { kind: 'json';     value: unknown };
 
 const DATA_URL_RE = /data:image\/[a-zA-Z+]+;base64,[A-Za-z0-9+/=]+/;
@@ -194,7 +213,7 @@ function isScalar(v: unknown): boolean {
   return v === null || ['string', 'number', 'boolean'].includes(typeof v);
 }
 
-export function classifyResult(name: string, result: unknown, isError: boolean): ResultView {
+export function classifyResult(name: string, result: unknown, isError: boolean, input?: unknown): ResultView {
   if (isError) return { kind: 'error', text: extractError(result) };
   if (result == null || result === '') return { kind: 'empty' };
 
