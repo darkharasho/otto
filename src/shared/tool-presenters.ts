@@ -90,6 +90,25 @@ function truncate(s: string, n: number): string {
   return flat.length > n ? `${flat.slice(0, n - 1)}…` : flat;
 }
 
+// Tiny LCS-based diff over line arrays. Sufficient for Edit's old/new pair.
+function diffLines(a: string[], b: string[]): Hunk {
+  const m = a.length, n = b.length;
+  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+  for (let i = m - 1; i >= 0; i--) for (let j = n - 1; j >= 0; j--) {
+    dp[i]![j] = a[i] === b[j] ? dp[i + 1]![j + 1]! + 1 : Math.max(dp[i + 1]![j]!, dp[i]![j + 1]!);
+  }
+  const lines: Hunk['lines'] = [];
+  let i = 0, j = 0;
+  while (i < m && j < n) {
+    if (a[i] === b[j])      { lines.push({ kind: 'ctx', text: a[i]! }); i++; j++; }
+    else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) { lines.push({ kind: 'del', text: a[i]! }); i++; }
+    else                                       { lines.push({ kind: 'add', text: b[j]! }); j++; }
+  }
+  while (i < m) lines.push({ kind: 'del', text: a[i++]! });
+  while (j < n) lines.push({ kind: 'add', text: b[j++]! });
+  return { oldStart: 1, newStart: 1, lines };
+}
+
 function extLang(path: string): string {
   const ext = path.split('.').pop()?.toLowerCase() ?? '';
   return ({ ts: 'ts', tsx: 'tsx', js: 'js', jsx: 'jsx', py: 'python', rs: 'rust',
@@ -265,6 +284,30 @@ export function classifyResult(name: string, result: unknown, isError: boolean, 
         }
         break;
       }
+    }
+  }
+
+  // Edit / Write — synthesize diff from inputs (result is a confirmation string)
+  if (input && typeof input === 'object') {
+    const i2 = input as Record<string, unknown>;
+    if (bareNameForInput === 'Write' && typeof i2['file_path'] === 'string' && typeof i2['content'] === 'string') {
+      const lines = (i2['content'] as string).split('\n');
+      return {
+        kind: 'diff', path: String(i2['file_path']), isNew: true,
+        added: lines.length, removed: 0,
+        hunks: [{ oldStart: 0, newStart: 1, lines: lines.map(text => ({ kind: 'add' as const, text })) }],
+      };
+    }
+    if (bareNameForInput === 'Edit'
+        && typeof i2['file_path'] === 'string'
+        && typeof i2['old_string'] === 'string'
+        && typeof i2['new_string'] === 'string') {
+      const oldLines = (i2['old_string'] as string).split('\n');
+      const newLines = (i2['new_string'] as string).split('\n');
+      const hunk = diffLines(oldLines, newLines);
+      const added = hunk.lines.filter(l => l.kind === 'add').length;
+      const removed = hunk.lines.filter(l => l.kind === 'del').length;
+      return { kind: 'diff', path: String(i2['file_path']), isNew: false, added, removed, hunks: [hunk] };
     }
   }
 

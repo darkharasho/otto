@@ -226,3 +226,32 @@ describe('classifyResult — file tools', () => {
     expect(view).toEqual({ kind: 'paths', pattern: 'foo', matches: ['src/a.ts', 'src/b.ts'] });
   });
 });
+
+describe('classifyResult — Edit/Write → diff', () => {
+  it('Write → diff with isNew, all added lines', () => {
+    const view = classifyResult('Write', 'File created at /p/a.ts', false,
+      { file_path: '/p/a.ts', content: 'line1\nline2' });
+    expect(view).toMatchObject({
+      kind: 'diff', path: '/p/a.ts', isNew: true,
+      added: 2, removed: 0,
+      hunks: [{ oldStart: 0, newStart: 1, lines: [
+        { kind: 'add', text: 'line1' },
+        { kind: 'add', text: 'line2' },
+      ]}],
+    });
+  });
+  it('Edit → diff hunk with old/new', () => {
+    const view = classifyResult('Edit', 'updated', false, {
+      file_path: '/p/a.ts',
+      old_string: 'foo\nbar',
+      new_string: 'foo\nBAZ\nbar',
+    });
+    expect(view).toMatchObject({
+      kind: 'diff', path: '/p/a.ts', isNew: false,
+      added: 1, removed: 0,
+    });
+    if (view.kind === 'diff') {
+      expect(view.hunks[0]!.lines.some(l => l.kind === 'add' && l.text === 'BAZ')).toBe(true);
+    }
+  });
+});
