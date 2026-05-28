@@ -2,12 +2,14 @@ import { useEffect, useCallback, useState, useRef } from 'react';
 import { ipc } from './ipc';
 import { useOttoStore, isSessionBusy } from './state/store';
 import type { ContentBlock } from '@shared/messages';
+import { IDLE_GATE_MS, TOPIC_SHIFT_EVALUATE_TIMEOUT_MS } from '@shared/topic-shift-constants';
 import { CommandBar } from './components/CommandBar';
 import { Panel } from './components/Panel';
 import { MessageList } from './components/MessageList';
 import { SessionSwitcher } from './components/SessionSwitcher';
 import { StatusFooter } from './components/StatusFooter';
 import { ErrorCard } from './components/ErrorCard';
+import { TopicShiftChip } from './components/TopicShiftChip';
 
 export function App() {
   const windowMode = useOttoStore((s) => s.windowMode);
@@ -62,6 +64,10 @@ export function App() {
   // stageFile paste and handleSubmit racing) always await the same promise
   // and end up with the same sessionId.
   const inFlightSessionStart = useRef<Promise<string> | null>(null);
+  const lastUserSubmitAt = useRef<number>(Date.now());
+  const [pendingTopicShift, setPendingTopicShift] = useState<
+    { text: string; attachments: ImageRef[] } | null
+  >(null);
 
   const ensureSession = useCallback(async (): Promise<string> => {
     if (inFlightSessionStart.current) return inFlightSessionStart.current;
@@ -79,7 +85,7 @@ export function App() {
     return p;
   }, [activeSession, beginSession, model]);
 
-  const handleSubmit = useCallback(
+  const submitToActiveSession = useCallback(
     async ({ text, attachments }: { text: string; attachments: ImageRef[] }) => {
       try {
         setWindowMode('panel');
@@ -89,13 +95,42 @@ export function App() {
         // eslint-disable-next-line no-console
         console.debug('[otto] session.send', { sessionId, len: text.length, attachments: attachments.length });
         await ipc.invoke('session.send', { sessionId, text, attachments });
+        lastUserSubmitAt.current = Date.now();
         void ipc.invoke('session.list', undefined).then(setSessions);
       } catch (err) {
         // eslint-disable-next-line no-console
-        console.error('[otto] handleSubmit failed', err);
+        console.error('[otto] submitToActiveSession failed', err);
       }
     },
-    [ensureSession, appendUserMessage, setWindowMode, setSessions]
+    [ensureSession, appendUserMessage, setWindowMode, setSessions],
+  );
+
+  const handleSubmit = useCallback(
+    async ({ text, attachments }: { text: string; attachments: ImageRef[] }) => {
+      const sessionId = activeSession?.id ?? null;
+      const idleMs = Date.now() - lastUserSubmitAt.current;
+      // Only consult the detector if we have an active session AND the user has
+      // been idle long enough. Fresh-session submits always go straight through.
+      if (sessionId && idleMs >= IDLE_GATE_MS) {
+        try {
+          const result = await Promise.race([
+            ipc.invoke('topicShift.evaluate', { sessionId, newPrompt: text }),
+            new Promise<{ suggest: false; similarity: number }>((resolve) =>
+              setTimeout(() => resolve({ suggest: false, similarity: NaN }), TOPIC_SHIFT_EVALUATE_TIMEOUT_MS),
+            ),
+          ]);
+          if (result.suggest) {
+            setPendingTopicShift({ text, attachments });
+            return;
+          }
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn('[otto] topicShift.evaluate failed; submitting normally', err);
+        }
+      }
+      void submitToActiveSession({ text, attachments });
+    },
+    [activeSession?.id, submitToActiveSession],
   );
 
   const handleSelectSession = useCallback(
@@ -266,6 +301,20 @@ export function App() {
         }
         footer={
           <div className="flex flex-col gap-2">
+            {pendingTopicShift && (
+              <TopicShiftChip
+                onStartNew={() => {
+                  const p = pendingTopicShift;
+                  setPendingTopicShift(null);
+                  if (p) void handleNewConversation(p);
+                }}
+                onKeepGoing={() => {
+                  const p = pendingTopicShift;
+                  setPendingTopicShift(null);
+                  if (p) void submitToActiveSession(p);
+                }}
+              />
+            )}
             <CommandBar
               onSubmit={handleSubmit}
               ensureSession={ensureSession}
