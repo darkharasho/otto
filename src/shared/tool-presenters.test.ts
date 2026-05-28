@@ -193,3 +193,36 @@ describe('classifyResult — input-driven cards', () => {
       ]});
   });
 });
+
+describe('classifyResult — file tools', () => {
+  it('Read → code view (strips line prefixes)', () => {
+    const res = '     1→import x from "y";\n     2→const a = 1;';
+    const view = classifyResult('Read', res, false, { file_path: '/p/foo.ts' });
+    expect(view).toMatchObject({
+      kind: 'code', path: '/p/foo.ts', language: 'ts',
+      text: 'import x from "y";\nconst a = 1;', startLine: 1,
+    });
+  });
+  it('Glob → paths view', () => {
+    const res = 'src/a.tsx\nsrc/b.tsx\nsrc/c.tsx';
+    const view = classifyResult('Glob', res, false, { pattern: '**/*.tsx' });
+    expect(view).toEqual({ kind: 'paths', pattern: '**/*.tsx',
+      matches: ['src/a.tsx', 'src/b.tsx', 'src/c.tsx'] });
+  });
+  it('Grep (content) → matches view', () => {
+    const res = 'src/a.ts:12:const foo = 1;\nsrc/b.ts:7:foo()';
+    const view = classifyResult('Grep', res, false, { pattern: 'foo', output_mode: 'content' });
+    expect(view).toMatchObject({
+      kind: 'matches', pattern: 'foo',
+      files: [
+        { path: 'src/a.ts', line: 12, snippet: 'const foo = 1;' },
+        { path: 'src/b.ts', line: 7,  snippet: 'foo()' },
+      ],
+    });
+  });
+  it('Grep (files_with_matches) → paths view', () => {
+    const res = 'src/a.ts\nsrc/b.ts';
+    const view = classifyResult('Grep', res, false, { pattern: 'foo', output_mode: 'files_with_matches' });
+    expect(view).toEqual({ kind: 'paths', pattern: 'foo', matches: ['src/a.ts', 'src/b.ts'] });
+  });
+});

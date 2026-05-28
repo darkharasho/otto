@@ -90,6 +90,13 @@ function truncate(s: string, n: number): string {
   return flat.length > n ? `${flat.slice(0, n - 1)}…` : flat;
 }
 
+function extLang(path: string): string {
+  const ext = path.split('.').pop()?.toLowerCase() ?? '';
+  return ({ ts: 'ts', tsx: 'tsx', js: 'js', jsx: 'jsx', py: 'python', rs: 'rust',
+            go: 'go', md: 'markdown', json: 'json', sh: 'bash', html: 'html', css: 'css' }
+          )[ext] ?? 'text';
+}
+
 function asString(v: unknown): string | null {
   return typeof v === 'string' && v.length > 0 ? v : null;
 }
@@ -262,6 +269,59 @@ export function classifyResult(name: string, result: unknown, isError: boolean, 
   }
 
   if (result == null || result === '') return { kind: 'empty' };
+
+  // File tools — recognize by name (string results only)
+  if (typeof result === 'string') {
+    if (bareNameForInput === 'Read') {
+      const lines = result.split('\n');
+      const stripped: string[] = [];
+      let startLine: number | undefined;
+      for (const ln of lines) {
+        const m = /^\s*(\d+)→(.*)$/.exec(ln);
+        if (m) {
+          if (startLine === undefined) startLine = Number(m[1]);
+          stripped.push(m[2] ?? '');
+        } else {
+          stripped.push(ln);
+        }
+      }
+      const path = typeof (input as Record<string, unknown> | undefined)?.['file_path'] === 'string'
+        ? String((input as Record<string, unknown>)['file_path']) : undefined;
+      return {
+        kind: 'code', text: stripped.join('\n'),
+        ...(path !== undefined ? { path, language: extLang(path) } : {}),
+        ...(startLine !== undefined ? { startLine } : {}),
+        totalLines: stripped.length,
+      };
+    }
+    if (bareNameForInput === 'Glob') {
+      const matches = result.split('\n').map(s => s.trim()).filter(Boolean);
+      const pattern = typeof (input as Record<string, unknown> | undefined)?.['pattern'] === 'string'
+        ? String((input as Record<string, unknown>)['pattern']) : undefined;
+      return { kind: 'paths', matches, ...(pattern !== undefined ? { pattern } : {}) };
+    }
+    if (bareNameForInput === 'Grep') {
+      const i = (input as Record<string, unknown> | undefined) ?? {};
+      const pattern = String(i['pattern'] ?? '');
+      const mode = String(i['output_mode'] ?? 'files_with_matches');
+      if (mode === 'files_with_matches') {
+        const matches = result.split('\n').map(s => s.trim()).filter(Boolean);
+        return { kind: 'paths', pattern, matches };
+      }
+      if (mode === 'count') {
+        const entries = result.split('\n').filter(Boolean)
+          .map(l => l.split(':') as [string, string]);
+        return { kind: 'kv', entries };
+      }
+      // content mode
+      const files: Array<{ path: string; line: number; snippet: string }> = [];
+      for (const line of result.split('\n')) {
+        const m = /^([^:]+):(\d+):(.*)$/.exec(line);
+        if (m) files.push({ path: m[1]!, line: Number(m[2]), snippet: m[3] ?? '' });
+      }
+      return { kind: 'matches', pattern, files };
+    }
+  }
 
   // Built-in screenshot with file path (handles `screenshot` or `mcp__otto-tools__screenshot`).
   const parsed = parseMcpName(name);
