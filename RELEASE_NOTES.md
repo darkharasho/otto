@@ -1,3 +1,15 @@
+Version v0.8.4
+
+Features:
+- **Manual new conversation.** Type `/n ` (slash-n-space) in the input to drop the current conversation and collapse to a clean bar — type your fresh prompt and hit Enter to send it into a brand-new session. Same effect with `Cmd/Ctrl+Shift+N` from anywhere in the Otto window.
+- **Idle-timeout new conversations.** After a configurable period with no activity from you or Otto (default 60 minutes; Settings → Behavior → New conversations), the next message you submit automatically starts a fresh conversation. Set the timeout to `0` to disable. Long-running watch/observation tools reset the timer, so monitoring sessions don't get cut off.
+- **Topic-shift suggestion.** When you come back after 5+ minutes of being away and ask something unrelated to what you were discussing, Otto suggests starting a new conversation via a non-blocking chip above the input. Two clicks: "Start new conversation" (cuts cleanly to a fresh session with your message as the first prompt) or "Keep going" (sends your message to the current session). Never auto-switches. Uses local embedding similarity — no extra API calls.
+
+Fixes (during smoke-testing):
+- **Stuck "thinking" + "1 queued" after `/n`.** Two races: `user-message-queued` was emitted after `enqueue` and could lose to a fast-pump `user-message-consumed`, leaving the renderer's queueDepth stuck at 1; and `session.interrupt` left the old SDK subprocess holding resources, so a new session couldn't make progress. Both fixed (queued now emits before enqueue with predicted depth; new `session.close` IPC fully tears down the old subprocess on `/n`).
+- **Old-session stragglers no longer hijack a fresh conversation.** Auto-attach used to yank `activeSession` back when late events arrived for the abandoned session. Renderer now tracks abandoned session ids and drops their events.
+- **Renderer is authoritative on `session.ensureForSubmit`.** Main no longer falls back to its stale `activeSessionId` when the renderer says "no current session" — fixes messages disappearing into the abandoned session after `/n`.
+
 Version v0.8.2
 
 Fixes:
