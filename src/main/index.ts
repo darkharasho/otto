@@ -251,18 +251,27 @@ async function startElectron(): Promise<void> {
 
   const memorySearch = new MemorySearch({ factRepo, artifactRepo, embedder, db });
 
-  async function runReflectorSdk(prompt: string): Promise<string> {
+  async function runReflectorSdk(prompt: string, opts: { model?: string; signal?: AbortSignal }): Promise<string> {
     const sdkMod = await import('@anthropic-ai/claude-agent-sdk');
     const ac = new AbortController();
+    // Propagate the external abort signal (e.g. from the reflector timeout).
+    if (opts.signal) {
+      opts.signal.addEventListener('abort', () => ac.abort(), { once: true });
+    }
     const iter = sdkMod.query({
       prompt,
       options: {
+        model: opts.model ?? 'claude-haiku-4-5-20251001',
         systemPrompt:
           'You are Otto\'s reflection step. Output ONLY the JSON object requested by the user prompt — no prose, no markdown fences, no commentary.',
         tools: [],
         allowedTools: [],
         mcpServers: {},
         abortController: ac,
+        permissionMode: 'bypassPermissions',
+        allowDangerouslySkipPermissions: true,
+        persistSession: false,
+        maxTurns: 1,
       },
     });
     const chunks: string[] = [];
@@ -286,7 +295,7 @@ async function startElectron(): Promise<void> {
     configDir: ottoConfigDir,
     runReflector: (prompt) =>
       reflect({
-        sdk: { run: async (p, _opts) => runReflectorSdk(p) },
+        sdk: { run: async (p, opts) => runReflectorSdk(p, opts) },
         prompt,
         timeoutMs: 60_000,
       }),
@@ -304,7 +313,13 @@ async function startElectron(): Promise<void> {
     onTrigger: ({ sessionId, sinceSeq }) => {
       void (async () => {
         try {
-          await pipeline.run({ sessionId, sinceSeq });
+          logger.info(`reflection triggered for session=${sessionId} sinceSeq=${sinceSeq}`);
+          const result = await pipeline.run({ sessionId, sinceSeq });
+          if (result.skipped) {
+            logger.info(`reflection skipped: ${result.reason}`);
+          } else {
+            logger.info(`reflection complete: ${result.savedFacts} facts, ${result.savedArtifacts} artifacts`);
+          }
           const msgs = repo.loadMessages(sessionId);
           const lastSeq = msgs.length > 0 ? msgs[msgs.length - 1]!.seq : sinceSeq;
           detector.notePersistedSeq(sessionId, lastSeq);
