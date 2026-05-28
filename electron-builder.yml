@@ -51,6 +51,8 @@ mac:
   gatekeeperAssess: false
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    LSUIElement: true
   notarize:
     teamId: YMPSC6RQ4F
 
