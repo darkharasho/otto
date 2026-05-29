@@ -29,6 +29,7 @@ import type {
   UploadsDiscardArgs,
   TopicShiftEvaluateArgs,
   TopicShiftEvaluateResult,
+  WindowMode,
 } from '@shared/ipc-contract';
 import type { AutonomyMode, Message, SessionMeta } from '@shared/messages';
 import { emitAutonomyEvent } from './events';
@@ -146,7 +147,7 @@ export function registerIpcHandlers(deps: {
     return repo.loadMessages(args.sessionId);
   });
 
-  ipcMain.handle('window.setMode', async (_e, args: { mode: 'bar' | 'panel' }): Promise<void> => {
+  ipcMain.handle('window.setMode', async (_e, args: { mode: WindowMode }): Promise<void> => {
     window.setMode(args.mode);
   });
 

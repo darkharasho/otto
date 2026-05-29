@@ -193,6 +193,39 @@ export class Settings {
     await this.persist();
   }
 
+  getChatBounds(): ChatBounds | null {
+    return this.state.chatBounds ? { ...this.state.chatBounds } : null;
+  }
+
+  async setChatBounds(bounds: ChatBounds | null): Promise<void> {
+    this.state.chatBounds = bounds ? { ...bounds } : null;
+    await this.persist();
+  }
+
+  getLastVisibleMode(): WindowMode {
+    return this.state.lastVisibleMode;
+  }
+
+  async setLastVisibleMode(mode: WindowMode): Promise<void> {
+    if (mode !== 'bar' && mode !== 'panel' && mode !== 'chat') {
+      throw new Error(`invalid lastVisibleMode: ${mode}`);
+    }
+    this.state.lastVisibleMode = mode;
+    await this.persist();
+  }
+
+  getPinnedSessionIds(): string[] {
+    return [...this.state.pinnedSessionIds];
+  }
+
+  async setPinnedSessionIds(ids: string[]): Promise<void> {
+    if (!Array.isArray(ids) || !ids.every((id) => typeof id === 'string')) {
+      throw new Error(`invalid pinnedSessionIds`);
+    }
+    this.state.pinnedSessionIds = [...ids];
+    await this.persist();
+  }
+
   onChange(fn: Listener): () => void {
     this.listeners.add(fn);
     return () => {

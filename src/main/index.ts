@@ -174,6 +174,8 @@ async function startElectron(): Promise<void> {
   window.setPositionPref(settings.getWindowPosition());
   window.setDisplayTarget(settings.getDisplayTarget());
   window.setHideOnBlur(settings.getHideOnBlur());
+  window.setChatBounds(settings.getChatBounds());
+  window.setLastVisibleMode(settings.getLastVisibleMode());
   settings.onChange((snap) => {
     window.setPositionPref(snap.windowPosition);
     window.setDisplayTarget(snap.displayTarget);
@@ -475,7 +477,11 @@ async function startElectron(): Promise<void> {
   const preloadPath = path.join(app.getAppPath(), 'out', 'preload', 'index.js');
   window.create(preloadPath, rendererEntry());
   overlay.start();
+  window.onChatBoundsChanged((b) => {
+    void settings.setChatBounds(b);
+  });
   window.onVisibilityChange((visible) => {
+    if (visible) void settings.setLastVisibleMode(window.getMode());
     overlay.setMainVisible(visible);
     // Showing the main window counts as the user acknowledging any pending
     // turn-complete notification — clear the tray badge.
