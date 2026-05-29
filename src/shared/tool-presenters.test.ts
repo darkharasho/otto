@@ -265,6 +265,35 @@ describe('classifyResult — NotebookEdit', () => {
   });
 });
 
+describe('classifyResult — SDK content-block unwrapping', () => {
+  it('unwraps {content:[{type:text,text:JSON}]} of a shell result', () => {
+    const wrapped = {
+      content: [{ type: 'text', text: JSON.stringify({ stdout: 'hi\n', exitCode: 0, durationMs: 5 }) }],
+    };
+    const view = classifyResult('shell_exec', wrapped, false, { command: 'echo hi' });
+    expect(view).toEqual({ kind: 'terminal', stdout: 'hi\n', exitCode: 0, durationMs: 5 });
+  });
+  it('unwraps a bare [{type:text,text:JSON}] array', () => {
+    const wrapped = [{ type: 'text', text: JSON.stringify({ stdout: 'ok', exitCode: 0 }) }];
+    const view = classifyResult('shell_exec', wrapped, false, { command: 'true' });
+    expect(view).toMatchObject({ kind: 'terminal', stdout: 'ok', exitCode: 0 });
+  });
+  it('falls back to text when the wrapped payload is not JSON', () => {
+    const wrapped = { content: [{ type: 'text', text: 'noted' }] };
+    const view = classifyResult('knowledge_append', wrapped, false, { note: 'x' });
+    expect(view).toEqual({ kind: 'json', value: 'noted' });
+  });
+  it('does NOT unwrap arrays that contain image-ref blocks (screenshot path)', () => {
+    const wrapped = {
+      content: [
+        { type: 'image-ref', id: 'i', sessionId: 's', width: 100, height: 50 },
+      ],
+    };
+    const view = classifyResult('mcp__otto-tools__screenshot', wrapped, false, {});
+    expect(view.kind).toBe('image');
+  });
+});
+
 describe('classifyResult — web + github + tree', () => {
   it('WebSearch → search view', () => {
     const res = '1. Title One (https://a.com) — snippet one\n2. Title Two (https://b.com) — snippet two';

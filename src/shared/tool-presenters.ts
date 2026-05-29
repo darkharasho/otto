@@ -217,6 +217,25 @@ export type ResultView =
 
 const DATA_URL_RE = /data:image\/[a-zA-Z+]+;base64,[A-Za-z0-9+/=]+/;
 
+function isTextBlock(b: unknown): b is { type: 'text'; text: string } {
+  return !!b && typeof b === 'object'
+    && (b as { type?: unknown }).type === 'text'
+    && typeof (b as { text?: unknown }).text === 'string';
+}
+
+function isImageishBlock(b: unknown): boolean {
+  return !!b && typeof b === 'object'
+    && ((b as { type?: unknown }).type === 'image' || (b as { type?: unknown }).type === 'image-ref');
+}
+
+function extractBlocks(result: unknown): unknown[] | null {
+  if (Array.isArray(result)) return result;
+  if (result && typeof result === 'object' && Array.isArray((result as { content?: unknown[] }).content)) {
+    return (result as { content: unknown[] }).content;
+  }
+  return null;
+}
+
 function extractError(result: unknown): string {
   if (typeof result === 'string') return result;
   if (result && typeof result === 'object') {
@@ -241,6 +260,22 @@ function isScalar(v: unknown): boolean {
 
 export function classifyResult(name: string, result: unknown, isError: boolean, input?: unknown): ResultView {
   if (isError) return { kind: 'error', text: extractError(result) };
+
+  // Unwrap SDK content-block text arrays (e.g. { content: [{type:'text', text:'...'}] })
+  // that the MCP server wraps around every tool result. Only unwrap when NO image/image-ref
+  // blocks are present so that screenshot results still go through the image-ref branch.
+  const blocks = extractBlocks(result);
+  if (blocks && blocks.length > 0 && !blocks.some(isImageishBlock) && blocks.every(isTextBlock)) {
+    const text = blocks.map(b => (b as { text: string }).text).join('');
+    let parsed: unknown = undefined;
+    try { parsed = JSON.parse(text); } catch { /* not JSON */ }
+    const inner = parsed !== undefined ? parsed : text;
+    // Guard: don't recurse if unwrapped value is itself a content-block array.
+    const innerBlocks = extractBlocks(inner);
+    if (!innerBlocks || innerBlocks.some(b => !isTextBlock(b))) {
+      return classifyResult(name, inner, isError, input);
+    }
+  }
 
   // Input-driven (results are typically empty for these tools)
   const bareNameForInput = parseMcpName(name)?.server === 'otto-tools'
