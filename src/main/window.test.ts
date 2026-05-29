@@ -82,6 +82,38 @@ describe('WindowManager chat mode', () => {
   });
 });
 
+describe('WindowManager chat-mode behavior overrides', () => {
+  it('does not hide on blur when in chat mode even with hideOnBlur=true', () => {
+    const mgr = new WindowManager();
+    const fake = makeFakeWin();
+    (mgr as unknown as { window: typeof fake }).window = fake;
+    mgr.setHideOnBlur(true);
+    mgr.setMode('chat');
+    const blur = fake.on.mock.calls.find(([evt]) => evt === 'blur')?.[1] as (() => void) | undefined;
+    blur?.();
+    expect(fake.hide).not.toHaveBeenCalled();
+  });
+
+  it('tracks lastVisibleMode after show', () => {
+    const mgr = new WindowManager();
+    const fake = makeFakeWin();
+    (mgr as unknown as { window: typeof fake }).window = fake;
+    fake.isVisible.mockReturnValue(false);
+    mgr.show('chat');
+    expect(mgr.getLastVisibleMode()).toBe('chat');
+  });
+
+  it('show() with no mode resumes lastVisibleMode', () => {
+    const mgr = new WindowManager();
+    const fake = makeFakeWin();
+    (mgr as unknown as { window: typeof fake }).window = fake;
+    mgr.setLastVisibleMode('chat');
+    fake.isVisible.mockReturnValue(false);
+    mgr.show();
+    expect(mgr.getMode()).toBe('chat');
+  });
+});
+
 describe('WindowManager bounds persistence', () => {
   it('emits chatBoundsChanged after a debounced move when in chat mode', async () => {
     v2.useFakeTimers();
