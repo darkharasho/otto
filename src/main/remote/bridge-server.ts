@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { AddressInfo } from 'node:net';
 import { randomBytes } from 'node:crypto';
+import { hostname } from 'node:os';
 import { promises as fsp } from 'node:fs';
 import nodePath from 'node:path';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -256,6 +257,13 @@ export class BridgeServer {
   }
 
   private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    // Allow cross-origin requests from the native mobile app. Auth is
+    // token-based and the server is Tailnet-only, so origin restriction
+    // adds no security value here.
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'authorization, content-type');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    if (req.method === 'OPTIONS') { res.statusCode = 204; res.end(); return; }
     try {
       if (req.method === 'POST' && req.url === '/pair') return await this.handlePair(req, res);
       if (req.method === 'GET' && req.url?.startsWith('/history')) return await this.handleHistory(req, res);
@@ -291,7 +299,7 @@ export class BridgeServer {
     const { deviceId, token } = await this.opts.pairing.issue(body.deviceLabel ?? 'Mobile');
     res.statusCode = 200;
     res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify({ token, deviceId, wsUrl: `/ws` }));
+    res.end(JSON.stringify({ token, deviceId, wsUrl: `/ws`, hostLabel: hostname(), platform: process.platform }));
   }
 
   private async handleScreenshot(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {

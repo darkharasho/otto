@@ -1,0 +1,53 @@
+{
+  "expo": {
+    "name": "Otto",
+    "slug": "otto-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "otto",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "backgroundColor": "#1a1a1c",
+    "splash": {
+      "backgroundColor": "#0d0d0e"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.project96.otto",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Otto needs camera access to scan pairing QR codes from your desktop.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0d0d0e"
+      },
+      "package": "com.otto.mobile",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Otto needs camera access to scan pairing QR codes from your desktop."
+        }
+      ]
+    ],
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "332f7fb5-5db1-4e4b-83b5-a041dfd5bfa2"
+      }
+    },
+    "owner": "harasho"
+  }
+}

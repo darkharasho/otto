@@ -69,10 +69,14 @@ export class RemoteModule {
       throw new Error('remote bridge not running');
     }
     const code = this.bridge.mintPairingCode();
-    const displayHost = this.currentHost ?? this.currentIp;
+    // Use the IP for the pairing URL when the hostname contains spaces or
+    // non-ASCII characters that break URL parsing on the mobile client.
+    const safeHost = this.currentHost && /^[a-zA-Z0-9._-]+$/.test(this.currentHost)
+      ? this.currentHost
+      : this.currentIp;
     return {
       code,
-      url: `http://${displayHost}:${this.currentPort}/?code=${code}`,
+      url: `http://${safeHost}:${this.currentPort}/?code=${code}`,
       expiresAt: Date.now() + 120_000,
     };
   }
