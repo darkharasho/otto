@@ -33,6 +33,8 @@ export class WindowManager {
   private chatBounds: { x: number; y: number; width: number; height: number } | null = null;
   private chatBoundsChangeListeners: Array<(b: { x: number; y: number; width: number; height: number }) => void> = [];
   private chatHandlersBound = false;
+  private blurHandlerBound = false;
+  private lastVisibleMode: WindowMode = 'bar';
 
   onVisibilityChange(cb: (visible: boolean) => void): () => void {
     this.visibilityListeners.push(cb);
@@ -120,6 +122,9 @@ export class WindowManager {
     this.hideOnBlur = enabled;
   }
 
+  setLastVisibleMode(m: WindowMode): void { this.lastVisibleMode = m; }
+  getLastVisibleMode(): WindowMode { return this.lastVisibleMode; }
+
   create(preloadPath: string, rendererUrl: string): BrowserWindow {
     const win = new BrowserWindow({
       width: BAR_WIDTH,
@@ -170,11 +175,6 @@ export class WindowManager {
 
     routeExternalLinksToBrowser(win, rendererUrl);
 
-    // Click-outside-to-hide, gated by the user's hideOnBlur preference.
-    win.on('blur', () => {
-      if (this.hideOnBlur && this.window?.isVisible()) this.hide();
-    });
-
     win.on('show', () => this.emitVisibility(true));
     win.on('hide', () => this.emitVisibility(false));
 
@@ -182,16 +182,18 @@ export class WindowManager {
     return win;
   }
 
-  show(mode: WindowMode = 'bar'): void {
+  show(mode?: WindowMode): void {
     if (!this.window) return;
-    this.applyMode(mode);
+    const target = mode ?? this.lastVisibleMode;
+    this.applyMode(target);
     this.window.show();
     // Re-apply position after show: Wayland compositors (Plasma in particular)
     // often ignore setBounds on hidden windows but honor it once the surface
     // is visible. Without this we land on the wrong monitor when the cursor
     // is on a non-primary display.
-    this.repositionBottomCenter();
+    if (target !== 'chat') this.repositionBottomCenter();
     this.window.focus();
+    this.lastVisibleMode = target;
   }
 
   hide(): void {
@@ -232,6 +234,15 @@ export class WindowManager {
     this.window = null;
   }
 
+  private ensureBlurHandler(): void {
+    if (this.blurHandlerBound || !this.window) return;
+    this.window.on('blur', () => {
+      if (this.mode === 'chat') return;
+      if (this.hideOnBlur && this.window?.isVisible()) this.hide();
+    });
+    this.blurHandlerBound = true;
+  }
+
   private ensureChatHandlers(): void {
     if (this.chatHandlersBound || !this.window) return;
     const win = this.window;
@@ -254,6 +265,7 @@ export class WindowManager {
   private applyMode(mode: WindowMode): void {
     if (!this.window) return;
     this.mode = mode;
+    this.ensureBlurHandler();
 
     if (mode === 'chat') {
       this.ensureChatHandlers();
