@@ -195,7 +195,7 @@ export interface Hunk {
 
 export type ResultView =
   | { kind: 'image';    src: string; alt?: string; meta?: string }
-  | { kind: 'terminal'; stdout?: string; stderr?: string; exitCode?: number; durationMs?: number; streaming?: boolean }
+  | { kind: 'terminal'; command?: string; stdout?: string; stderr?: string; exitCode?: number; durationMs?: number; streaming?: boolean }
   | { kind: 'markdown'; text: string }
   | { kind: 'kv';       entries: Array<[string, string]> }
   | { kind: 'error';    text: string; suggestion?: string }
@@ -521,6 +521,10 @@ export function classifyResult(name: string, result: unknown, isError: boolean, 
 
     if (looksLikeShellResult(o)) {
       const view: ResultView = { kind: 'terminal' };
+      const inputCommand = input && typeof input === 'object'
+        ? (input as Record<string, unknown>)['command']
+        : undefined;
+      if (typeof inputCommand === 'string') view.command = inputCommand;
       if (typeof o['stdout'] === 'string') view.stdout = o['stdout'];
       if (typeof o['stderr'] === 'string') view.stderr = o['stderr'];
       if (typeof o['exitCode'] === 'number') view.exitCode = o['exitCode'];

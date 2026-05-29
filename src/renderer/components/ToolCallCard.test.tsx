@@ -63,5 +63,13 @@ describe('ToolCallCard — result rendering', () => {
     await userEvent.click(screen.getAllByRole('button')[0]!);
     expect(screen.getByText('hi')).toBeInTheDocument();
     expect(screen.getByText(/exited 0/)).toBeInTheDocument();
+    expect(screen.getAllByText(/echo hi/).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('does not render INPUT subheader for shell terminal results', async () => {
+    render(<ToolCallCard name="shell_exec" input={{ command: 'echo hi' }} result={{ stdout: 'hi\n', exitCode: 0 }} isError={false} />);
+    await userEvent.click(screen.getAllByRole('button')[0]!);
+    expect(screen.queryByText('Input')).not.toBeInTheDocument();
+    expect(screen.queryByText('Result')).not.toBeInTheDocument();
   });
 });

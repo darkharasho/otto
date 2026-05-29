@@ -13,6 +13,12 @@ export function TerminalCard({ view, compact }: { view: View; compact?: boolean 
   }, [view.stdout, view.stderr, view.streaming]);
   return (
     <div ref={ref} className={`rounded bg-bg/80 font-mono leading-relaxed max-h-[320px] overflow-auto ${size}`}>
+      {view.command && (
+        <div className="m-0 whitespace-pre-wrap break-words">
+          <span className="text-accent select-none">$ </span>
+          <span>{view.command}</span>
+        </div>
+      )}
       {view.stdout && <pre className="whitespace-pre-wrap break-words m-0">{view.stdout}</pre>}
       {view.stderr && <pre className="whitespace-pre-wrap break-words m-0 text-danger">{view.stderr}</pre>}
       {view.streaming && <span className="inline-block w-2 h-3 align-baseline bg-accent/70 otto-blink" />}

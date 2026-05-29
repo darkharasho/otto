@@ -271,7 +271,7 @@ describe('classifyResult — SDK content-block unwrapping', () => {
       content: [{ type: 'text', text: JSON.stringify({ stdout: 'hi\n', exitCode: 0, durationMs: 5 }) }],
     };
     const view = classifyResult('shell_exec', wrapped, false, { command: 'echo hi' });
-    expect(view).toEqual({ kind: 'terminal', stdout: 'hi\n', exitCode: 0, durationMs: 5 });
+    expect(view).toEqual({ kind: 'terminal', command: 'echo hi', stdout: 'hi\n', exitCode: 0, durationMs: 5 });
   });
   it('unwraps a bare [{type:text,text:JSON}] array', () => {
     const wrapped = [{ type: 'text', text: JSON.stringify({ stdout: 'ok', exitCode: 0 }) }];
