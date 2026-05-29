@@ -45,7 +45,7 @@ export function ConversationSidebarItem({
       )}
       <span
         aria-hidden
-        className={`flex-shrink-0 w-[7px] h-[7px] rounded-full ${status === 'running' ? 'otto-pulse' : ''}`}
+        className={`flex-shrink-0 w-[7px] h-[7px] rounded-full ${status === 'running' ? 'otto-pulse-dot' : ''}`}
         style={{ background: DOT_COLOR[status], boxShadow: status === 'running' ? '0 0 8px #7c7dff' : 'none' }}
       />
       <div className="flex-1 min-w-0">
