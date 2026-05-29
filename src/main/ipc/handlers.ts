@@ -60,6 +60,7 @@ export function registerIpcHandlers(deps: {
   configDir: string;
   applyStartAtLogin(enabled: boolean): void;
   openLogsDir(): void;
+  openSettingsWindow(): void;
   remote?: {
     module: RemoteModule;
     pairing: PairingStore;
@@ -263,6 +264,14 @@ export function registerIpcHandlers(deps: {
 
   ipcMain.handle('settings.openLogsDir', async (): Promise<void> => {
     deps.openLogsDir();
+  });
+
+  ipcMain.handle('settings.setPinnedSessionIds', async (_e, args: { ids: string[] }): Promise<void> => {
+    await settings.setPinnedSessionIds(args.ids);
+  });
+
+  ipcMain.handle('settings.open', async (): Promise<void> => {
+    deps.openSettingsWindow();
   });
 
   ipcMain.handle('settings.resetAllSessions', async (): Promise<{ deleted: number }> => {

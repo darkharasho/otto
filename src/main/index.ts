@@ -495,6 +495,8 @@ async function startElectron(): Promise<void> {
 
   const hotkey = new HotkeyManager(platform, onToggle, ottoConfigDir);
 
+  const settingsWindow = new SettingsWindowManager(preloadPath, rendererEntry());
+
   registerIpcHandlers({
     repo,
     sessions,
@@ -515,6 +517,7 @@ async function startElectron(): Promise<void> {
     openLogsDir: () => {
       void shell.openPath(ottoConfigDir);
     },
+    openSettingsWindow: () => settingsWindow.show(),
     remote: {
       module: remoteModule,
       pairing: pairingStore,
@@ -544,8 +547,6 @@ async function startElectron(): Promise<void> {
   } catch (err) {
     logger.warn(`toggle server failed to start: ${err instanceof Error ? err.message : err}`);
   }
-
-  const settingsWindow = new SettingsWindowManager(preloadPath, rendererEntry());
 
   tray = new TrayManager({
     onShow: () => {
