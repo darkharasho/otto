@@ -72,4 +72,10 @@ describe('ToolCallCard — result rendering', () => {
     expect(screen.queryByText('Input')).not.toBeInTheDocument();
     expect(screen.queryByText('Result')).not.toBeInTheDocument();
   });
+
+  it('hides INPUT block when input is an empty object', async () => {
+    render(<ToolCallCard name="mcp__otto-tools__get_cursor_position" input={{}} result={{ x: 100, y: 200 }} isError={false} />);
+    await userEvent.click(screen.getAllByRole('button')[0]!);
+    expect(screen.queryByText('Input')).not.toBeInTheDocument();
+  });
 });

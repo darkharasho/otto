@@ -58,6 +58,17 @@ describe('describeTool — MCP names', () => {
   });
 });
 
+describe('describeTool — otto-tools fallthrough', () => {
+  it('drops the group for unknown otto-tools tools', () => {
+    expect(describeTool('mcp__otto-tools__echo'))
+      .toEqual({ label: 'Echo', icon: 'tool' });
+  });
+  it('still uses BUILTIN for known otto-tools tools', () => {
+    expect(describeTool('mcp__otto-tools__shell_exec'))
+      .toEqual({ label: 'Run command', group: 'Shell', icon: 'terminal' });
+  });
+});
+
 describe('summarizeInput', () => {
   it('shell_exec → command', () => {
     expect(summarizeInput('shell_exec', { command: 'pnpm test' })).toBe('pnpm test');

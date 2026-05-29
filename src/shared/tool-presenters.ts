@@ -554,6 +554,11 @@ export function describeTool(name: string): ToolDescriptor {
     if (parsed.server === 'otto-tools') {
       const builtinFallback = BUILTIN[parsed.tool];
       if (builtinFallback) return builtinFallback;
+      // First-party Otto tool not in BUILTIN — show without a group label
+      return {
+        label: titleCase(parsed.tool),
+        icon: pickIcon(parsed.tool, 'tool'),
+      };
     }
     const groupKey = parsed.server.toLowerCase();
     const group = GROUP_OVERRIDES[groupKey] ?? titleCase(groupKey.replace(/[-_]mcp$/, ''));

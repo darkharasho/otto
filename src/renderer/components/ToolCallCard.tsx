@@ -19,6 +19,11 @@ export function ToolCallCard({ name, input, result, isError }: Props) {
   const summary = summarizeInput(name, input);
   const view = result === undefined ? null : classifyResult(name, result, isError, input);
 
+  const inputIsEmpty =
+    input === undefined ||
+    input === null ||
+    (typeof input === 'object' && !Array.isArray(input) && Object.keys(input as object).length === 0);
+
   const statusColor = {
     running: 'text-muted',
     done: 'text-accent',
@@ -92,7 +97,7 @@ export function ToolCallCard({ name, input, result, isError }: Props) {
           data-testid="toolcall-details"
           className="px-3 pb-3 text-xs space-y-3 border-t border-border/40 pt-3"
         >
-          {input !== undefined && input !== null && view?.kind !== 'terminal' && (
+          {!inputIsEmpty && view?.kind !== 'terminal' && (
             <div>
               <div className="text-muted mb-1 text-[10px] uppercase tracking-wide">Input</div>
               <pre className="bg-bg/60 rounded p-2 overflow-x-auto font-mono text-[11px]">
@@ -102,7 +107,7 @@ export function ToolCallCard({ name, input, result, isError }: Props) {
           )}
           {view && view.kind !== 'empty' && (
             <div>
-              {view.kind !== 'terminal' && (
+              {view.kind !== 'terminal' && !inputIsEmpty && (
                 <div className="text-muted mb-1 text-[10px] uppercase tracking-wide">Result</div>
               )}
               <ToolResultRenderer view={view} />
