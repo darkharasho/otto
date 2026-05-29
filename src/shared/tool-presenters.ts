@@ -194,7 +194,7 @@ export interface Hunk {
 }
 
 export type ResultView =
-  | { kind: 'image';    src: string; alt?: string; meta?: string }
+  | { kind: 'image';    src: string; alt?: string; meta?: string; width?: number; height?: number; monitors?: number; path?: string }
   | { kind: 'terminal'; command?: string; stdout?: string; stderr?: string; exitCode?: number; durationMs?: number; streaming?: boolean }
   | { kind: 'markdown'; text: string }
   | { kind: 'kv';       entries: Array<[string, string]> }
@@ -457,18 +457,44 @@ export function classifyResult(name: string, result: unknown, isError: boolean, 
 
   // image-ref blocks in content array (takes precedence over legacy inline-base64)
   if (typeof result === 'object' && result !== null && Array.isArray((result as { content?: unknown[] }).content)) {
-    for (const block of (result as { content: unknown[] }).content) {
-      if (
-        typeof block === 'object' && block !== null &&
-        (block as { type?: unknown }).type === 'image-ref'
-      ) {
-        const r = block as { id: string; sessionId: string; width?: number; height?: number };
-        const meta = typeof r.width === 'number' && typeof r.height === 'number'
-          ? `${r.width}×${r.height}` : undefined;
-        return meta !== undefined
-          ? { kind: 'image', src: `otto-image://${r.sessionId}/${r.id}.png`, meta }
-          : { kind: 'image', src: `otto-image://${r.sessionId}/${r.id}.png` };
+    const content = (result as { content: unknown[] }).content;
+    // Find first image-ref block
+    const imgRef = content.find(b =>
+      b && typeof b === 'object' && (b as { type?: unknown }).type === 'image-ref'
+    ) as { id?: unknown; sessionId?: unknown; width?: unknown; height?: unknown; path?: unknown } | undefined;
+    if (imgRef && typeof imgRef.id === 'string' && typeof imgRef.sessionId === 'string') {
+      // Pull richer metadata from the text content block (Otto screenshot tool serializes it as JSON).
+      let monitors: number | undefined;
+      let path: string | undefined;
+      let width = typeof imgRef.width === 'number' ? imgRef.width : undefined;
+      let height = typeof imgRef.height === 'number' ? imgRef.height : undefined;
+      for (const b of content) {
+        if (b && typeof b === 'object' && (b as { type?: unknown }).type === 'text'
+            && typeof (b as { text?: unknown }).text === 'string') {
+          try {
+            const parsed = JSON.parse((b as { text: string }).text) as Record<string, unknown>;
+            if (Array.isArray(parsed['monitors'])) monitors = parsed['monitors'].length;
+            if (typeof parsed['path'] === 'string') path = parsed['path'];
+            if (width === undefined && typeof parsed['width'] === 'number') width = parsed['width'];
+            if (height === undefined && typeof parsed['height'] === 'number') height = parsed['height'];
+          } catch { /* not JSON, ignore */ }
+          break;
+        }
       }
+      const metaParts: string[] = [];
+      if (width !== undefined && height !== undefined) metaParts.push(`${width}×${height}`);
+      if (monitors !== undefined && monitors > 1) metaParts.push(`${monitors} monitors`);
+      const meta = metaParts.length > 0 ? metaParts.join(' · ') : undefined;
+      const view: { kind: 'image'; src: string; meta?: string; width?: number; height?: number; monitors?: number; path?: string } = {
+        kind: 'image',
+        src: `otto-image://${imgRef.sessionId}/${imgRef.id}.png`,
+      };
+      if (meta !== undefined) view.meta = meta;
+      if (width !== undefined) view.width = width;
+      if (height !== undefined) view.height = height;
+      if (monitors !== undefined) view.monitors = monitors;
+      if (path !== undefined) view.path = path;
+      return view;
     }
   }
 

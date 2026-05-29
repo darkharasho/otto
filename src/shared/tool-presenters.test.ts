@@ -175,7 +175,45 @@ describe('classifyResult', () => {
       ],
     };
     const view = classifyResult('screenshot', result, false);
-    expect(view).toEqual({ kind: 'image', src: 'otto-image://s1/abc.png', meta: '100×50' });
+    expect(view).toMatchObject({ kind: 'image', src: 'otto-image://s1/abc.png', meta: '100×50', width: 100, height: 50 });
+  });
+});
+
+describe('classifyResult — screenshot enrichment', () => {
+  it('parses width/height/monitors from sibling text block', () => {
+    const wrapped = {
+      content: [
+        { type: 'image-ref', id: 'abc', sessionId: 'sess1', width: 5120, height: 1440 },
+        { type: 'text', text: JSON.stringify({
+          path: '/home/u/.config/otto/screenshots/sess1/abc.png',
+          width: 5120, height: 1440,
+          monitors: [{ x: 0, y: 0, w: 2560, h: 1440 }, { x: 2560, y: 0, w: 2560, h: 1440 }],
+        }) },
+      ],
+    };
+    const view = classifyResult('mcp__otto-tools__screenshot', wrapped, false, {});
+    expect(view).toMatchObject({
+      kind: 'image',
+      src: 'otto-image://sess1/abc.png',
+      width: 5120,
+      height: 1440,
+      monitors: 2,
+      path: '/home/u/.config/otto/screenshots/sess1/abc.png',
+      meta: '5120×1440 · 2 monitors',
+    });
+  });
+  it('still works when no sibling text block exists', () => {
+    const wrapped = {
+      content: [
+        { type: 'image-ref', id: 'abc', sessionId: 'sess1', width: 1920, height: 1080 },
+      ],
+    };
+    const view = classifyResult('mcp__otto-tools__screenshot', wrapped, false, {});
+    expect(view).toMatchObject({
+      kind: 'image',
+      src: 'otto-image://sess1/abc.png',
+      meta: '1920×1080',
+    });
   });
 });
 
