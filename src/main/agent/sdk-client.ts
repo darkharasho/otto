@@ -356,7 +356,11 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
 
         if (t.name === 'screenshot') {
           const sArgs = args as { region?: { x: number; y: number; w: number; h: number }; window?: string };
+          // eslint-disable-next-line no-console
+          console.log('[otto/screenshot] tool input:', JSON.stringify(args));
           const captured = await withSelfHidden(() => capture(sArgs, getPlatformAdapter()));
+          // eslint-disable-next-line no-console
+          console.log('[otto/screenshot] captured:', captured.width, 'x', captured.height);
           const tiled = await tileIfNeeded(captured.bytes, MAX_SCREENSHOT_EDGE, MAX_SCREENSHOT_TILES);
           const savedPath = await save(captured.bytes, ctx.sessionId, ctx.getConfigDir());
           // Capture refs in the call map so session.ts can rewrite the published event.
