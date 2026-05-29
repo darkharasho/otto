@@ -1,5 +1,7 @@
 import type { ActionClass, AutonomyMode, ContentBlock, Message, SessionMeta } from './messages';
 
+export type WindowMode = 'bar' | 'panel' | 'chat';
+
 export type ErrorKind =
   | 'auth-missing'
   | 'sdk-stream'
@@ -87,7 +89,7 @@ export type IpcRequest =
       args: SessionEnsureForSubmitArgs;
       result: SessionEnsureForSubmitResult;
     }
-  | { channel: 'window.setMode'; args: { mode: 'bar' | 'panel' }; result: void }
+  | { channel: 'window.setMode'; args: { mode: WindowMode }; result: void }
   | { channel: 'window.hide'; args: void; result: void }
   | { channel: 'window.cycleDisplay'; args: { direction: 'next' | 'prev' }; result: void }
   | {
