@@ -10,25 +10,7 @@ export function ImageCard({ view, compact }: { view: View; compact?: boolean }) 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const dragState = useRef<{ startX: number; startScrollLeft: number; movedPx: number } | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [overflows, setOverflows] = useState(false);
 
-  // Detect horizontal overflow on mount / image load to decide cursor + hint
-  useEffect(() => {
-    const el = scrollerRef.current;
-    if (!el) return;
-    const check = () => setOverflows(el.scrollWidth > el.clientWidth + 1);
-    check();
-    const img = el.querySelector('img');
-    if (img) img.addEventListener('load', check);
-    const ro = new ResizeObserver(check);
-    ro.observe(el);
-    return () => {
-      if (img) img.removeEventListener('load', check);
-      ro.disconnect();
-    };
-  }, [view.src]);
-
-  // Esc closes lightbox
   useEffect(() => {
     if (!zoom) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setZoom(false); };
@@ -36,12 +18,12 @@ export function ImageCard({ view, compact }: { view: View; compact?: boolean }) 
     return () => window.removeEventListener('keydown', onKey);
   }, [zoom]);
 
-  // Translate vertical wheel → horizontal scroll while hovering
+  // Translate vertical wheel → horizontal scroll while hovering (when there's overflow).
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
-      if (!overflows) return;
+      if (el.scrollWidth <= el.clientWidth) return;
       if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
         el.scrollLeft += e.deltaY;
         e.preventDefault();
@@ -49,7 +31,7 @@ export function ImageCard({ view, compact }: { view: View; compact?: boolean }) 
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [overflows]);
+  }, []);
 
   const onMouseDown = (e: React.MouseEvent) => {
     const el = scrollerRef.current;
@@ -59,7 +41,6 @@ export function ImageCard({ view, compact }: { view: View; compact?: boolean }) 
   };
   const onMouseMove = (e: React.MouseEvent) => {
     if (!dragState.current || !scrollerRef.current) return;
-    if (!overflows) return;
     const dx = e.clientX - dragState.current.startX;
     dragState.current.movedPx = Math.max(dragState.current.movedPx, Math.abs(dx));
     scrollerRef.current.scrollLeft = dragState.current.startScrollLeft - dx;
@@ -73,7 +54,7 @@ export function ImageCard({ view, compact }: { view: View; compact?: boolean }) 
     if (moved < DRAG_THRESHOLD_PX) setZoom(true);
   };
 
-  const cursor = overflows ? (dragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-zoom-in';
+  const cursor = dragging ? 'cursor-grabbing' : 'cursor-grab';
 
   return (
     <>
@@ -82,7 +63,7 @@ export function ImageCard({ view, compact }: { view: View; compact?: boolean }) 
           ref={scrollerRef}
           role="button"
           tabIndex={0}
-          aria-label={overflows ? 'Drag to pan, click for full size' : 'View full size'}
+          aria-label="Drag to pan, click for full size"
           onMouseDown={onMouseDown}
           onMouseMove={onMouseMove}
           onMouseUp={endDrag}
@@ -107,9 +88,7 @@ export function ImageCard({ view, compact }: { view: View; compact?: boolean }) 
                 {view.path.split('/').pop()}
               </span>
             )}
-            {overflows && (
-              <span className="text-muted/60">· drag to pan</span>
-            )}
+            <span className="text-muted/60">· drag to pan · click to zoom</span>
           </div>
         )}
       </div>
