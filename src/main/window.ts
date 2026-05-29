@@ -300,6 +300,12 @@ export class WindowManager {
     // window grown-but-not-repositioned — the input visually "jumps" because
     // the bottom edge wasn't pinned through the animation.
     this.window.setBounds({ x, y, width: BAR_WIDTH, height });
+    // Wayland compositors (Plasma, Mutter) sometimes ignore a setBounds that
+    // drastically changes the window dimensions in the same frame — e.g. when
+    // demoting from a large chat window back to bar/panel.  Re-apply on the
+    // next tick once the surface has settled.
+    const win = this.window;
+    setImmediate(() => { if (win === this.window) win.setBounds({ x, y, width: BAR_WIDTH, height }); });
     logger.debug(`window mode → ${mode} (${BAR_WIDTH}x${height} @ ${x},${y})`);
   }
 
