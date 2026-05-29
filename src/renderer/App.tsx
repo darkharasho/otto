@@ -10,6 +10,7 @@ import { SessionSwitcher } from './components/SessionSwitcher';
 import { StatusFooter } from './components/StatusFooter';
 import { ErrorCard } from './components/ErrorCard';
 import { TopicShiftChip } from './components/TopicShiftChip';
+import { ChatWindow } from './components/ChatWindow';
 
 export function App() {
   const windowMode = useOttoStore((s) => s.windowMode);
@@ -35,6 +36,12 @@ export function App() {
 
   useEffect(() => {
     void ipc.invoke('autonomy.getMode', undefined).then((m) => useOttoStore.getState().setMode(m));
+  }, []);
+
+  useEffect(() => {
+    void ipc.invoke('settings.get', undefined).then((s) => {
+      useOttoStore.getState().setPinnedSessionIds(s.pinnedSessionIds);
+    });
   }, []);
 
   useEffect(() => {
@@ -88,8 +95,10 @@ export function App() {
   const submitToActiveSession = useCallback(
     async ({ text, attachments }: { text: string; attachments: ImageRef[] }) => {
       try {
-        setWindowMode('panel');
-        void ipc.invoke('window.setMode', { mode: 'panel' });
+        if (useOttoStore.getState().windowMode === 'bar') {
+          setWindowMode('panel');
+          void ipc.invoke('window.setMode', { mode: 'panel' });
+        }
         const sessionId = await ensureSession();
         appendUserMessage(crypto.randomUUID(), text, attachments);
         // eslint-disable-next-line no-console
@@ -216,6 +225,11 @@ export function App() {
         handleStop();
         return;
       }
+      if (windowMode === 'chat') {
+        setWindowMode('panel');
+        void ipc.invoke('window.setMode', { mode: 'panel' });
+        return;
+      }
       if (windowMode === 'panel') {
         setWindowMode('bar');
         void ipc.invoke('window.setMode', { mode: 'bar' });
@@ -242,12 +256,32 @@ export function App() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
-  // Up arrow expands bar→panel to show the current session
+  // Up arrow promotes bar→panel→chat
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'ArrowUp') return;
-      if (windowMode !== 'bar') return;
       // Only expand if focus is on the input (not mid-typing elsewhere)
+      const input = document.querySelector('input[type="text"]');
+      if (document.activeElement !== input) return;
+      if (windowMode === 'bar') {
+        e.preventDefault();
+        setWindowMode('panel');
+        void ipc.invoke('window.setMode', { mode: 'panel' });
+      } else if (windowMode === 'panel') {
+        e.preventDefault();
+        setWindowMode('chat');
+        void ipc.invoke('window.setMode', { mode: 'chat' });
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [windowMode, setWindowMode]);
+
+  // Down arrow demotes chat→panel
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== 'ArrowDown') return;
+      if (windowMode !== 'chat') return;
       const input = document.querySelector('input[type="text"]');
       if (document.activeElement !== input) return;
       e.preventDefault();
@@ -270,9 +304,22 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [handleNewConversation]);
 
+  if (windowMode === 'chat') {
+    return (
+      <ChatWindow
+        onSubmit={handleSubmit}
+        ensureSession={ensureSession}
+        onStop={handleStop}
+        onInterruptAndSend={handleInterruptAndSend}
+        onNewConversation={handleNewConversation}
+        onSelectSession={handleSelectSession}
+      />
+    );
+  }
+
   if (windowMode === 'bar') {
     return (
-      <div key={`bar-${enterTick}`} className="w-screen h-screen p-1 otto-enter">
+      <div data-window-mode="bar" key={`bar-${enterTick}`} className="w-screen h-screen p-1 otto-enter">
         <CommandBar
           onSubmit={handleSubmit}
           ensureSession={ensureSession}
@@ -288,7 +335,7 @@ export function App() {
   }
 
   return (
-    <div key={`panel-${enterTick}`} className="w-screen h-screen p-1 otto-enter">
+    <div data-window-mode="panel" key={`panel-${enterTick}`} className="w-screen h-screen p-1 otto-enter">
       <Panel
         busy={streaming}
         header={
