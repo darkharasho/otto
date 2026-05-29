@@ -96,11 +96,13 @@ button {
   50%      { opacity: 1;   transform: scale(1.4); }
 }
 
+.otto-pulse { animation: otto-pulse 1.4s ease-in-out infinite; }
+
 @keyframes otto-pulse-dot {
   0%, 100% { opacity: 0.65; transform: scale(1); }
   50%      { opacity: 1;   transform: scale(1.18); }
 }
-.otto-pulse { animation: otto-pulse-dot 1.4s ease-in-out infinite; }
+.otto-pulse-dot { animation: otto-pulse-dot 1.4s ease-in-out infinite; }
 
 @keyframes otto-step-enter {
   from { opacity: 0; transform: translateY(4px); }
