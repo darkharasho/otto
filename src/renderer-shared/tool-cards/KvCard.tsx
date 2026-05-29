@@ -6,7 +6,7 @@ type View = Extract<ResultView, { kind: 'kv' }>;
 export function KvCard({ view, compact }: { view: View; compact?: boolean }) {
   const fs = compact ? 'text-[10.5px]' : 'text-[11.5px]';
   return (
-    <dl className={`grid grid-cols-[max-content,1fr] gap-x-3 gap-y-1 font-mono ${fs} m-0`}>
+    <dl className={`grid grid-cols-[max-content_1fr] gap-x-3 gap-y-1 font-mono ${fs} m-0`}>
       {view.entries.map(([k, v]) => (
         <Fragment key={k}>
           <dt className="text-muted m-0">{k}</dt>
