@@ -31,6 +31,15 @@ function virtualDesktopBounds(monitors: MonitorInfo[]): { x: number; y: number; 
   return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
 
+async function pollForFile(p: string, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try { await fsp.access(p); return true; } catch { /* not yet */ }
+    await new Promise(r => setTimeout(r, 50));
+  }
+  return false;
+}
+
 export class LinuxAdapter implements PlatformAdapter {
   readonly name = 'linux';
 
@@ -115,10 +124,24 @@ export class LinuxAdapter implements PlatformAdapter {
       // Capture the full virtual desktop (all monitors). Coordinates everywhere
       // (region, click, move) are virtual-desktop absolute. Crop in-process
       // via nativeImage when the caller requested a region.
-      const tmp = path.join(tmpdir(), `otto-screenshot-${randomUUID()}.png`);
       // -p includes the mouse pointer so the model can see where its last
       // click landed and self-correct on the next attempt.
-      await this.runSpectacle(['-bnfp', '-o', tmp], 5_000);
+      const baseArgs = ['-bnfp'];
+      let tmp: string;
+      try {
+        ({ tmp } = await this.captureToTmpOnce(baseArgs));
+      } catch (firstErr) {
+        // One retry — KDE sometimes loses the first request to focus/polkit/etc.
+        try {
+          ({ tmp } = await this.captureToTmpOnce(baseArgs));
+        } catch {
+          throw new Error(
+            `screenshot failed: spectacle did not write the capture file. ` +
+            `Is KDE Spectacle installed and allowed to capture? ` +
+            `(initial error: ${(firstErr as Error).message})`
+          );
+        }
+      }
 
       try {
         const fullBytes = await fsp.readFile(tmp);
@@ -229,6 +252,15 @@ export class LinuxAdapter implements PlatformAdapter {
         reject(new Error(`kdotool failed: ${stderr.trim() || `exit ${code}`}`));
       });
     });
+  }
+
+  private async captureToTmpOnce(args: string[]): Promise<{ tmp: string }> {
+    const tmp = path.join(tmpdir(), `otto-screenshot-${randomUUID()}.png`);
+    await this.runSpectacle([...args, '-o', tmp], 5_000);
+    if (!(await pollForFile(tmp, 2_000))) {
+      throw new Error(`spectacle did not write ${tmp}`);
+    }
+    return { tmp };
   }
 
   private async runSpectacle(args: string[], timeoutMs: number): Promise<void> {
