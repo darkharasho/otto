@@ -32,6 +32,7 @@ export class WindowManager {
   private visibilityListeners: Array<(visible: boolean) => void> = [];
   private chatBounds: { x: number; y: number; width: number; height: number } | null = null;
   private chatBoundsChangeListeners: Array<(b: { x: number; y: number; width: number; height: number }) => void> = [];
+  private chatHandlersBound = false;
 
   onVisibilityChange(cb: (visible: boolean) => void): () => void {
     this.visibilityListeners.push(cb);
@@ -231,11 +232,31 @@ export class WindowManager {
     this.window = null;
   }
 
+  private ensureChatHandlers(): void {
+    if (this.chatHandlersBound || !this.window) return;
+    const win = this.window;
+    let persistTimer: NodeJS.Timeout | null = null;
+    const schedulePersist = (): void => {
+      if (this.mode !== 'chat') return;
+      if (persistTimer) clearTimeout(persistTimer);
+      persistTimer = setTimeout(() => {
+        persistTimer = null;
+        const b = win.getBounds();
+        this.chatBounds = { x: b.x, y: b.y, width: b.width, height: b.height };
+        this.emitChatBounds(this.chatBounds);
+      }, 250);
+    };
+    win.on('move', schedulePersist);
+    win.on('resize', schedulePersist);
+    this.chatHandlersBound = true;
+  }
+
   private applyMode(mode: WindowMode): void {
     if (!this.window) return;
     this.mode = mode;
 
     if (mode === 'chat') {
+      this.ensureChatHandlers();
       this.window.setMinimumSize(CHAT_MIN_WIDTH, CHAT_MIN_HEIGHT);
       const display = this.pickDisplay();
       const target = this.chatBounds && this.isOnAnyDisplay(this.chatBounds)
