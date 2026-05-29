@@ -360,9 +360,17 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
           console.log('[otto/screenshot] tool input:', JSON.stringify(args));
           const captured = await withSelfHidden(() => capture(sArgs, getPlatformAdapter()));
           // eslint-disable-next-line no-console
-          console.log('[otto/screenshot] captured:', captured.width, 'x', captured.height);
+          console.log('[otto/screenshot] captured:', captured.width, 'x', captured.height, 'bytes:', captured.bytes.length);
           const tiled = await tileIfNeeded(captured.bytes, MAX_SCREENSHOT_EDGE, MAX_SCREENSHOT_TILES);
           const savedPath = await save(captured.bytes, ctx.sessionId, ctx.getConfigDir());
+          // eslint-disable-next-line no-console
+          try {
+            const fs = await import('node:fs/promises');
+            const stat = await fs.stat(savedPath);
+            console.log('[otto/screenshot] saved file:', savedPath, 'size:', stat.size);
+          } catch (e) {
+            console.error('[otto/screenshot] stat saved file failed:', e);
+          }
           // Capture refs in the call map so session.ts can rewrite the published event.
           // Filename stem == id; derive from savedPath so disk + ref agree.
           const baseId = savedPath.split('/').pop()!.replace(/\.png$/, '');
