@@ -23,10 +23,10 @@ describe('groupSessions', () => {
     ];
     const groups = groupSessions(sessions, ['d'], now);
     expect(groups.map((g) => g.label)).toEqual(['Pinned', 'Today', 'Yesterday', 'Earlier']);
-    expect(groups[0].items.map((x) => x.id)).toEqual(['d']);
-    expect(groups[1].items.map((x) => x.id)).toEqual(['a']);
-    expect(groups[2].items.map((x) => x.id)).toEqual(['b']);
-    expect(groups[3].items.map((x) => x.id)).toEqual(['c']);
+    expect(groups[0]!.items.map((x) => x.id)).toEqual(['d']);
+    expect(groups[1]!.items.map((x) => x.id)).toEqual(['a']);
+    expect(groups[2]!.items.map((x) => x.id)).toEqual(['b']);
+    expect(groups[3]!.items.map((x) => x.id)).toEqual(['c']);
   });
 
   it('omits empty groups', () => {
