@@ -458,6 +458,22 @@ export function classifyResult(name: string, result: unknown, isError: boolean, 
   // image-ref blocks in content array (takes precedence over legacy inline-base64)
   if (typeof result === 'object' && result !== null && Array.isArray((result as { content?: unknown[] }).content)) {
     const content = (result as { content: unknown[] }).content;
+    if (typeof console !== 'undefined' && (name === 'screenshot' || /screenshot/i.test(name))) {
+      // eslint-disable-next-line no-console
+      console.log('[tool-cards] screenshot result shape:', JSON.stringify({
+        name,
+        contentLength: content.length,
+        blockTypes: content.map((b: unknown) =>
+          b && typeof b === 'object' ? (b as { type?: unknown }).type : typeof b
+        ),
+        firstImgRef: content.find((b: unknown) =>
+          b && typeof b === 'object' && (b as { type?: unknown }).type === 'image-ref'
+        ),
+        textBlocks: content.filter((b: unknown) =>
+          b && typeof b === 'object' && (b as { type?: unknown }).type === 'text'
+        ).map((b: unknown) => (b as { text?: unknown }).text),
+      }, null, 2));
+    }
     // Find first image-ref block
     const imgRef = content.find(b =>
       b && typeof b === 'object' && (b as { type?: unknown }).type === 'image-ref'
