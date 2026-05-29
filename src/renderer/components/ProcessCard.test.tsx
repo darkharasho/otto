@@ -23,12 +23,14 @@ describe('ProcessCard', () => {
   it('renders command, running status, and stdout lines', () => {
     render(<ProcessCard block={baseBlock} />);
     expect(screen.getByText('sleep 60')).toBeInTheDocument();
-    expect(screen.getByText(/running/i)).toBeInTheDocument();
+    // Status label is "RUNNING" (uppercase) in the header badge
+    expect(screen.getByText('RUNNING')).toBeInTheDocument();
     expect(screen.getByText('starting...')).toBeInTheDocument();
   });
 
   it('Cancel button visible while running and invokes shell.kill with the handle', async () => {
     render(<ProcessCard block={baseBlock} />);
+    // There is exactly one <button> element with accessible name matching cancel
     const cancel = screen.getByRole('button', { name: /cancel/i });
     expect(cancel).toBeInTheDocument();
     await userEvent.click(cancel);
@@ -42,11 +44,13 @@ describe('ProcessCard', () => {
 
   it('shows exit code badge on exited', () => {
     render(<ProcessCard block={{ ...baseBlock, status: 'exited', exitCode: 7 }} />);
-    expect(screen.getByText(/7/)).toBeInTheDocument();
+    // Header badge reads "EXITED 7"
+    expect(screen.getByText('EXITED 7')).toBeInTheDocument();
   });
 
   it('shows killed badge on killed', () => {
     render(<ProcessCard block={{ ...baseBlock, status: 'killed' }} />);
-    expect(screen.getByText(/killed/i)).toBeInTheDocument();
+    // Header badge reads "KILLED"
+    expect(screen.getByText('KILLED')).toBeInTheDocument();
   });
 });
