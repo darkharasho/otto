@@ -49,6 +49,16 @@ export async function downscaleIfNeeded(
   return { bytes: resized.toPNG(), width: targetW, height: targetH, downscaled: true };
 }
 
+/**
+ * Re-encode PNG bytes as JPEG at the given quality (0–100). Used for tool-result
+ * payloads sent to the model: JPEG is 5–10× smaller than PNG for screenshots,
+ * which keeps the conversation request under Anthropic's 32MB cap as screenshots
+ * accumulate in history.
+ */
+export function toJpeg(pngBytes: Buffer, quality: number): Buffer {
+  return nativeImage.createFromBuffer(pngBytes).toJPEG(quality);
+}
+
 export interface Tile {
   bytes: Buffer;
   x: number;

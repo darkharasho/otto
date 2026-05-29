@@ -15,15 +15,18 @@ import { exec } from '../shell/executor';
 import { getPlatformAdapter } from '../platform';
 import { capture } from '../screenshot/executor';
 import { withSelfHidden } from '../screenshot/self-mask';
-import { tileIfNeeded } from '../screenshot/processor';
+import { tileIfNeeded, toJpeg } from '../screenshot/processor';
 
-// Anthropic's many-image request cap is 2000px on either edge. Stay under it
-// with margin so a HiDPI capture downscaled exactly to the limit doesn't trip
-// the rounding boundary on the server side.
-const MAX_SCREENSHOT_EDGE = 1920;
+// Tile edge cap for what we send to the model. Smaller = more screenshots fit
+// in conversation history before tripping Anthropic's ~32MB request cap.
+// 1280 keeps UI text legible while shrinking each tile ~2.3× vs. 1920.
+const MAX_SCREENSHOT_EDGE = 1280;
 // Hard ceiling on tiles per capture: prevents an absurd capture (e.g., 8000px+
 // across, 4+ stacked monitors) from blowing up the per-turn image budget.
 const MAX_SCREENSHOT_TILES = 8;
+// JPEG quality for API-bound tiles. 70 is the sweet spot for screenshot legibility
+// vs. payload size — a typical 1280px tile shrinks ~8× from PNG.
+const SCREENSHOT_JPEG_QUALITY = 70;
 import { save } from '../screenshot/store';
 import { tmpdir } from 'node:os';
 import { existsSync } from 'node:fs';
@@ -385,11 +388,13 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
             source: 'screenshot' as const,
           }));
           screenshotRefsByCall.set(callId, { refs });
-          // Bytes for the current turn's API call (transient — released after yield).
+          // Bytes for the current turn's API call. Re-encode as JPEG to keep the
+          // payload small enough that history doesn't blow Anthropic's request cap
+          // after a handful of screenshots.
           const tilesForApi = tiled.tiles.map((tile) => ({
             type: 'image' as const,
-            data: tile.bytes.toString('base64'),
-            mimeType: 'image/png' as const,
+            data: toJpeg(tile.bytes, SCREENSHOT_JPEG_QUALITY).toString('base64'),
+            mimeType: 'image/jpeg' as const,
           }));
           const meta = {
             path: savedPath,
