@@ -12,7 +12,9 @@ export function ImageCard({ view, compact }: { view: View; compact?: boolean }) 
   const [dragging, setDragging] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [hasMoreRight, setHasMoreRight] = useState(false);
 
+  // Escape closes zoom
   useEffect(() => {
     if (!zoom) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setZoom(false); };
@@ -20,6 +22,7 @@ export function ImageCard({ view, compact }: { view: View; compact?: boolean }) 
     return () => window.removeEventListener('keydown', onKey);
   }, [zoom]);
 
+  // Escape or click-outside closes context menu
   useEffect(() => {
     if (!menu) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(null); };
@@ -32,13 +35,35 @@ export function ImageCard({ view, compact }: { view: View; compact?: boolean }) 
     };
   }, [menu]);
 
+  // Auto-dismiss toast
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(null), 1500);
     return () => clearTimeout(t);
   }, [toast]);
 
-  // Translate vertical wheel → horizontal scroll when overflow exists
+  // Track scroll position for gradient hint
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const update = () => {
+      const more = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+      setHasMoreRight(more);
+    };
+    update();
+    el.addEventListener('scroll', update);
+    const img = el.querySelector('img');
+    if (img) img.addEventListener('load', update);
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', update);
+      if (img) img.removeEventListener('load', update);
+      ro.disconnect();
+    };
+  }, [view.src]);
+
+  // Wheel: translate vertical → horizontal scroll
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
@@ -53,23 +78,36 @@ export function ImageCard({ view, compact }: { view: View; compact?: boolean }) 
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
+  // Document-level drag handlers — survive cursor leaving the card
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e: MouseEvent) => {
+      if (!dragState.current || !scrollerRef.current) return;
+      const dx = e.clientX - dragState.current.startX;
+      dragState.current.movedPx = Math.max(dragState.current.movedPx, Math.abs(dx));
+      scrollerRef.current.scrollLeft = dragState.current.startScrollLeft - dx;
+    };
+    const onUp = () => {
+      setDragging(false);
+      setTimeout(() => { dragState.current = null; }, 0);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [dragging]);
+
   const onMouseDown = (e: React.MouseEvent) => {
-    if (e.button !== 0) return; // ignore right/middle for drag
+    if (e.button !== 0) return;
     const el = scrollerRef.current;
     if (!el) return;
+    e.preventDefault(); // prevent text-select / native drag
     dragState.current = { startX: e.clientX, startScrollLeft: el.scrollLeft, movedPx: 0 };
     setDragging(true);
   };
-  const onMouseMove = (e: React.MouseEvent) => {
-    if (!dragState.current || !scrollerRef.current) return;
-    const dx = e.clientX - dragState.current.startX;
-    dragState.current.movedPx = Math.max(dragState.current.movedPx, Math.abs(dx));
-    scrollerRef.current.scrollLeft = dragState.current.startScrollLeft - dx;
-  };
-  const endDrag = () => {
-    setDragging(false);
-    setTimeout(() => { dragState.current = null; }, 0);
-  };
+
   const onClick = () => {
     const moved = dragState.current?.movedPx ?? 0;
     if (moved < DRAG_THRESHOLD_PX) setZoom(true);
@@ -85,7 +123,6 @@ export function ImageCard({ view, compact }: { view: View; compact?: boolean }) 
     try {
       const res = await fetch(view.src);
       const blob = await res.blob();
-      // Most clipboards expect PNG. Re-wrap if needed.
       const type = blob.type || 'image/png';
       await navigator.clipboard.write([new ClipboardItem({ [type]: blob })]);
       setToast('Image copied');
@@ -115,27 +152,29 @@ export function ImageCard({ view, compact }: { view: View; compact?: boolean }) 
   return (
     <>
       <div className="block w-full text-left relative">
-        <div
-          ref={scrollerRef}
-          role="button"
-          tabIndex={0}
-          aria-label="Drag to pan, click for full size, right-click for options"
-          onMouseDown={onMouseDown}
-          onMouseMove={onMouseMove}
-          onMouseUp={endDrag}
-          onMouseLeave={endDrag}
-          onClick={onClick}
-          onContextMenu={onContextMenu}
-          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setZoom(true); }}
-          className={`relative w-full rounded border border-border hover:border-accent transition-colors bg-bg/40 overflow-x-auto overflow-y-hidden select-none max-h-[400px] ${cursor}`}
-        >
-          <img
-            src={view.src}
-            alt={view.alt ?? 'screenshot'}
-            draggable={false}
-            loading="lazy"
-            className="block max-h-[400px] w-auto max-w-none pointer-events-none"
-          />
+        <div className="relative">
+          <div
+            ref={scrollerRef}
+            role="button"
+            tabIndex={0}
+            aria-label="Drag to pan, click for full size, right-click for options"
+            onMouseDown={onMouseDown}
+            onClick={onClick}
+            onContextMenu={onContextMenu}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') setZoom(true); }}
+            className={`relative w-full rounded border border-border hover:border-accent transition-colors bg-bg/40 overflow-x-scroll overflow-y-hidden select-none max-h-[400px] ${cursor}`}
+          >
+            <img
+              src={view.src}
+              alt={view.alt ?? 'screenshot'}
+              draggable={false}
+              loading="lazy"
+              className="block max-h-[400px] w-auto max-w-none pointer-events-none"
+            />
+          </div>
+          {hasMoreRight && (
+            <div className="pointer-events-none absolute top-0 right-0 bottom-0 w-12 bg-gradient-to-l from-bg/60 to-transparent rounded-r" />
+          )}
         </div>
         {view.meta && (
           <div className={`text-muted mt-1 ${compact ? 'text-[10px]' : 'text-[10.5px]'} flex items-center gap-2 flex-wrap`}>
@@ -149,7 +188,7 @@ export function ImageCard({ view, compact }: { view: View; compact?: boolean }) 
           </div>
         )}
         {toast && (
-          <div className="absolute top-2 right-2 px-2 py-1 rounded bg-accent text-bg text-[10.5px] font-medium shadow pointer-events-none">
+          <div className="absolute top-2 right-2 px-2 py-1 rounded bg-accent text-bg text-[10.5px] font-medium shadow pointer-events-none z-10">
             {toast}
           </div>
         )}
