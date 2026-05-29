@@ -1,6 +1,9 @@
 import { spawn as nodeSpawn } from 'node:child_process';
-import { desktopCapturer, nativeImage, screen } from 'electron';
-import sharp from 'sharp';
+import { promises as fsp } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { nativeImage, screen } from 'electron';
 import { checkBinary } from '../system/binary-check';
 import type {
   CaptureOptions,
@@ -28,6 +31,14 @@ function virtualDesktopBounds(monitors: MonitorInfo[]): { x: number; y: number; 
   return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
 
+async function pollForFile(p: string, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try { await fsp.access(p); return true; } catch { /* not yet */ }
+    await new Promise(r => setTimeout(r, 50));
+  }
+  return false;
+}
 
 export class LinuxAdapter implements PlatformAdapter {
   readonly name = 'linux';
@@ -110,71 +121,51 @@ export class LinuxAdapter implements PlatformAdapter {
         }
       }
 
-      // Capture each display via Electron's built-in desktopCapturer, then
-      // stitch the per-display PNGs into one virtual-desktop image with sharp.
-      // This replaces the previous spectacle(-bnfp) path which only captured
-      // the focused monitor on KDE Wayland when -f/--fullscreen was used.
-      //
-      // TODO: overlay cursor position via screen.getCursorScreenPoint() —
-      // see Otto autonomy docs about visual self-correction. The previous
-      // spectacle -p flag included the cursor; desktopCapturer thumbnails do not.
-      const sources = await desktopCapturer.getSources({
-        types: ['screen'],
-        thumbnailSize: { width: 8192, height: 8192 }, // big enough for any single display
-      });
+      // Capture the full virtual desktop (all monitors). Coordinates everywhere
+      // (region, click, move) are virtual-desktop absolute. Crop in-process
+      // via nativeImage when the caller requested a region.
+      // -p includes the mouse pointer so the model can see where its last
+      // click landed and self-correct on the next attempt.
+      const baseArgs = ['-bnfp'];
+      let tmp: string;
+      try {
+        ({ tmp } = await this.captureToTmpOnce(baseArgs));
+      } catch (firstErr) {
+        // One retry — KDE sometimes loses the first request to focus/polkit/etc.
+        try {
+          ({ tmp } = await this.captureToTmpOnce(baseArgs));
+        } catch {
+          throw new Error(
+            `screenshot failed: spectacle did not write the capture file. ` +
+            `Is KDE Spectacle installed and allowed to capture? ` +
+            `(initial error: ${(firstErr as Error).message})`
+          );
+        }
+      }
 
-      // Match each Electron display to a source by display_id.
-      const tiles: Array<{ buf: Buffer; x: number; y: number; w: number; h: number }> = [];
-      for (const display of screen.getAllDisplays()) {
-        const source = sources.find(s => Number(s.display_id) === display.id);
-        if (!source || source.thumbnail.isEmpty()) continue;
-        // Thumbnail size is clamped to the display's actual native dimensions.
-        const size = source.thumbnail.getSize();
-        tiles.push({
-          buf: source.thumbnail.toPNG(),
-          x: display.bounds.x - bounds.x, // position relative to virtual-desktop origin
-          y: display.bounds.y - bounds.y,
-          w: size.width,
-          h: size.height,
+      try {
+        const fullBytes = await fsp.readFile(tmp);
+        if (!region) {
+          const { width, height } = this.readPngDims(fullBytes);
+          return { bytes: fullBytes, width, height, monitors, origin: { x: bounds.x, y: bounds.y } };
+        }
+        const r = region;
+        // Region is given in virtual-desktop coords. Translate to image coords
+        // by subtracting the virtual-desktop origin; honor primary scale.
+        const scale = monitors[0]?.scale || 1;
+        const img = nativeImage.createFromBuffer(fullBytes);
+        const cropped = img.crop({
+          x: Math.round((r.x - bounds.x) * scale),
+          y: Math.round((r.y - bounds.y) * scale),
+          width: Math.round(r.w * scale),
+          height: Math.round(r.h * scale),
         });
+        const croppedBytes = cropped.toPNG();
+        const { width, height } = cropped.getSize();
+        return { bytes: croppedBytes, width, height, monitors, origin: { x: r.x, y: r.y } };
+      } finally {
+        await fsp.unlink(tmp).catch(() => {});
       }
-
-      if (tiles.length === 0) {
-        throw new Error('screenshot failed: desktopCapturer returned no screen sources');
-      }
-
-      // Stitch all display tiles into one image at the virtual-desktop bounds.
-      const fullW = bounds.w;
-      const fullH = bounds.h;
-      const stitched = await sharp({
-        create: {
-          width: fullW,
-          height: fullH,
-          channels: 4,
-          background: { r: 0, g: 0, b: 0, alpha: 1 },
-        },
-      })
-        .composite(tiles.map(t => ({ input: t.buf, left: t.x, top: t.y })))
-        .png()
-        .toBuffer();
-
-      if (!region) {
-        return { bytes: stitched, width: fullW, height: fullH, monitors, origin: { x: bounds.x, y: bounds.y } };
-      }
-
-      // Region crop — translate virtual-desktop coords to image coords and honor primary scale.
-      const r = region;
-      const scale = monitors[0]?.scale || 1;
-      const img = nativeImage.createFromBuffer(stitched);
-      const cropped = img.crop({
-        x: Math.round((r.x - bounds.x) * scale),
-        y: Math.round((r.y - bounds.y) * scale),
-        width: Math.round(r.w * scale),
-        height: Math.round(r.h * scale),
-      });
-      const croppedBytes = cropped.toPNG();
-      const { width: cw, height: ch } = cropped.getSize();
-      return { bytes: croppedBytes, width: cw, height: ch, monitors, origin: { x: r.x, y: r.y } };
     },
   };
 
@@ -263,4 +254,62 @@ export class LinuxAdapter implements PlatformAdapter {
     });
   }
 
+  private async captureToTmpOnce(args: string[]): Promise<{ tmp: string }> {
+    const tmp = path.join(tmpdir(), `otto-screenshot-${randomUUID()}.png`);
+    await this.runSpectacle([...args, '-o', tmp], 5_000);
+    if (!(await pollForFile(tmp, 2_000))) {
+      throw new Error(`spectacle did not write ${tmp}`);
+    }
+    return { tmp };
+  }
+
+  private async runSpectacle(args: string[], timeoutMs: number): Promise<void> {
+    const check = await checkBinary({
+      name: 'spectacle',
+      purpose: 'screen capture',
+      hints: {
+        fedora: 'sudo dnf install kde-spectacle',
+        debian: 'sudo apt install kde-spectacle',
+        arch: 'sudo pacman -S spectacle',
+        fallback: 'install KDE Spectacle from your package manager',
+      },
+    });
+    if (!check.ok) throw new Error(`${check.reason}\n\n${check.hint}`);
+    return new Promise((resolve, reject) => {
+      const child = nodeSpawn('spectacle', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      let stderr = '';
+      child.stderr.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString('utf8');
+      });
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        child.kill('SIGTERM');
+        setTimeout(() => child.kill('SIGKILL'), 1_000).unref();
+      }, timeoutMs);
+      child.once('error', (err) => {
+        clearTimeout(timer);
+        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+          reject(new Error('spectacle not found — install kde-spectacle'));
+        } else {
+          reject(err);
+        }
+      });
+      child.once('exit', (code) => {
+        clearTimeout(timer);
+        if (timedOut) return reject(new Error('screenshot timed out'));
+        if (code !== 0) return reject(new Error(`screenshot failed: ${stderr.trim() || `exit ${code}`}`));
+        resolve();
+      });
+    });
+  }
+
+  private readPngDims(bytes: Buffer): { width: number; height: number } {
+    if (bytes.length < 24 || bytes.toString('latin1', 0, 8) !== '\x89PNG\r\n\x1a\n') {
+      throw new Error('captured file is not a PNG');
+    }
+    const width = bytes.readUInt32BE(16);
+    const height = bytes.readUInt32BE(20);
+    return { width, height };
+  }
 }
