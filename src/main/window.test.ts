@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { vi as v2 } from 'vitest';
 import { WindowManager } from './window';
 
 function makeFakeWin() {
@@ -78,5 +79,27 @@ describe('WindowManager chat mode', () => {
     const call = fake.setBounds.mock.calls.at(-1)![0];
     expect(call.width).toBe(960);
     expect(call.x).toBe(Math.round((1920 - 960) / 2));
+  });
+});
+
+describe('WindowManager bounds persistence', () => {
+  it('emits chatBoundsChanged after a debounced move when in chat mode', async () => {
+    v2.useFakeTimers();
+    const mgr = new WindowManager();
+    const fake = makeFakeWin();
+    (mgr as unknown as { window: typeof fake }).window = fake;
+
+    const seen: Array<{ x: number; y: number; width: number; height: number }> = [];
+    mgr.onChatBoundsChanged((b) => seen.push(b));
+    mgr.setMode('chat');
+
+    const moveHandler = fake.on.mock.calls.find(([evt]) => evt === 'move')?.[1] as (() => void) | undefined;
+    expect(moveHandler).toBeDefined();
+    fake.state.bounds = { x: 50, y: 60, width: 1000, height: 700 };
+    moveHandler!();
+
+    v2.advanceTimersByTime(300);
+    expect(seen.at(-1)).toEqual({ x: 50, y: 60, width: 1000, height: 700 });
+    v2.useRealTimers();
   });
 });
