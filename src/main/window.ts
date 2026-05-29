@@ -2,7 +2,7 @@ import { BrowserWindow, screen, app, shell } from 'electron';
 import path from 'node:path';
 import { logger } from './logger';
 
-export type WindowMode = 'bar' | 'panel';
+export type WindowMode = 'bar' | 'panel' | 'chat';
 
 const BAR_WIDTH = 640;
 const BAR_HEIGHT = 72;
@@ -10,6 +10,11 @@ const PANEL_MIN_HEIGHT = 320;
 const PANEL_BOTTOM_MARGIN = 48;
 const PANEL_TOP_MARGIN = 48;
 const PANEL_MAX_DISPLAY_RATIO = 0.7;
+
+const CHAT_DEFAULT_WIDTH = 960;
+const CHAT_DEFAULT_HEIGHT = 620;
+const CHAT_MIN_WIDTH = 560;
+const CHAT_MIN_HEIGHT = 400;
 
 export type WindowPositionPref = 'bottom-center' | 'top-center';
 export type DisplayTargetPref = 'cursor' | 'primary';
@@ -25,6 +30,8 @@ export class WindowManager {
   private cycledDisplayId: number | null = null;
   private hideOnBlur = false;
   private visibilityListeners: Array<(visible: boolean) => void> = [];
+  private chatBounds: { x: number; y: number; width: number; height: number } | null = null;
+  private chatBoundsChangeListeners: Array<(b: { x: number; y: number; width: number; height: number }) => void> = [];
 
   onVisibilityChange(cb: (visible: boolean) => void): () => void {
     this.visibilityListeners.push(cb);
@@ -35,6 +42,41 @@ export class WindowManager {
 
   private emitVisibility(visible: boolean): void {
     for (const cb of this.visibilityListeners) cb(visible);
+  }
+
+  setChatBounds(bounds: { x: number; y: number; width: number; height: number } | null): void {
+    this.chatBounds = bounds;
+  }
+
+  getChatBounds(): { x: number; y: number; width: number; height: number } | null {
+    return this.chatBounds;
+  }
+
+  onChatBoundsChanged(cb: (b: { x: number; y: number; width: number; height: number }) => void): () => void {
+    this.chatBoundsChangeListeners.push(cb);
+    return () => {
+      this.chatBoundsChangeListeners = this.chatBoundsChangeListeners.filter((l) => l !== cb);
+    };
+  }
+
+  private emitChatBounds(bounds: { x: number; y: number; width: number; height: number }): void {
+    for (const cb of this.chatBoundsChangeListeners) cb(bounds);
+  }
+
+  private isOnAnyDisplay(b: { x: number; y: number; width: number; height: number }): boolean {
+    return screen.getAllDisplays().some((d) => {
+      const wa = d.workArea;
+      return b.x < wa.x + wa.width && b.x + b.width > wa.x && b.y < wa.y + wa.height && b.y + b.height > wa.y;
+    });
+  }
+
+  private defaultChatBounds(display: Electron.Display): { x: number; y: number; width: number; height: number } {
+    return {
+      x: Math.round(display.workArea.x + (display.workArea.width - CHAT_DEFAULT_WIDTH) / 2),
+      y: Math.round(display.workArea.y + (display.workArea.height - CHAT_DEFAULT_HEIGHT) / 2),
+      width: CHAT_DEFAULT_WIDTH,
+      height: CHAT_DEFAULT_HEIGHT,
+    };
   }
 
   setPositionPref(p: WindowPositionPref): void {
@@ -192,6 +234,19 @@ export class WindowManager {
   private applyMode(mode: WindowMode): void {
     if (!this.window) return;
     this.mode = mode;
+
+    if (mode === 'chat') {
+      this.window.setMinimumSize(CHAT_MIN_WIDTH, CHAT_MIN_HEIGHT);
+      const display = this.pickDisplay();
+      const target = this.chatBounds && this.isOnAnyDisplay(this.chatBounds)
+        ? this.chatBounds
+        : this.defaultChatBounds(display);
+      this.window.setBounds(target);
+      logger.debug(`window mode → chat (${target.width}x${target.height} @ ${target.x},${target.y})`);
+      return;
+    }
+
+    // Existing bar/panel logic (preserved verbatim):
     const display = this.pickDisplay();
     const maxPanelHeight = Math.floor(display.workArea.height * PANEL_MAX_DISPLAY_RATIO);
     const height =
