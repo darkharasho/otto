@@ -28,6 +28,7 @@ function makeFakeWin() {
     loadURL: vi.fn(),
     loadFile: vi.fn(),
     on: vi.fn(),
+    isDestroyed: vi.fn(() => false),
     webContents: { setWindowOpenHandler: vi.fn(), on: vi.fn() },
   };
 }
@@ -83,6 +84,13 @@ describe('WindowManager chat mode', () => {
     const call = fake.setBounds.mock.calls.at(-1)![0];
     expect(call.width).toBe(960);
     expect(call.x).toBe(Math.round((1920 - 960) / 2));
+  });
+
+  it('clears the chat minimum size when returning to bar', () => {
+    mgr.setMode('chat');
+    fake.setMinimumSize.mockClear();
+    mgr.setMode('bar');
+    expect(fake.setMinimumSize).toHaveBeenCalledWith(0, 0);
   });
 });
 

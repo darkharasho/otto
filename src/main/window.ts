@@ -262,6 +262,7 @@ export class WindowManager {
       if (persistTimer) clearTimeout(persistTimer);
       persistTimer = setTimeout(() => {
         persistTimer = null;
+        if (win.isDestroyed()) return;
         const b = win.getBounds();
         this.chatBounds = { x: b.x, y: b.y, width: b.width, height: b.height };
         this.emitChatBounds(this.chatBounds);
@@ -289,7 +290,9 @@ export class WindowManager {
       return;
     }
 
-    // Existing bar/panel logic (preserved verbatim):
+    // Reset the chat-mode minimum size — Electron enforces it across mode
+    // changes, so without this the bar/panel snap up to 560×400.
+    this.window.setMinimumSize(0, 0);
     const display = this.pickDisplay();
     const maxPanelHeight = Math.floor(display.workArea.height * PANEL_MAX_DISPLAY_RATIO);
     const height =
