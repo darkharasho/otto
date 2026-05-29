@@ -155,6 +155,14 @@ export function registerIpcHandlers(deps: {
     window.hide();
   });
 
+  ipcMain.handle('window.minimize', async (): Promise<void> => {
+    window.minimize();
+  });
+
+  ipcMain.handle('window.toggleMaximize', async (): Promise<void> => {
+    window.toggleMaximize();
+  });
+
   ipcMain.handle(
     'window.cycleDisplay',
     async (_e, args: { direction: 'next' | 'prev' }): Promise<void> => {

@@ -200,6 +200,16 @@ export class WindowManager {
     this.window?.hide();
   }
 
+  minimize(): void {
+    this.window?.minimize();
+  }
+
+  toggleMaximize(): void {
+    if (!this.window) return;
+    if ((this.window as Electron.BrowserWindow).isMaximized()) this.window.unmaximize();
+    else this.window.maximize();
+  }
+
   toggle(mode: WindowMode = 'bar'): void {
     if (!this.window) return;
     // Strict toggle: hotkey always inverts visibility. The earlier

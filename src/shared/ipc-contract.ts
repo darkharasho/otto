@@ -91,6 +91,8 @@ export type IpcRequest =
     }
   | { channel: 'window.setMode'; args: { mode: WindowMode }; result: void }
   | { channel: 'window.hide'; args: void; result: void }
+  | { channel: 'window.minimize'; args: void; result: void }
+  | { channel: 'window.toggleMaximize'; args: void; result: void }
   | { channel: 'window.cycleDisplay'; args: { direction: 'next' | 'prev' }; result: void }
   | {
       channel: 'autonomy.decide';
