@@ -204,6 +204,13 @@ export interface ShortcutInfoView {
   commands: { prod: string; dev?: string };
 }
 
+export interface ChatBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface SettingsView {
   autonomy: { mode: AutonomyMode };
   notifications: { turnComplete: boolean; approval: boolean; sound: boolean };
@@ -214,6 +221,9 @@ export interface SettingsView {
   hideOnBlur: boolean;
   newConversation: { idleTimeoutMinutes: number };
   version: string;
+  chatBounds: ChatBounds | null;
+  lastVisibleMode: WindowMode;
+  pinnedSessionIds: string[];
 }
 
 export type IpcChannel = IpcRequest['channel'];
