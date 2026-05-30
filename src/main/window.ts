@@ -125,6 +125,9 @@ export class WindowManager {
   setLastVisibleMode(m: WindowMode): void { this.lastVisibleMode = m; }
   getLastVisibleMode(): WindowMode { return this.lastVisibleMode; }
 
+  private shownAtLeastOnce = false;
+  hasBeenShown(): boolean { return this.shownAtLeastOnce; }
+
   create(preloadPath: string, rendererUrl: string): BrowserWindow {
     const win = new BrowserWindow({
       width: BAR_WIDTH,
@@ -194,6 +197,7 @@ export class WindowManager {
     if (target !== 'chat') this.repositionBottomCenter();
     this.window.focus();
     this.lastVisibleMode = target;
+    this.shownAtLeastOnce = true;
   }
 
   hide(): void {

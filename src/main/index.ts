@@ -489,14 +489,19 @@ async function startElectron(): Promise<void> {
   });
 
   const onToggle = () => {
-    // Resume the current tier when the user was in chat — otherwise the
-    // hotkey would collapse them back to the bar after every hide/show cycle.
-    if (window.getMode() === 'chat') {
-      window.toggle('chat');
+    if (window.isVisible()) {
+      window.hide();
       return;
     }
-    const mode = shouldResume(repo, sessions) ? 'panel' : 'bar';
-    window.toggle(mode);
+    // Resume the user's current tier rather than second-guessing it. The only
+    // exception is cold-start: window has never been shown and there's an
+    // active session — auto-promote bar → panel so the conversation is visible.
+    const current = window.getMode();
+    const mode =
+      !window.hasBeenShown() && current === 'bar' && shouldResume(repo, sessions)
+        ? 'panel'
+        : current;
+    window.show(mode);
   };
 
   const hotkey = new HotkeyManager(platform, onToggle, ottoConfigDir);
@@ -556,11 +561,11 @@ async function startElectron(): Promise<void> {
 
   tray = new TrayManager({
     onShow: () => {
-      if (window.getMode() === 'chat') {
-        window.show('chat');
-        return;
-      }
-      const mode = shouldResume(repo, sessions) ? 'panel' : 'bar';
+      const current = window.getMode();
+      const mode =
+        !window.hasBeenShown() && current === 'bar' && shouldResume(repo, sessions)
+          ? 'panel'
+          : current;
       window.show(mode);
     },
     onOpenSettings: () => settingsWindow.show(),
