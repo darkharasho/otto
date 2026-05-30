@@ -1,6 +1,7 @@
 import { View, Text, Pressable, Alert } from 'react-native';
 import { Trash2, Pencil } from 'lucide-react-native';
 import type { Machine } from '@/lib/store';
+import { useTheme } from '@/lib/theme';
 import { PlatformIcon } from './PlatformIcon';
 
 function relativeTime(ms: number): string {
@@ -19,6 +20,8 @@ interface Props {
 }
 
 export function MachineCard({ machine, onPress, onDelete, onRename }: Props) {
+  const t = useTheme();
+
   const handleRename = () => {
     Alert.prompt(
       'Rename machine',
@@ -43,9 +46,9 @@ export function MachineCard({ machine, onPress, onDelete, onRename }: Props) {
       onPress={onPress}
       onLongPress={handleRename}
       style={({ pressed }) => ({
-        backgroundColor: '#1a1a1c',
+        backgroundColor: t.surface,
         borderWidth: 1,
-        borderColor: '#2a2a2e',
+        borderColor: t.border,
         borderRadius: 12,
         paddingHorizontal: 16,
         paddingVertical: 12,
@@ -54,14 +57,14 @@ export function MachineCard({ machine, onPress, onDelete, onRename }: Props) {
       })}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        <View style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: 'rgba(99,102,241,0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-          <PlatformIcon platform={machine.platform} size={20} color="#6366f1" />
+        <View style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: t.accentBg, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+          <PlatformIcon platform={machine.platform} size={20} color={t.accent} />
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={{ color: '#e4e4e7', fontSize: 14, fontWeight: '600' }} numberOfLines={1}>
+          <Text style={{ color: t.text, fontSize: 14, fontWeight: '600' }} numberOfLines={1}>
             {machine.label}
           </Text>
-          <Text style={{ color: '#71717a', fontSize: 12, marginTop: 2 }} numberOfLines={1}>
+          <Text style={{ color: t.textMuted, fontSize: 12, marginTop: 2 }} numberOfLines={1}>
             {machine.baseUrl.replace(/^https?:\/\//, '').replace(/\.tail[^.]*\.ts\.net/, '').replace(/:\d+$/, '')}
             {machine.lastSeen > 0 ? ` · ${relativeTime(machine.lastSeen)}` : ''}
           </Text>
@@ -71,14 +74,14 @@ export function MachineCard({ machine, onPress, onDelete, onRename }: Props) {
           hitSlop={12}
           style={{ marginLeft: 8, padding: 8 }}
         >
-          <Pencil size={14} color="#71717a" />
+          <Pencil size={14} color={t.textMuted} />
         </Pressable>
         <Pressable
           onPress={onDelete}
           hitSlop={12}
           style={{ padding: 8 }}
         >
-          <Trash2 size={14} color="#71717a" />
+          <Trash2 size={14} color={t.textMuted} />
         </Pressable>
       </View>
     </Pressable>
