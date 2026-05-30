@@ -280,6 +280,12 @@ export class WindowManager {
 
     if (mode === 'chat') {
       this.ensureChatHandlers();
+      // Behave like a normal app window: appears in taskbar, can go behind
+      // other windows, stays on its own workspace. hide-on-blur is already
+      // skipped for chat in ensureBlurHandler.
+      this.window.setAlwaysOnTop(false);
+      this.window.setSkipTaskbar(false);
+      this.window.setVisibleOnAllWorkspaces(false);
       this.window.setMinimumSize(CHAT_MIN_WIDTH, CHAT_MIN_HEIGHT);
       const display = this.pickDisplay();
       const target = this.chatBounds && this.isOnAnyDisplay(this.chatBounds)
@@ -290,6 +296,10 @@ export class WindowManager {
       return;
     }
 
+    // Restore overlay-window behavior for bar/panel.
+    this.window.setAlwaysOnTop(true, 'floating');
+    this.window.setSkipTaskbar(true);
+    this.window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     // Reset the chat-mode minimum size — Electron enforces it across mode
     // changes, so without this the bar/panel snap up to 560×400.
     this.window.setMinimumSize(0, 0);

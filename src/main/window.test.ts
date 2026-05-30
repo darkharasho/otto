@@ -23,6 +23,7 @@ function makeFakeWin() {
     hide: vi.fn(),
     focus: vi.fn(),
     setAlwaysOnTop: vi.fn(),
+    setSkipTaskbar: vi.fn(),
     setVisibleOnAllWorkspaces: vi.fn(),
     removeMenu: vi.fn(),
     loadURL: vi.fn(),
@@ -91,6 +92,21 @@ describe('WindowManager chat mode', () => {
     fake.setMinimumSize.mockClear();
     mgr.setMode('bar');
     expect(fake.setMinimumSize).toHaveBeenCalledWith(0, 0);
+  });
+
+  it('drops always-on-top and shows in taskbar in chat mode', () => {
+    mgr.setMode('chat');
+    expect(fake.setAlwaysOnTop).toHaveBeenCalledWith(false);
+    expect(fake.setSkipTaskbar).toHaveBeenCalledWith(false);
+  });
+
+  it('restores always-on-top and skip-taskbar when returning to bar', () => {
+    mgr.setMode('chat');
+    fake.setAlwaysOnTop.mockClear();
+    fake.setSkipTaskbar.mockClear();
+    mgr.setMode('bar');
+    expect(fake.setAlwaysOnTop).toHaveBeenCalledWith(true, 'floating');
+    expect(fake.setSkipTaskbar).toHaveBeenCalledWith(true);
   });
 });
 
