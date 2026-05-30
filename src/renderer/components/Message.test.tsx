@@ -90,10 +90,10 @@ describe('MessageView system memory-update', () => {
     expect(screen.getByText('1 playbook, 3 facts, 2 anti-patterns, 4 heuristics')).toBeInTheDocument();
   });
 
-  it('still renders the card when all counts are zero', () => {
+  it('shows a noop label when all counts are zero', () => {
     renderSystem({ facts: 0, playbooks: 0, antiPatterns: 0, heuristics: 0 });
     expect(screen.getByTestId('message-memory-update')).toBeInTheDocument();
-    expect(screen.getByText('Memory updated')).toBeInTheDocument();
+    expect(screen.getByText('Memory checked — nothing new')).toBeInTheDocument();
   });
 });
 

@@ -117,9 +117,10 @@ export function MessageView({ message, isStreamingTarget = false }: Props) {
       promoted: block.promoted,
       demoted: block.demoted,
     };
+    const changed = Object.values(counts).some((n) => n > 0);
     return (
       <div data-testid="message-memory-update" className="otto-msg-enter my-3">
-        <ToolCallCard name="memory_save" input={counts} result={null} isError={false} />
+        <ToolCallCard name={changed ? 'memory_save' : 'memory_noop'} input={counts} result={null} isError={false} />
       </div>
     );
   }
