@@ -69,14 +69,12 @@ export class RemoteModule {
       throw new Error('remote bridge not running');
     }
     const code = this.bridge.mintPairingCode();
-    // Use the IP for the pairing URL when the hostname contains spaces or
-    // non-ASCII characters that break URL parsing on the mobile client.
-    const safeHost = this.currentHost && /^[a-zA-Z0-9._-]+$/.test(this.currentHost)
-      ? this.currentHost
-      : this.currentIp;
+    // Always use the tailnet IP. The mobile dev client's SSL trust override
+    // (OttoSSL swizzle) works reliably with IP-pinned self-signed certs;
+    // hostname URLs fail in NSURLSession even though Safari/curl accept them.
     return {
       code,
-      url: `https://${safeHost}:${this.currentPort}/?code=${code}`,
+      url: `https://${this.currentIp}:${this.currentPort}/?code=${code}`,
       expiresAt: Date.now() + 120_000,
     };
   }

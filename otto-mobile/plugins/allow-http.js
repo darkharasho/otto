@@ -27,12 +27,44 @@ const SSL_CODE = `\
 @interface OttoSSL : NSObject <RCTBridgeModule>
 @end
 
+// Separate bootstrap class so we can use +load (RCT_EXPORT_MODULE on OttoSSL
+// generates its own +load and would conflict). This guarantees the swizzle
+// fires regardless of whether OttoSSL is ever instantiated by the RN bridge
+// (relevant for TurboModules / new-arch lazy module init).
+@interface OttoSSLBootstrap : NSObject
+@end
+
+@implementation OttoSSLBootstrap
++ (void)load {
+    extern void OttoSSL_install(void);
+    OttoSSL_install();
+    dispatch_async(dispatch_get_main_queue(), ^{ OttoSSL_install(); });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{ OttoSSL_install(); });
+}
+@end
+
 @implementation OttoSSL
 
 RCT_EXPORT_MODULE();
 
 + (BOOL)requiresMainQueueSetup {
     return NO;
+}
+
+// React.framework is dynamic — RCTHTTPRequestHandler isn't registered yet at
+// dyld constructor time. We can't use +load here because RCT_EXPORT_MODULE
+// already defines one. +initialize is called by the objc runtime the first
+// time this class is messaged; RN's module registry instantiates OttoSSL at
+// bridge startup, which happens after React.framework has loaded — so by then
+// RCTHTTPRequestHandler is registered and reachable.
++ (void)initialize {
+    if (self != [OttoSSL class]) return;
+    extern void OttoSSL_install(void);
+    OttoSSL_install();
+    dispatch_async(dispatch_get_main_queue(), ^{ OttoSSL_install(); });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{ OttoSSL_install(); });
 }
 
 @end
@@ -110,8 +142,7 @@ static void OttoSSL_task_didReceiveChallenge(id self, SEL _cmd,
     }
 }
 
-__attribute__((constructor))
-static void OttoSSL_init(void) {
+void OttoSSL_install(void) {
     NSLog(@"[OttoSSL] SSL trust override loaded — swizzling RCTHTTPRequestHandler");
 
     Class cls = objc_getClass("RCTHTTPRequestHandler");
@@ -127,8 +158,9 @@ static void OttoSSL_init(void) {
         method_setImplementation(sessionMethod, (IMP)OttoSSL_didReceiveChallenge);
         NSLog(@"[OttoSSL] swizzled URLSession:didReceiveChallenge:completionHandler:");
     } else {
-        // Method doesn't exist yet — add it
-        const char *types = "v@:@@?";
+        // Method doesn't exist yet — add it.
+        // Signature: void(self, _cmd, NSURLSession*, NSURLAuthenticationChallenge*, void(^)(...))
+        const char *types = "v@:@@@?";
         class_addMethod(cls, sessionSel, (IMP)OttoSSL_didReceiveChallenge, types);
         NSLog(@"[OttoSSL] added URLSession:didReceiveChallenge:completionHandler:");
     }
@@ -140,7 +172,8 @@ static void OttoSSL_init(void) {
         method_setImplementation(taskMethod, (IMP)OttoSSL_task_didReceiveChallenge);
         NSLog(@"[OttoSSL] swizzled URLSession:task:didReceiveChallenge:completionHandler:");
     } else {
-        const char *types = "v@:@@@?";
+        // Signature: void(self, _cmd, NSURLSession*, NSURLSessionTask*, NSURLAuthenticationChallenge*, void(^)(...))
+        const char *types = "v@:@@@@?";
         class_addMethod(cls, taskSel, (IMP)OttoSSL_task_didReceiveChallenge, types);
         NSLog(@"[OttoSSL] added URLSession:task:didReceiveChallenge:completionHandler:");
     }
