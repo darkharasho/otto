@@ -1,3 +1,4 @@
+import { ArrowDown, Minus, Square, Copy } from 'lucide-react';
 import { OttoMark } from './OttoMark';
 
 interface Props {
@@ -46,8 +47,8 @@ export function ChatTitlebar({
 
       <div className="z-10 flex items-center gap-2.5">
         <div className="flex items-center gap-1.5 text-[10px] text-[#5b5e66]">
-          <kbd className="px-1.5 py-[2px] rounded-[5px] bg-[#1b1c22] border border-[#2a2b2e] font-mono text-[#9598a0]">
-            ↓
+          <kbd className="inline-flex items-center justify-center px-1 py-[3px] rounded-[5px] bg-[#1b1c22] border border-[#2a2b2e] text-[#9598a0]">
+            <ArrowDown className="w-[10px] h-[10px]" strokeWidth={2} aria-hidden />
           </kbd>
           <span>collapse</span>
           <span className="opacity-40">·</span>
@@ -65,17 +66,7 @@ export function ChatTitlebar({
             style={{ background: '#15161a', border: '1px solid #2a2b2e' }}
             aria-label="Minimize"
           >
-            <svg
-              width="10"
-              height="10"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-            >
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
+            <Minus className="w-[11px] h-[11px]" strokeWidth={2.4} aria-hidden />
           </button>
           <button
             type="button"
@@ -85,30 +76,9 @@ export function ChatTitlebar({
             aria-label={isMaximized ? 'Restore' : 'Maximize'}
           >
             {isMaximized ? (
-              <svg
-                width="10"
-                height="10"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinejoin="round"
-              >
-                <rect x="7" y="3" width="14" height="14" rx="2" />
-                <rect x="3" y="7" width="14" height="14" rx="2" fill="#15161a" />
-              </svg>
+              <Copy className="w-[10px] h-[10px] -scale-x-100" strokeWidth={2} aria-hidden />
             ) : (
-              <svg
-                width="10"
-                height="10"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.2"
-                strokeLinejoin="round"
-              >
-                <rect x="4" y="4" width="16" height="16" rx="2" />
-              </svg>
+              <Square className="w-[10px] h-[10px]" strokeWidth={2} aria-hidden />
             )}
           </button>
         </div>

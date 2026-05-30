@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Settings, MessagesSquare } from 'lucide-react';
+import { Settings, MessagesSquare, Search, Plus, X } from 'lucide-react';
 import { ConversationGroup } from './ConversationGroup';
 import { ConversationSidebarItem } from './ConversationSidebarItem';
 import {
@@ -77,7 +77,9 @@ export function ConversationSidebar({
           }}
         >
           <span className="w-5 h-5 rounded-[7px] flex items-center justify-center text-white"
-            style={{ background: 'rgba(124,125,255,0.3)' }}>＋</span>
+            style={{ background: 'rgba(124,125,255,0.3)' }}>
+            <Plus className="w-3 h-3" strokeWidth={2.4} aria-hidden />
+          </span>
           <span className="flex-1 text-left">New conversation</span>
           <span className="text-[10px] text-[#9598a0] font-mono">⌘N</span>
         </button>
@@ -86,9 +88,7 @@ export function ConversationSidebar({
       <div className="px-2.5 pb-2.5">
         <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-[9px]"
           style={{ background: '#0a0b0e', border: '1px solid #1c1d23' }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5b5e66" strokeWidth="2.5" strokeLinecap="round">
-            <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
+          <Search className="w-[13px] h-[13px] text-[#5b5e66] flex-shrink-0" strokeWidth={2.2} aria-hidden />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -100,9 +100,9 @@ export function ConversationSidebar({
               type="button"
               onClick={() => setQuery('')}
               aria-label="Clear search"
-              className="flex-shrink-0 w-[14px] h-[14px] rounded-full flex items-center justify-center text-[#6b6e76] hover:text-[#cfd2d8] hover:bg-white/5 transition-colors text-[10px] leading-none"
+              className="flex-shrink-0 w-[14px] h-[14px] rounded-full flex items-center justify-center text-[#6b6e76] hover:text-[#cfd2d8] hover:bg-white/5 transition-colors"
             >
-              ×
+              <X className="w-[10px] h-[10px]" strokeWidth={2.4} aria-hidden />
             </button>
           )}
         </div>

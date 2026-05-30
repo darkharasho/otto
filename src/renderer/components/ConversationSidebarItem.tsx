@@ -1,3 +1,4 @@
+import { Star } from 'lucide-react';
 import type { SidebarSession, StatusDot } from '../lib/conversation-grouping';
 
 interface Props {
@@ -59,12 +60,17 @@ export function ConversationSidebarItem({
       <button
         type="button"
         onClick={(e) => { e.stopPropagation(); onTogglePin(); }}
-        className={`w-[14px] flex-shrink-0 text-[11px] leading-none text-[#9598a0] transition-opacity duration-150 ${
-          pinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+        className={`w-[14px] h-[14px] flex-shrink-0 flex items-center justify-center transition-opacity duration-150 ${
+          pinned ? 'opacity-100 text-[#7c7dff]' : 'opacity-0 group-hover:opacity-100 text-[#9598a0]'
         }`}
         aria-label={pinned ? 'Unpin' : 'Pin'}
       >
-        {pinned ? '★' : '☆'}
+        <Star
+          className="w-[11px] h-[11px]"
+          strokeWidth={1.8}
+          fill={pinned ? 'currentColor' : 'none'}
+          aria-hidden
+        />
       </button>
     </div>
   );

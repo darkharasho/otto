@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Star } from 'lucide-react';
 
 interface Props {
   label: 'Pinned' | 'Today' | 'Yesterday' | 'Earlier';
@@ -11,9 +12,7 @@ export function ConversationGroup({ label, children }: Props) {
     <>
       <div className="flex items-center gap-1.5 px-2.5 pt-3 pb-1.5">
         {isPinned && (
-          <svg width="9" height="9" viewBox="0 0 24 24" fill="#7c7dff" aria-hidden>
-            <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-          </svg>
+          <Star className="w-[9px] h-[9px] text-[#7c7dff]" strokeWidth={1.8} fill="currentColor" aria-hidden />
         )}
         <span
           className={`text-[9px] uppercase font-bold tracking-[1.4px] ${isPinned ? 'text-[#7c7dff]' : 'text-[#6b6e76]'}`}
