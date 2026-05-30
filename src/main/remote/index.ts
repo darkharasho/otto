@@ -71,9 +71,7 @@ export class RemoteModule {
     }
     const code = this.bridge.mintPairingCode();
     const scheme = this.bridge.isPlainHttp ? 'http' : 'https';
-    // In plainHttp (dev) mode, use 127.0.0.1 since the server binds to
-    // 0.0.0.0 and the iOS simulator can't route to the tailnet IP.
-    const host = this.bridge.isPlainHttp ? '127.0.0.1' : this.currentIp;
+    const host = this.currentHost ?? this.currentIp;
     return {
       code,
       url: `${scheme}://${host}:${this.currentPort}/?code=${code}`,
