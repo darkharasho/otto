@@ -26,13 +26,16 @@ describe('Settings.load', () => {
     await s.load();
     expect(s.getMode()).toBe('balanced');
     const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
-    expect(written.version).toBe(4);
+    expect(written.version).toBe(5);
     expect(written.autonomy).toEqual({ mode: 'balanced' });
     expect(written.notifications).toEqual({ turnComplete: true, approval: true, sound: false });
     expect(written.startAtLogin).toBe(false);
     expect(written.windowPosition).toBe('bottom-center');
     expect(written.displayTarget).toBe('cursor');
     expect(written.autoDeleteDays).toBe(0);
+    expect(written.chatBounds).toBeNull();
+    expect(written.lastVisibleMode).toBe('bar');
+    expect(written.pinnedSessionIds).toEqual([]);
   });
 
   it('migrates a v2 file forward, defaulting displayTarget to cursor', async () => {
@@ -52,7 +55,7 @@ describe('Settings.load', () => {
     await s.load();
     expect(s.getDisplayTarget()).toBe('cursor');
     const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
-    expect(written.version).toBe(4);
+    expect(written.version).toBe(5);
     expect(written.displayTarget).toBe('cursor');
   });
 
@@ -132,7 +135,7 @@ describe('Settings — newConversation', () => {
     await s.load();
     expect(s.getNewConversationIdleTimeoutMinutes()).toBe(60);
     const raw = JSON.parse(await fs.readFile(file, 'utf8'));
-    expect(raw.version).toBe(4);
+    expect(raw.version).toBe(5);
     expect(raw.newConversation).toEqual({ idleTimeoutMinutes: 60 });
   });
 

@@ -1,5 +1,7 @@
 import type { ActionClass, AutonomyMode, ContentBlock, Message, SessionMeta } from './messages';
 
+export type WindowMode = 'bar' | 'panel' | 'chat';
+
 export type ErrorKind =
   | 'auth-missing'
   | 'sdk-stream'
@@ -87,8 +89,10 @@ export type IpcRequest =
       args: SessionEnsureForSubmitArgs;
       result: SessionEnsureForSubmitResult;
     }
-  | { channel: 'window.setMode'; args: { mode: 'bar' | 'panel' }; result: void }
+  | { channel: 'window.setMode'; args: { mode: WindowMode }; result: void }
   | { channel: 'window.hide'; args: void; result: void }
+  | { channel: 'window.minimize'; args: void; result: void }
+  | { channel: 'window.toggleMaximize'; args: void; result: void }
   | { channel: 'window.cycleDisplay'; args: { direction: 'next' | 'prev' }; result: void }
   | {
       channel: 'autonomy.decide';
@@ -119,6 +123,8 @@ export type IpcRequest =
   | { channel: 'settings.setNewConversationIdleTimeoutMinutes'; args: { minutes: number }; result: void }
   | { channel: 'settings.openLogsDir'; args: void; result: void }
   | { channel: 'settings.resetAllSessions'; args: void; result: { deleted: number } }
+  | { channel: 'settings.setPinnedSessionIds'; args: { ids: string[] }; result: void }
+  | { channel: 'settings.open'; args: void; result: void }
   | { channel: 'shell.kill'; args: { handle: string }; result: { killed: boolean } }
   | { channel: 'shortcut.info'; args: void; result: ShortcutInfoView }
   | { channel: 'shortcut.openKeyboardSettings'; args: void; result: { launched: boolean } }
@@ -202,6 +208,13 @@ export interface ShortcutInfoView {
   commands: { prod: string; dev?: string };
 }
 
+export interface ChatBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface SettingsView {
   autonomy: { mode: AutonomyMode };
   notifications: { turnComplete: boolean; approval: boolean; sound: boolean };
@@ -212,6 +225,9 @@ export interface SettingsView {
   hideOnBlur: boolean;
   newConversation: { idleTimeoutMinutes: number };
   version: string;
+  chatBounds: ChatBounds | null;
+  lastVisibleMode: WindowMode;
+  pinnedSessionIds: string[];
 }
 
 export type IpcChannel = IpcRequest['channel'];

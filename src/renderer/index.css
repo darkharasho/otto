@@ -95,7 +95,14 @@ button {
   0%, 100% { opacity: 0.6; transform: scale(1); }
   50%      { opacity: 1;   transform: scale(1.4); }
 }
+
 .otto-pulse { animation: otto-pulse 1.4s ease-in-out infinite; }
+
+@keyframes otto-pulse-dot {
+  0%, 100% { opacity: 0.65; transform: scale(1); }
+  50%      { opacity: 1;   transform: scale(1.18); }
+}
+.otto-pulse-dot { animation: otto-pulse-dot 1.4s ease-in-out infinite; }
 
 @keyframes otto-step-enter {
   from { opacity: 0; transform: translateY(4px); }
@@ -245,3 +252,15 @@ button {
 
 .shiki-host pre { margin: 0; padding: 10px 12px; overflow-x: auto }
 .shiki-host code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace }
+
+.otto-app-drag { -webkit-app-region: drag; }
+.otto-app-no-drag { -webkit-app-region: no-drag; }
+
+/* Subtle custom scrollbars for opt-in containers */
+.otto-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+.otto-scrollbar::-webkit-scrollbar-track { background: transparent; }
+.otto-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.06);
+  border-radius: 3px;
+}
+.otto-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.12); }

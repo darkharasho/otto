@@ -29,6 +29,7 @@ import type {
   UploadsDiscardArgs,
   TopicShiftEvaluateArgs,
   TopicShiftEvaluateResult,
+  WindowMode,
 } from '@shared/ipc-contract';
 import type { AutonomyMode, Message, SessionMeta } from '@shared/messages';
 import { emitAutonomyEvent } from './events';
@@ -59,6 +60,7 @@ export function registerIpcHandlers(deps: {
   configDir: string;
   applyStartAtLogin(enabled: boolean): void;
   openLogsDir(): void;
+  openSettingsWindow(): void;
   remote?: {
     module: RemoteModule;
     pairing: PairingStore;
@@ -146,12 +148,20 @@ export function registerIpcHandlers(deps: {
     return repo.loadMessages(args.sessionId);
   });
 
-  ipcMain.handle('window.setMode', async (_e, args: { mode: 'bar' | 'panel' }): Promise<void> => {
+  ipcMain.handle('window.setMode', async (_e, args: { mode: WindowMode }): Promise<void> => {
     window.setMode(args.mode);
   });
 
   ipcMain.handle('window.hide', async (): Promise<void> => {
     window.hide();
+  });
+
+  ipcMain.handle('window.minimize', async (): Promise<void> => {
+    window.minimize();
+  });
+
+  ipcMain.handle('window.toggleMaximize', async (): Promise<void> => {
+    window.toggleMaximize();
   });
 
   ipcMain.handle(
@@ -254,6 +264,14 @@ export function registerIpcHandlers(deps: {
 
   ipcMain.handle('settings.openLogsDir', async (): Promise<void> => {
     deps.openLogsDir();
+  });
+
+  ipcMain.handle('settings.setPinnedSessionIds', async (_e, args: { ids: string[] }): Promise<void> => {
+    await settings.setPinnedSessionIds(args.ids);
+  });
+
+  ipcMain.handle('settings.open', async (): Promise<void> => {
+    deps.openSettingsWindow();
   });
 
   ipcMain.handle('settings.resetAllSessions', async (): Promise<{ deleted: number }> => {

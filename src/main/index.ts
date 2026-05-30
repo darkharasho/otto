@@ -174,6 +174,8 @@ async function startElectron(): Promise<void> {
   window.setPositionPref(settings.getWindowPosition());
   window.setDisplayTarget(settings.getDisplayTarget());
   window.setHideOnBlur(settings.getHideOnBlur());
+  window.setChatBounds(settings.getChatBounds());
+  window.setLastVisibleMode(settings.getLastVisibleMode());
   settings.onChange((snap) => {
     window.setPositionPref(snap.windowPosition);
     window.setDisplayTarget(snap.displayTarget);
@@ -475,7 +477,11 @@ async function startElectron(): Promise<void> {
   const preloadPath = path.join(app.getAppPath(), 'out', 'preload', 'index.js');
   window.create(preloadPath, rendererEntry());
   overlay.start();
+  window.onChatBoundsChanged((b) => {
+    void settings.setChatBounds(b);
+  });
   window.onVisibilityChange((visible) => {
+    if (visible) void settings.setLastVisibleMode(window.getMode());
     overlay.setMainVisible(visible);
     // Showing the main window counts as the user acknowledging any pending
     // turn-complete notification — clear the tray badge.
@@ -483,11 +489,24 @@ async function startElectron(): Promise<void> {
   });
 
   const onToggle = () => {
-    const mode = shouldResume(repo, sessions) ? 'panel' : 'bar';
-    window.toggle(mode);
+    if (window.isVisible()) {
+      window.hide();
+      return;
+    }
+    // Resume the user's current tier rather than second-guessing it. The only
+    // exception is cold-start: window has never been shown and there's an
+    // active session — auto-promote bar → panel so the conversation is visible.
+    const current = window.getMode();
+    const mode =
+      !window.hasBeenShown() && current === 'bar' && shouldResume(repo, sessions)
+        ? 'panel'
+        : current;
+    window.show(mode);
   };
 
   const hotkey = new HotkeyManager(platform, onToggle, ottoConfigDir);
+
+  const settingsWindow = new SettingsWindowManager(preloadPath, rendererEntry());
 
   registerIpcHandlers({
     repo,
@@ -509,6 +528,7 @@ async function startElectron(): Promise<void> {
     openLogsDir: () => {
       void shell.openPath(ottoConfigDir);
     },
+    openSettingsWindow: () => settingsWindow.show(),
     remote: {
       module: remoteModule,
       pairing: pairingStore,
@@ -539,11 +559,13 @@ async function startElectron(): Promise<void> {
     logger.warn(`toggle server failed to start: ${err instanceof Error ? err.message : err}`);
   }
 
-  const settingsWindow = new SettingsWindowManager(preloadPath, rendererEntry());
-
   tray = new TrayManager({
     onShow: () => {
-      const mode = shouldResume(repo, sessions) ? 'panel' : 'bar';
+      const current = window.getMode();
+      const mode =
+        !window.hasBeenShown() && current === 'bar' && shouldResume(repo, sessions)
+          ? 'panel'
+          : current;
       window.show(mode);
     },
     onOpenSettings: () => settingsWindow.show(),

@@ -93,7 +93,7 @@ export function MessageList({ sessionId, messages, streaming }: Props) {
 
   return (
     <div className="relative flex-1 min-h-0">
-      <div ref={containerRef} className="absolute inset-0 overflow-y-auto px-4">
+      <div ref={containerRef} className="otto-scrollbar absolute inset-0 overflow-y-auto px-4">
         {messages.map((m) => (
           <MessageView
             key={m.id}

@@ -1,8 +1,8 @@
 import { create } from 'zustand';
-import type { SessionEvent, StructuredError } from '@shared/ipc-contract';
+import type { SessionEvent, StructuredError, WindowMode } from '@shared/ipc-contract';
 import type { AssistantMessage, AutonomyMode, ContentBlock, Message, SessionMeta, UserMessage } from '@shared/messages';
 
-export type WindowMode = 'bar' | 'panel';
+export type { WindowMode } from '@shared/ipc-contract';
 
 export interface ActiveSessionState {
   id: string;
@@ -23,6 +23,7 @@ interface OttoState {
   mode: AutonomyMode;
   model: string;
 
+  pinnedSessionIds: string[];
   setWindowMode(mode: WindowMode): void;
   beginSession(id: string): void;
   loadSession(id: string, messages: Message[]): void;
@@ -33,6 +34,8 @@ interface OttoState {
   setSessions(list: SessionMeta[]): void;
   setMode(mode: AutonomyMode): void;
   setModel(model: string): void;
+  setPinnedSessionIds(ids: string[]): void;
+  togglePinned(id: string): void;
   reset(): void;
 }
 
@@ -64,6 +67,7 @@ const initial = {
   sessions: [] as SessionMeta[],
   mode: 'balanced' as AutonomyMode,
   model: loadStoredModel(),
+  pinnedSessionIds: [] as string[],
 };
 
 // Cross-window sync: localStorage is shared across BrowserWindows of the
@@ -470,6 +474,18 @@ export const useOttoStore = create<OttoState>((set, get) => ({
       // localStorage may be unavailable (e.g. sandboxed test env) — choice
       // just won't persist across launches, which is fine.
     }
+  },
+
+  setPinnedSessionIds(ids) {
+    set({ pinnedSessionIds: ids });
+  },
+
+  togglePinned(id) {
+    set((s) => ({
+      pinnedSessionIds: s.pinnedSessionIds.includes(id)
+        ? s.pinnedSessionIds.filter((x) => x !== id)
+        : [...s.pinnedSessionIds, id],
+    }));
   },
 
   reset() {

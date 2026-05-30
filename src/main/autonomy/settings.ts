@@ -1,8 +1,9 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { AutonomyMode } from '@shared/messages';
+import type { ChatBounds, WindowMode } from '@shared/ipc-contract';
 
-const CURRENT_VERSION = 4;
+const CURRENT_VERSION = 5;
 const DEFAULT_MODE: AutonomyMode = 'balanced';
 const VALID_MODES: AutonomyMode[] = ['strict', 'balanced', 'full-allow'];
 
@@ -31,6 +32,9 @@ export interface SettingsSnapshot {
   autoDeleteDays: number;
   hideOnBlur: boolean;
   newConversation: NewConversationPrefs;
+  chatBounds: ChatBounds | null;
+  lastVisibleMode: WindowMode;
+  pinnedSessionIds: string[];
 }
 
 interface SettingsFileV1 {
@@ -46,11 +50,15 @@ interface SettingsFileV3 extends SettingsSnapshot {
   version: 3;
 }
 
-interface SettingsFileV4 extends SettingsSnapshot {
+interface SettingsFileV4 extends Omit<SettingsSnapshot, 'chatBounds' | 'lastVisibleMode' | 'pinnedSessionIds'> {
   version: 4;
 }
 
-type SettingsFile = SettingsFileV1 | SettingsFileV2 | SettingsFileV3 | SettingsFileV4;
+interface SettingsFileV5 extends SettingsSnapshot {
+  version: 5;
+}
+
+type SettingsFile = SettingsFileV1 | SettingsFileV2 | SettingsFileV3 | SettingsFileV4 | SettingsFileV5;
 
 const DEFAULTS: SettingsSnapshot = {
   autonomy: { mode: DEFAULT_MODE },
@@ -61,6 +69,9 @@ const DEFAULTS: SettingsSnapshot = {
   autoDeleteDays: 0,
   hideOnBlur: false,
   newConversation: { idleTimeoutMinutes: 60 },
+  chatBounds: null,
+  lastVisibleMode: 'bar',
+  pinnedSessionIds: [],
 };
 
 type Listener = (snapshot: SettingsSnapshot) => void;
@@ -129,6 +140,9 @@ export class Settings {
       autoDeleteDays: this.state.autoDeleteDays,
       hideOnBlur: this.state.hideOnBlur,
       newConversation: { ...this.state.newConversation },
+      chatBounds: this.state.chatBounds ? { ...this.state.chatBounds } : null,
+      lastVisibleMode: this.state.lastVisibleMode,
+      pinnedSessionIds: [...this.state.pinnedSessionIds],
     };
   }
 
@@ -179,6 +193,39 @@ export class Settings {
     await this.persist();
   }
 
+  getChatBounds(): ChatBounds | null {
+    return this.state.chatBounds ? { ...this.state.chatBounds } : null;
+  }
+
+  async setChatBounds(bounds: ChatBounds | null): Promise<void> {
+    this.state.chatBounds = bounds ? { ...bounds } : null;
+    await this.persist();
+  }
+
+  getLastVisibleMode(): WindowMode {
+    return this.state.lastVisibleMode;
+  }
+
+  async setLastVisibleMode(mode: WindowMode): Promise<void> {
+    if (mode !== 'bar' && mode !== 'panel' && mode !== 'chat') {
+      throw new Error(`invalid lastVisibleMode: ${mode}`);
+    }
+    this.state.lastVisibleMode = mode;
+    await this.persist();
+  }
+
+  getPinnedSessionIds(): string[] {
+    return [...this.state.pinnedSessionIds];
+  }
+
+  async setPinnedSessionIds(ids: string[]): Promise<void> {
+    if (!Array.isArray(ids) || !ids.every((id) => typeof id === 'string')) {
+      throw new Error(`invalid pinnedSessionIds`);
+    }
+    this.state.pinnedSessionIds = [...ids];
+    await this.persist();
+  }
+
   onChange(fn: Listener): () => void {
     this.listeners.add(fn);
     return () => {
@@ -202,12 +249,29 @@ export class Settings {
       this.state = { ...DEFAULTS, autonomy: { mode: m } };
       return 'migrated';
     }
-    if (version === 2 || version === 3 || version === CURRENT_VERSION) {
+    if (version === 2 || version === 3 || version === 4 || version === CURRENT_VERSION) {
       const o = obj as Omit<SettingsFileV2, 'version'> &
-        Partial<Omit<SettingsFileV4, 'version'>>;
+        Partial<Omit<SettingsFileV5, 'version'>>;
       const m = o.autonomy?.mode;
       if (!m || !VALID_MODES.includes(m)) return false;
       const idle = o.newConversation?.idleTimeoutMinutes;
+      const cb = (o as { chatBounds?: unknown }).chatBounds;
+      const chatBounds: ChatBounds | null =
+        cb && typeof cb === 'object' &&
+        typeof (cb as ChatBounds).x === 'number' &&
+        typeof (cb as ChatBounds).y === 'number' &&
+        typeof (cb as ChatBounds).width === 'number' &&
+        typeof (cb as ChatBounds).height === 'number'
+          ? (cb as ChatBounds)
+          : null;
+      const lvm = (o as { lastVisibleMode?: unknown }).lastVisibleMode;
+      const lastVisibleMode: WindowMode =
+        lvm === 'bar' || lvm === 'panel' || lvm === 'chat' ? lvm : DEFAULTS.lastVisibleMode;
+      const psi = (o as { pinnedSessionIds?: unknown }).pinnedSessionIds;
+      const pinnedSessionIds: string[] =
+        Array.isArray(psi) && psi.every((id) => typeof id === 'string')
+          ? psi
+          : DEFAULTS.pinnedSessionIds;
       this.state = {
         autonomy: { mode: m },
         notifications: {
@@ -233,6 +297,9 @@ export class Settings {
               ? Math.floor(idle as number)
               : DEFAULTS.newConversation.idleTimeoutMinutes,
         },
+        chatBounds,
+        lastVisibleMode,
+        pinnedSessionIds,
       };
       return version === CURRENT_VERSION ? 'ok' : 'migrated';
     }
@@ -248,7 +315,7 @@ export class Settings {
     const dir = path.dirname(this.filePath);
     await fs.mkdir(dir, { recursive: true });
     const tmp = `${this.filePath}.tmp`;
-    const payload: SettingsFileV4 = { version: CURRENT_VERSION, ...this.snapshot() };
+    const payload: SettingsFileV5 = { version: CURRENT_VERSION, ...this.snapshot() };
     await fs.writeFile(tmp, JSON.stringify(payload, null, 2));
     await fs.rename(tmp, this.filePath);
   }

@@ -21,6 +21,7 @@ const BUILTIN: Record<string, ToolDescriptor> = {
   knowledge_append:  { label: 'Append knowledge', group: 'Memory', icon: 'brain' },
   knowledge_search:  { label: 'Search knowledge', group: 'Memory', icon: 'brain' },
   memory_save:       { label: 'Memory updated', group: 'Memory', icon: 'brain' },
+  memory_noop:       { label: 'Memory checked — nothing new', group: 'Memory', icon: 'brain' },
   web_search:        { label: 'Search', group: 'Web', icon: 'search' },
   web_fetch:         { label: 'Fetch page', group: 'Web', icon: 'globe' },
 };

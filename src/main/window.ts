@@ -2,7 +2,7 @@ import { BrowserWindow, screen, app, shell } from 'electron';
 import path from 'node:path';
 import { logger } from './logger';
 
-export type WindowMode = 'bar' | 'panel';
+export type WindowMode = 'bar' | 'panel' | 'chat';
 
 const BAR_WIDTH = 640;
 const BAR_HEIGHT = 72;
@@ -10,6 +10,11 @@ const PANEL_MIN_HEIGHT = 320;
 const PANEL_BOTTOM_MARGIN = 48;
 const PANEL_TOP_MARGIN = 48;
 const PANEL_MAX_DISPLAY_RATIO = 0.7;
+
+const CHAT_DEFAULT_WIDTH = 960;
+const CHAT_DEFAULT_HEIGHT = 620;
+const CHAT_MIN_WIDTH = 560;
+const CHAT_MIN_HEIGHT = 400;
 
 export type WindowPositionPref = 'bottom-center' | 'top-center';
 export type DisplayTargetPref = 'cursor' | 'primary';
@@ -25,6 +30,11 @@ export class WindowManager {
   private cycledDisplayId: number | null = null;
   private hideOnBlur = false;
   private visibilityListeners: Array<(visible: boolean) => void> = [];
+  private chatBounds: { x: number; y: number; width: number; height: number } | null = null;
+  private chatBoundsChangeListeners: Array<(b: { x: number; y: number; width: number; height: number }) => void> = [];
+  private chatHandlersBound = false;
+  private blurHandlerBound = false;
+  private lastVisibleMode: WindowMode = 'bar';
 
   onVisibilityChange(cb: (visible: boolean) => void): () => void {
     this.visibilityListeners.push(cb);
@@ -35,6 +45,41 @@ export class WindowManager {
 
   private emitVisibility(visible: boolean): void {
     for (const cb of this.visibilityListeners) cb(visible);
+  }
+
+  setChatBounds(bounds: { x: number; y: number; width: number; height: number } | null): void {
+    this.chatBounds = bounds;
+  }
+
+  getChatBounds(): { x: number; y: number; width: number; height: number } | null {
+    return this.chatBounds;
+  }
+
+  onChatBoundsChanged(cb: (b: { x: number; y: number; width: number; height: number }) => void): () => void {
+    this.chatBoundsChangeListeners.push(cb);
+    return () => {
+      this.chatBoundsChangeListeners = this.chatBoundsChangeListeners.filter((l) => l !== cb);
+    };
+  }
+
+  private emitChatBounds(bounds: { x: number; y: number; width: number; height: number }): void {
+    for (const cb of this.chatBoundsChangeListeners) cb(bounds);
+  }
+
+  private isOnAnyDisplay(b: { x: number; y: number; width: number; height: number }): boolean {
+    return screen.getAllDisplays().some((d) => {
+      const wa = d.workArea;
+      return b.x < wa.x + wa.width && b.x + b.width > wa.x && b.y < wa.y + wa.height && b.y + b.height > wa.y;
+    });
+  }
+
+  private defaultChatBounds(display: Electron.Display): { x: number; y: number; width: number; height: number } {
+    return {
+      x: Math.round(display.workArea.x + (display.workArea.width - CHAT_DEFAULT_WIDTH) / 2),
+      y: Math.round(display.workArea.y + (display.workArea.height - CHAT_DEFAULT_HEIGHT) / 2),
+      width: CHAT_DEFAULT_WIDTH,
+      height: CHAT_DEFAULT_HEIGHT,
+    };
   }
 
   setPositionPref(p: WindowPositionPref): void {
@@ -76,6 +121,12 @@ export class WindowManager {
   setHideOnBlur(enabled: boolean): void {
     this.hideOnBlur = enabled;
   }
+
+  setLastVisibleMode(m: WindowMode): void { this.lastVisibleMode = m; }
+  getLastVisibleMode(): WindowMode { return this.lastVisibleMode; }
+
+  private shownAtLeastOnce = false;
+  hasBeenShown(): boolean { return this.shownAtLeastOnce; }
 
   create(preloadPath: string, rendererUrl: string): BrowserWindow {
     const win = new BrowserWindow({
@@ -127,11 +178,6 @@ export class WindowManager {
 
     routeExternalLinksToBrowser(win, rendererUrl);
 
-    // Click-outside-to-hide, gated by the user's hideOnBlur preference.
-    win.on('blur', () => {
-      if (this.hideOnBlur && this.window?.isVisible()) this.hide();
-    });
-
     win.on('show', () => this.emitVisibility(true));
     win.on('hide', () => this.emitVisibility(false));
 
@@ -139,20 +185,33 @@ export class WindowManager {
     return win;
   }
 
-  show(mode: WindowMode = 'bar'): void {
+  show(mode?: WindowMode): void {
     if (!this.window) return;
-    this.applyMode(mode);
+    const target = mode ?? this.lastVisibleMode;
+    this.applyMode(target);
     this.window.show();
     // Re-apply position after show: Wayland compositors (Plasma in particular)
     // often ignore setBounds on hidden windows but honor it once the surface
     // is visible. Without this we land on the wrong monitor when the cursor
     // is on a non-primary display.
-    this.repositionBottomCenter();
+    if (target !== 'chat') this.repositionBottomCenter();
     this.window.focus();
+    this.lastVisibleMode = target;
+    this.shownAtLeastOnce = true;
   }
 
   hide(): void {
     this.window?.hide();
+  }
+
+  minimize(): void {
+    this.window?.minimize();
+  }
+
+  toggleMaximize(): void {
+    if (!this.window) return;
+    if ((this.window as Electron.BrowserWindow).isMaximized()) this.window.unmaximize();
+    else this.window.maximize();
   }
 
   toggle(mode: WindowMode = 'bar'): void {
@@ -189,9 +248,65 @@ export class WindowManager {
     this.window = null;
   }
 
+  private ensureBlurHandler(): void {
+    if (this.blurHandlerBound || !this.window) return;
+    this.window.on('blur', () => {
+      if (this.mode === 'chat') return;
+      if (this.hideOnBlur && this.window?.isVisible()) this.hide();
+    });
+    this.blurHandlerBound = true;
+  }
+
+  private ensureChatHandlers(): void {
+    if (this.chatHandlersBound || !this.window) return;
+    const win = this.window;
+    let persistTimer: NodeJS.Timeout | null = null;
+    const schedulePersist = (): void => {
+      if (this.mode !== 'chat') return;
+      if (persistTimer) clearTimeout(persistTimer);
+      persistTimer = setTimeout(() => {
+        persistTimer = null;
+        if (win.isDestroyed()) return;
+        const b = win.getBounds();
+        this.chatBounds = { x: b.x, y: b.y, width: b.width, height: b.height };
+        this.emitChatBounds(this.chatBounds);
+      }, 250);
+    };
+    win.on('move', schedulePersist);
+    win.on('resize', schedulePersist);
+    this.chatHandlersBound = true;
+  }
+
   private applyMode(mode: WindowMode): void {
     if (!this.window) return;
     this.mode = mode;
+    this.ensureBlurHandler();
+
+    if (mode === 'chat') {
+      this.ensureChatHandlers();
+      // Behave like a normal app window: appears in taskbar, can go behind
+      // other windows, stays on its own workspace. hide-on-blur is already
+      // skipped for chat in ensureBlurHandler.
+      this.window.setAlwaysOnTop(false);
+      this.window.setSkipTaskbar(false);
+      this.window.setVisibleOnAllWorkspaces(false);
+      this.window.setMinimumSize(CHAT_MIN_WIDTH, CHAT_MIN_HEIGHT);
+      const display = this.pickDisplay();
+      const target = this.chatBounds && this.isOnAnyDisplay(this.chatBounds)
+        ? this.chatBounds
+        : this.defaultChatBounds(display);
+      this.window.setBounds(target);
+      logger.debug(`window mode → chat (${target.width}x${target.height} @ ${target.x},${target.y})`);
+      return;
+    }
+
+    // Restore overlay-window behavior for bar/panel.
+    this.window.setAlwaysOnTop(true, 'floating');
+    this.window.setSkipTaskbar(true);
+    this.window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    // Reset the chat-mode minimum size — Electron enforces it across mode
+    // changes, so without this the bar/panel snap up to 560×400.
+    this.window.setMinimumSize(0, 0);
     const display = this.pickDisplay();
     const maxPanelHeight = Math.floor(display.workArea.height * PANEL_MAX_DISPLAY_RATIO);
     const height =
@@ -202,6 +317,12 @@ export class WindowManager {
     // window grown-but-not-repositioned — the input visually "jumps" because
     // the bottom edge wasn't pinned through the animation.
     this.window.setBounds({ x, y, width: BAR_WIDTH, height });
+    // Wayland compositors (Plasma, Mutter) sometimes ignore a setBounds that
+    // drastically changes the window dimensions in the same frame — e.g. when
+    // demoting from a large chat window back to bar/panel.  Re-apply on the
+    // next tick once the surface has settled.
+    const win = this.window;
+    setImmediate(() => { if (win === this.window) win.setBounds({ x, y, width: BAR_WIDTH, height }); });
     logger.debug(`window mode → ${mode} (${BAR_WIDTH}x${height} @ ${x},${y})`);
   }
 
