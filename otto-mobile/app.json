@@ -4,11 +4,7 @@
     "slug": "otto-mobile",
     "version": "0.1.0",
     "orientation": "portrait",
-    "icon": {
-      "light": "./assets/icon.png",
-      "dark": "./assets/icon-dark.png",
-      "tinted": "./assets/icon-tinted.png"
-    },
+    "icon": "./assets/icon.png",
     "scheme": "otto",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
