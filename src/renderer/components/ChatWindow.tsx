@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { ChatTitlebar } from './ChatTitlebar';
 import { ConversationSidebar } from './ConversationSidebar';
@@ -37,7 +37,14 @@ export function ChatWindow({
   const streaming = isSessionBusy(activeSession);
   const isFreshSession = !activeSession || activeSession.messages.length === 0;
   const [isMaximized, setIsMaximized] = useState(false);
+  const [hideChord, setHideChord] = useState<string | null>(null);
   const showEmptyPane = !activeSession;
+
+  useEffect(() => {
+    void ipc.invoke('shortcut.info', undefined).then((info) => {
+      setHideChord(info.registered ? info.recommendedChord : null);
+    });
+  }, []);
 
   const sidebarSessions: SidebarSession[] = useMemo(
     () =>
@@ -79,6 +86,7 @@ export function ChatWindow({
         sessionTitle={activeTitle}
         isLive={streaming}
         isMaximized={isMaximized}
+        hideChord={hideChord}
         onMinimize={() => void ipc.invoke('window.minimize', undefined)}
         onToggleMaximize={() => {
           setIsMaximized((v) => !v);

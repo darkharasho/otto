@@ -5,14 +5,40 @@ interface Props {
   sessionTitle: string;
   isLive: boolean;
   isMaximized: boolean;
+  hideChord: string | null;
   onMinimize: () => void;
   onToggleMaximize: () => void;
+}
+
+const KEY_GLYPHS: Record<string, string> = {
+  ctrl: 'Ctrl',
+  control: 'Ctrl',
+  cmd: '⌘',
+  command: '⌘',
+  meta: '⌘',
+  super: 'Super',
+  alt: 'Alt',
+  option: '⌥',
+  shift: '⇧',
+  space: '␣',
+  enter: '↵',
+  escape: 'Esc',
+  esc: 'Esc',
+  tab: 'Tab',
+};
+
+function renderChord(chord: string): string {
+  return chord
+    .split('+')
+    .map((p) => KEY_GLYPHS[p.trim().toLowerCase()] ?? p.trim())
+    .join(' ');
 }
 
 export function ChatTitlebar({
   sessionTitle,
   isLive,
   isMaximized,
+  hideChord,
   onMinimize,
   onToggleMaximize,
 }: Props) {
@@ -52,10 +78,14 @@ export function ChatTitlebar({
           </kbd>
           <span>collapse</span>
           <span className="opacity-40">·</span>
-          <kbd className="px-1.5 py-[2px] rounded-[5px] bg-[#1b1c22] border border-[#2a2b2e] font-mono text-[#9598a0]">
-            ⌃␣
-          </kbd>
-          <span>hide</span>
+          {hideChord && (
+            <>
+              <kbd className="px-1.5 py-[2px] rounded-[5px] bg-[#1b1c22] border border-[#2a2b2e] font-mono text-[#9598a0]">
+                {renderChord(hideChord)}
+              </kbd>
+              <span>hide</span>
+            </>
+          )}
         </div>
         <span className="w-px h-4 bg-[#2a2b2e]" />
         <div className="otto-app-no-drag flex gap-1">
