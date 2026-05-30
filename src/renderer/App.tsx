@@ -172,20 +172,24 @@ export function App() {
         // which blocks new sessions from making progress.
         void ipc.invoke('session.close', { sessionId: prevId }).catch(() => {});
       }
-      // Empty trigger (the common /n␣ + space case): just drop the old
-      // session and collapse to the bar. The next submit will lazily start a
-      // fresh session via ensureForSubmit, which keeps the empty bar entirely
-      // free of any in-flight stream's busy/queue state.
+      // Empty trigger (the common /n␣ + space case): drop the old session.
+      // From bar/panel, collapse to the bar so the next submit lazily starts
+      // a fresh session via ensureForSubmit. From chat, stay in chat — the
+      // user is using the standalone window and expects to remain there.
       if (text.length === 0 && attachments.length === 0) {
         abandonActiveSession();
-        setWindowMode('bar');
-        void ipc.invoke('window.setMode', { mode: 'bar' });
+        if (useOttoStore.getState().windowMode !== 'chat') {
+          setWindowMode('bar');
+          void ipc.invoke('window.setMode', { mode: 'bar' });
+        }
         return;
       }
       const { sessionId } = await ipc.invoke('session.start', { model });
       beginSession(sessionId);
-      setWindowMode('panel');
-      void ipc.invoke('window.setMode', { mode: 'panel' });
+      if (useOttoStore.getState().windowMode === 'bar') {
+        setWindowMode('panel');
+        void ipc.invoke('window.setMode', { mode: 'panel' });
+      }
       appendUserMessage(crypto.randomUUID(), text, attachments);
       await ipc.invoke('session.send', { sessionId, text, attachments });
       void ipc.invoke('session.list', undefined).then(setSessions);
