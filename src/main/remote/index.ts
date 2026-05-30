@@ -76,7 +76,7 @@ export class RemoteModule {
       : this.currentIp;
     return {
       code,
-      url: `http://${safeHost}:${this.currentPort}/?code=${code}`,
+      url: `https://${safeHost}:${this.currentPort}/?code=${code}`,
       expiresAt: Date.now() + 120_000,
     };
   }
@@ -85,7 +85,7 @@ export class RemoteModule {
     const displayHost = this.currentHost ?? this.currentIp;
     return {
       running: this.bridge !== null && this.currentPort !== null,
-      url: displayHost && this.currentPort ? `http://${displayHost}:${this.currentPort}` : null,
+      url: displayHost && this.currentPort ? `https://${displayHost}:${this.currentPort}` : null,
       reason: this.reason,
       pairedCount: this.opts.pairing.list().filter((d) => !d.revokedAt).length,
     };

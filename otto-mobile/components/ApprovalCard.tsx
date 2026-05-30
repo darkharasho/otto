@@ -2,10 +2,10 @@ import { View, Text, Pressable } from 'react-native';
 import * as Haptics from 'expo-haptics';
 
 const CLASS_COLORS: Record<string, string> = {
-  read: 'bg-emerald-600',
-  reversible: 'bg-blue-600',
-  destructive: 'bg-orange-600',
-  irreversible: 'bg-red-600',
+  read: '#059669',
+  reversible: '#2563eb',
+  destructive: '#ea580c',
+  irreversible: '#dc2626',
 };
 
 interface Props {
@@ -17,7 +17,7 @@ interface Props {
 }
 
 export function ApprovalCard({ tool, actionClass, summary, onResolve }: Props) {
-  const colorClass = CLASS_COLORS[actionClass] ?? 'bg-zinc-600';
+  const colorClass = CLASS_COLORS[actionClass] ?? '#52525b';
 
   const handleResolve = (decision: 'approve' | 'deny') => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -25,28 +25,28 @@ export function ApprovalCard({ tool, actionClass, summary, onResolve }: Props) {
   };
 
   return (
-    <View className="rounded-xl border border-border bg-surface p-3">
-      <View className="flex-row items-center gap-2 mb-2">
-        <Text className="font-semibold text-sm text-text">{tool}</Text>
-        <View className={`rounded px-2 py-0.5 ${colorClass}`}>
-          <Text className="text-xs text-white">{actionClass}</Text>
+    <View style={{ borderRadius: 12, borderWidth: 1, borderColor: '#2a2a2e', backgroundColor: '#1a1a1c', padding: 12 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <Text style={{ fontWeight: '600', fontSize: 14, color: '#e4e4e7' }}>{tool}</Text>
+        <View style={{ borderRadius: 4, paddingHorizontal: 8, paddingVertical: 2, backgroundColor: colorClass }}>
+          <Text style={{ fontSize: 12, color: '#ffffff' }}>{actionClass}</Text>
         </View>
       </View>
       {summary ? (
-        <Text className="text-sm text-muted mb-3" numberOfLines={3}>{summary}</Text>
+        <Text style={{ fontSize: 14, color: '#71717a', marginBottom: 12 }} numberOfLines={3}>{summary}</Text>
       ) : null}
-      <View className="flex-row gap-2">
+      <View style={{ flexDirection: 'row', gap: 8 }}>
         <Pressable
           onPress={() => handleResolve('deny')}
-          className="flex-1 rounded-lg border border-border bg-bg py-2.5 items-center"
+          style={{ flex: 1, borderRadius: 8, borderWidth: 1, borderColor: '#2a2a2e', backgroundColor: '#0d0d0e', paddingVertical: 10, alignItems: 'center' }}
         >
-          <Text className="text-text text-sm font-medium">Deny</Text>
+          <Text style={{ color: '#e4e4e7', fontSize: 14, fontWeight: '500' }}>Deny</Text>
         </Pressable>
         <Pressable
           onPress={() => handleResolve('approve')}
-          className="flex-1 rounded-lg bg-accent py-2.5 items-center"
+          style={{ flex: 1, borderRadius: 8, backgroundColor: '#6366f1', paddingVertical: 10, alignItems: 'center' }}
         >
-          <Text className="text-white text-sm font-medium">Approve</Text>
+          <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '500' }}>Approve</Text>
         </Pressable>
       </View>
     </View>

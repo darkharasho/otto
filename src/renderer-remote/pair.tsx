@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useRemoteStore } from './store';
 import { pair as doPair } from './wire';
 
-// Accept either a full pairing URL (http://host:port/?code=XYZ, or legacy
+// Accept either a full pairing URL (https://host:port/?code=XYZ, or legacy
 // otto-pair://...) or just the raw code. Strategy: if the input contains
 // "code=", take the value after it up to "&" or end; otherwise treat the
 // trimmed input as the code itself.

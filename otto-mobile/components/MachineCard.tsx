@@ -42,17 +42,27 @@ export function MachineCard({ machine, onPress, onDelete, onRename }: Props) {
     <Pressable
       onPress={onPress}
       onLongPress={handleRename}
-      className="flex-row items-center bg-surface border border-border rounded-xl px-4 py-3 mb-3"
-      style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#1a1a1c',
+        borderWidth: 1,
+        borderColor: '#2a2a2e',
+        borderRadius: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        marginBottom: 12,
+        opacity: pressed ? 0.7 : 1,
+      })}
     >
-      <View className="w-10 h-10 rounded-lg bg-accent/10 items-center justify-center mr-3">
+      <View style={{ width: 40, height: 40, borderRadius: 8, backgroundColor: 'rgba(99,102,241,0.1)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
         <PlatformIcon platform={machine.platform} size={20} color="#6366f1" />
       </View>
-      <View className="flex-1 min-w-0">
-        <Text className="text-text text-base font-semibold" numberOfLines={1}>
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text style={{ color: '#e4e4e7', fontSize: 14, fontWeight: '600' }} numberOfLines={1}>
           {machine.label}
         </Text>
-        <Text className="text-muted text-xs mt-0.5" numberOfLines={1}>
+        <Text style={{ color: '#71717a', fontSize: 12, marginTop: 2 }} numberOfLines={1}>
           {machine.baseUrl.replace(/^https?:\/\//, '')}
           {machine.lastSeen > 0 ? ` · ${relativeTime(machine.lastSeen)}` : ''}
         </Text>
@@ -60,14 +70,14 @@ export function MachineCard({ machine, onPress, onDelete, onRename }: Props) {
       <Pressable
         onPress={handleRename}
         hitSlop={12}
-        className="ml-2 p-2"
+        style={{ marginLeft: 8, padding: 8 }}
       >
         <Pencil size={14} color="#71717a" />
       </Pressable>
       <Pressable
         onPress={onDelete}
         hitSlop={12}
-        className="p-2"
+        style={{ padding: 8 }}
       >
         <Trash2 size={14} color="#71717a" />
       </Pressable>

@@ -28,7 +28,7 @@ export function Screenshot({ shotId, signedUrl, baseUrl, token }: Props) {
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable
           onPress={() => setOpen(false)}
-          className="flex-1 bg-black/90 items-center justify-center p-4"
+          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', alignItems: 'center', justifyContent: 'center', padding: 16 }}
         >
           <Image
             source={{ uri, headers }}

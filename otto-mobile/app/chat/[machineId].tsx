@@ -423,8 +423,8 @@ export default function ChatScreen() {
 
   if (!machine) {
     return (
-      <View className="flex-1 bg-bg items-center justify-center">
-        <Text className="text-danger">Machine not found</Text>
+      <View style={{ flex: 1, backgroundColor: '#0d0d0e', alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ color: '#ef4444' }}>Machine not found</Text>
       </View>
     );
   }
@@ -485,10 +485,10 @@ export default function ChatScreen() {
     if (it.kind === 'user') {
       const imageRefs = (it.content ?? []).filter((b) => b.type === 'image-ref') as ImageRef[];
       return (
-        <View className="items-end px-3 mb-3">
-          <View className="rounded-2xl bg-accent/20 border border-accent/30 px-4 py-2 max-w-[80%]" style={{ borderBottomRightRadius: 6 }}>
+        <View style={{ alignItems: 'flex-end', paddingHorizontal: 12, marginBottom: 12 }}>
+          <View style={{ borderRadius: 16, backgroundColor: 'rgba(99,102,241,0.2)', borderWidth: 1, borderColor: 'rgba(99,102,241,0.3)', paddingHorizontal: 16, paddingVertical: 8, maxWidth: '80%', borderBottomRightRadius: 6 }}>
             {imageRefs.length > 0 && (
-              <View className="flex-row flex-wrap gap-1 mb-1">
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 4 }}>
                 {imageRefs.map((ref) => (
                   <Image
                     key={ref.id}
@@ -513,7 +513,7 @@ export default function ChatScreen() {
         return null; // empty text items — footer "thinking..." indicator handles streaming
       }
       return (
-        <View className="px-3 mb-3">
+        <View style={{ paddingHorizontal: 12, marginBottom: 12 }}>
           {showOttoLabel && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
               <OttoMark size={14} color="#6366f1" />
@@ -526,14 +526,14 @@ export default function ChatScreen() {
     }
     if (it.kind === 'tool') {
       return (
-        <View className="px-3 mb-2">
+        <View style={{ paddingHorizontal: 12, marginBottom: 8 }}>
           <ToolCard name={it.name} input={it.input} status={it.status} result={it.result} isError={it.isError} />
         </View>
       );
     }
     // screenshot
     return (
-      <View className="px-3 mb-3">
+      <View style={{ paddingHorizontal: 12, marginBottom: 12 }}>
         <Screenshot
           shotId={it.shotId}
           signedUrl={it.signedUrl}
@@ -600,16 +600,16 @@ export default function ChatScreen() {
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        className="flex-1 bg-bg"
+        style={{ flex: 1, backgroundColor: '#0d0d0e' }}
         keyboardVerticalOffset={0}
       >
         {/* Unreachable banner */}
         {unreachable && !connected && (
-          <View className="px-3 py-2 bg-amber-500/15 border-b border-amber-500/30">
-            <Text className="text-amber-200 text-xs font-semibold">
+          <View style={{ paddingHorizontal: 12, paddingVertical: 8, backgroundColor: 'rgba(245,158,11,0.15)', borderBottomWidth: 1, borderBottomColor: 'rgba(245,158,11,0.3)' }}>
+            <Text style={{ color: '#fde68a', fontSize: 12, fontWeight: '600' }}>
               Can't reach Otto at {machine.baseUrl.replace(/^https?:\/\//, '')}
             </Text>
-            <Text className="text-amber-200/80 text-xs mt-0.5">
+            <Text style={{ color: 'rgba(253,230,138,0.8)', fontSize: 12, marginTop: 2 }}>
               Check that Tailscale is online on both devices.
             </Text>
           </View>
@@ -617,7 +617,7 @@ export default function ChatScreen() {
 
         {/* Approvals */}
         {approvals.length > 0 && (
-          <View className="px-3 py-2 bg-bg border-b border-border gap-2">
+          <View style={{ paddingHorizontal: 12, paddingVertical: 8, backgroundColor: '#0d0d0e', borderBottomWidth: 1, borderBottomColor: '#2a2a2e', gap: 8 }}>
             {approvals.map((a) => (
               <ApprovalCard
                 key={a.decisionId}
@@ -639,8 +639,8 @@ export default function ChatScreen() {
           renderItem={renderItem}
           contentContainerStyle={{ paddingTop: 16, paddingBottom: 8 }}
           ListEmptyComponent={
-            <View className="items-center pt-16">
-              <Text className="text-muted text-sm">
+            <View style={{ alignItems: 'center', paddingTop: 64 }}>
+              <Text style={{ color: '#71717a', fontSize: 14 }}>
                 {connected ? 'Connected. Send a prompt to begin.' : 'Connecting...'}
               </Text>
             </View>
@@ -656,35 +656,35 @@ export default function ChatScreen() {
 
         {/* Queue depth */}
         {queueDepth > 0 && (
-          <View className="px-3 py-1 border-t border-border bg-surface/60">
-            <Text className="text-muted text-[11px]">{queueDepth} queued</Text>
+          <View style={{ paddingHorizontal: 12, paddingVertical: 4, borderTopWidth: 1, borderTopColor: '#2a2a2e', backgroundColor: 'rgba(26,26,28,0.6)' }}>
+            <Text style={{ color: '#71717a', fontSize: 11 }}>{queueDepth} queued</Text>
           </View>
         )}
 
         {/* Error */}
         {errorMsg && (
-          <View className="px-3 py-2 bg-danger/15 border-t border-danger/40 flex-row items-center justify-between">
-            <Text className="text-danger text-xs flex-1">{errorMsg}</Text>
+          <View style={{ paddingHorizontal: 12, paddingVertical: 8, backgroundColor: 'rgba(239,68,68,0.15)', borderTopWidth: 1, borderTopColor: 'rgba(239,68,68,0.4)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={{ color: '#ef4444', fontSize: 12, flex: 1 }}>{errorMsg}</Text>
             <Pressable onPress={() => setErrorMsg(null)} hitSlop={8}>
-              <Text className="text-muted text-xs ml-2">dismiss</Text>
+              <Text style={{ color: '#71717a', fontSize: 12, marginLeft: 8 }}>dismiss</Text>
             </Pressable>
           </View>
         )}
 
         {/* Attachment chips */}
         {(pendingUploads.length > 0 || confirmedAttachments.length > 0) && (
-          <View className="flex-row flex-wrap gap-1 px-3 py-1 border-t border-border bg-surface">
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4, paddingHorizontal: 12, paddingVertical: 4, borderTopWidth: 1, borderTopColor: '#2a2a2e', backgroundColor: '#1a1a1c' }}>
             {confirmedAttachments.map((a) => (
-              <View key={a.id} className="flex-row items-center bg-bg/60 rounded px-1.5 py-0.5 gap-1">
-                <Text className="text-text text-[10px]">IMG</Text>
+              <View key={a.id} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(13,13,14,0.6)', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, gap: 4 }}>
+                <Text style={{ color: '#e4e4e7', fontSize: 10 }}>IMG</Text>
                 <Pressable onPress={() => setConfirmedAttachments((s) => s.filter((x) => x.id !== a.id))}>
-                  <Text className="text-muted text-xs">x</Text>
+                  <Text style={{ color: '#71717a', fontSize: 12 }}>x</Text>
                 </Pressable>
               </View>
             ))}
             {pendingUploads.map((p) => (
-              <View key={p.correlationId} className="bg-bg/60 rounded px-1.5 py-0.5 opacity-60">
-                <Text className="text-text text-[10px]">uploading...</Text>
+              <View key={p.correlationId} style={{ backgroundColor: 'rgba(13,13,14,0.6)', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, opacity: 0.6 }}>
+                <Text style={{ color: '#e4e4e7', fontSize: 10 }}>uploading...</Text>
               </View>
             ))}
           </View>
@@ -692,8 +692,8 @@ export default function ChatScreen() {
 
         {/* Input bar */}
         <View style={{ backgroundColor: '#1a1a1c' }}>
-        <View className="border-t border-border bg-surface px-2 py-2 flex-row items-end gap-2">
-          <Pressable onPress={pickImage} disabled={!connected} className="p-2" style={{ opacity: connected ? 1 : 0.5 }}>
+        <View style={{ borderTopWidth: 1, borderTopColor: '#2a2a2e', backgroundColor: '#1a1a1c', paddingHorizontal: 8, paddingVertical: 8, flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}>
+          <Pressable onPress={pickImage} disabled={!connected} style={{ padding: 8, opacity: connected ? 1 : 0.5 }}>
             <Paperclip size={18} color="#71717a" />
           </Pressable>
           <TextInput
@@ -707,21 +707,19 @@ export default function ChatScreen() {
             placeholderTextColor="#71717a"
             multiline
             editable={connected}
-            className="flex-1 bg-bg border border-border rounded-xl px-3 py-2 text-text text-sm"
-            style={{ maxHeight: 120 }}
+            style={{ flex: 1, backgroundColor: '#0d0d0e', borderWidth: 1, borderColor: '#2a2a2e', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, color: '#e4e4e7', fontSize: 14, maxHeight: 120 }}
             onSubmitEditing={onSend}
             blurOnSubmit={false}
           />
           {busy ? (
-            <Pressable onPress={onStop} className="bg-danger/80 rounded-xl px-3 py-2.5">
+            <Pressable onPress={onStop} style={{ backgroundColor: 'rgba(239,68,68,0.8)', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10 }}>
               <Square size={16} color="white" fill="white" />
             </Pressable>
           ) : (
             <Pressable
               onPress={() => { void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); onSend(); }}
               disabled={!connected || (!input.trim() && confirmedAttachments.length === 0) || pendingUploads.length > 0}
-              className="bg-accent rounded-xl px-3 py-2.5"
-              style={{ opacity: (!connected || (!input.trim() && confirmedAttachments.length === 0)) ? 0.5 : 1 }}
+              style={{ backgroundColor: '#6366f1', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, opacity: (!connected || (!input.trim() && confirmedAttachments.length === 0)) ? 0.5 : 1 }}
             >
               <Send size={16} color="white" />
             </Pressable>

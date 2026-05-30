@@ -17,7 +17,11 @@
       "bundleIdentifier": "com.project96.otto",
       "infoPlist": {
         "NSCameraUsageDescription": "Otto needs camera access to scan pairing QR codes from your desktop.",
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true,
+          "NSAllowsArbitraryLoads": true
+        }
       }
     },
     "android": {
@@ -38,7 +42,8 @@
         {
           "cameraPermission": "Otto needs camera access to scan pairing QR codes from your desktop."
         }
-      ]
+      ],
+      "./plugins/allow-http"
     ],
     "extra": {
       "router": {

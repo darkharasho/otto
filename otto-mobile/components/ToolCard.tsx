@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { View, Text, Pressable, ScrollView } from 'react-native';
+import { View, Text, Pressable, ScrollView, Platform } from 'react-native';
 import { ChevronDown } from 'lucide-react-native';
 import { ToolIcon } from './ToolIcon';
 import { describeTool, summarizeInput, classifyResult, type ResultView } from '@/lib/tool-presenters';
@@ -23,11 +23,11 @@ function ResultRenderer({ view }: { view: ResultView }) {
       const exit = view.exitCode;
       const exitColor = exit === undefined ? '#71717a' : exit === 0 ? '#10b981' : '#ef4444';
       return (
-        <View className="rounded bg-bg/60 p-2">
-          {view.stdout ? <Text className="font-mono text-[10px] text-text">{view.stdout}</Text> : null}
-          {view.stderr ? <Text className="font-mono text-[10px] text-danger">{view.stderr}</Text> : null}
+        <View style={{ borderRadius: 4, backgroundColor: 'rgba(13,13,14,0.6)', padding: 8 }}>
+          {view.stdout ? <Text style={{ fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 10, color: '#e4e4e7' }}>{view.stdout}</Text> : null}
+          {view.stderr ? <Text style={{ fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 10, color: '#ef4444' }}>{view.stderr}</Text> : null}
           {exit !== undefined && (
-            <Text style={{ color: exitColor }} className="text-[10px] mt-1">
+            <Text style={{ color: exitColor, fontSize: 10, marginTop: 4 }}>
               {'↳'} exited {exit}
             </Text>
           )}
@@ -38,8 +38,8 @@ function ResultRenderer({ view }: { view: ResultView }) {
       return (
         <View>
           {view.entries.map(([k, v]) => (
-            <View key={k} className="flex-row gap-2 mb-0.5">
-              <Text className="font-mono text-[10px] text-muted">{k}</Text>
+            <View key={k} style={{ flexDirection: 'row', gap: 8, marginBottom: 2 }}>
+              <Text style={{ fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 10, color: '#71717a' }}>{k}</Text>
               <EmojiText style={{ fontFamily: 'monospace', fontSize: 10, color: '#e4e4e7', flex: 1 }} iconSize={10}>{v}</EmojiText>
             </View>
           ))}
@@ -47,22 +47,22 @@ function ResultRenderer({ view }: { view: ResultView }) {
       );
     case 'error':
       return (
-        <View className="rounded border border-danger/40 bg-danger/10 px-2 py-1.5">
-          <Text className="text-danger text-[11px]">{view.text}</Text>
+        <View style={{ borderRadius: 4, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)', backgroundColor: 'rgba(239,68,68,0.1)', paddingHorizontal: 8, paddingVertical: 6 }}>
+          <Text style={{ color: '#ef4444', fontSize: 11 }}>{view.text}</Text>
         </View>
       );
     case 'markdown':
       return <EmojiText style={{ fontSize: 11, color: '#e4e4e7' }} iconSize={11}>{view.text}</EmojiText>;
     case 'json':
       return (
-        <ScrollView horizontal className="rounded bg-bg/60 p-2">
-          <Text className="font-mono text-[10px] text-text">
+        <ScrollView horizontal style={{ borderRadius: 4, backgroundColor: 'rgba(13,13,14,0.6)', padding: 8 }}>
+          <Text style={{ fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 10, color: '#e4e4e7' }}>
             {JSON.stringify(view.value, null, 2)}
           </Text>
         </ScrollView>
       );
     case 'image':
-      return <Text className="text-[11px] text-muted italic">[image]</Text>;
+      return <Text style={{ fontSize: 11, color: '#71717a', fontStyle: 'italic' }}>[image]</Text>;
   }
 }
 
@@ -84,30 +84,29 @@ export function ToolCard({ name, input, status, result, isError }: Props) {
   const view = result === undefined ? null : classifyResult(name, result, Boolean(isError));
 
   return (
-    <View className="rounded-lg border border-border bg-surface overflow-hidden">
+    <View style={{ borderRadius: 8, borderWidth: 1, borderColor: '#2a2a2e', backgroundColor: '#1a1a1c', overflow: 'hidden' }}>
       <Pressable
         onPress={() => setOpen((v) => !v)}
-        className="flex-row items-center justify-between px-2.5 py-2"
-        style={{ minHeight: 44 }}
+        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10, paddingVertical: 8, minHeight: 44 }}
       >
-        <View className="flex-row items-center gap-2 flex-1 min-w-0">
-          <View className="w-5 h-5 rounded bg-accent/10 items-center justify-center">
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+          <View style={{ width: 20, height: 20, borderRadius: 4, backgroundColor: 'rgba(99,102,241,0.1)', alignItems: 'center', justifyContent: 'center' }}>
             <ToolIcon name={desc.icon} size={12} />
           </View>
-          <View className="min-w-0 flex-1">
-            <View className="flex-row items-baseline gap-1.5">
+          <View style={{ minWidth: 0, flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
               {desc.group ? (
-                <Text className="text-[9px] uppercase tracking-wide text-muted font-semibold">{desc.group}</Text>
+                <Text style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.5, color: '#71717a', fontWeight: '600' }}>{desc.group}</Text>
               ) : null}
-              <Text className="font-semibold text-xs text-text" numberOfLines={1}>{desc.label}</Text>
+              <Text style={{ fontWeight: '600', fontSize: 12, color: '#e4e4e7' }} numberOfLines={1}>{desc.label}</Text>
             </View>
             {summary ? (
-              <Text className="font-mono text-[10px] text-muted" numberOfLines={1}>{summary}</Text>
+              <Text style={{ fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 10, color: '#71717a' }} numberOfLines={1}>{summary}</Text>
             ) : null}
           </View>
         </View>
-        <View className="flex-row items-center gap-1.5 ml-2">
-          <Text style={{ color: statusColor }} className="uppercase tracking-wide text-[10px]">
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginLeft: 8 }}>
+          <Text style={{ color: statusColor, textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 10 }}>
             {statusLabel}
           </Text>
           <ChevronDown
@@ -118,12 +117,12 @@ export function ToolCard({ name, input, status, result, isError }: Props) {
         </View>
       </Pressable>
       {open && (
-        <View className="px-2.5 pb-2.5 border-t border-border/40 pt-2 gap-2">
+        <View style={{ paddingHorizontal: 10, paddingBottom: 10, borderTopWidth: 1, borderTopColor: 'rgba(42,42,46,0.4)', paddingTop: 8, gap: 8 }}>
           {input !== undefined && input !== null && (
             <View>
-              <Text className="text-muted mb-1 text-[9px] uppercase tracking-wide">Input</Text>
-              <ScrollView horizontal className="bg-bg/60 rounded p-2">
-                <Text className="font-mono text-[10px] text-text">
+              <Text style={{ color: '#71717a', marginBottom: 4, fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.5 }}>Input</Text>
+              <ScrollView horizontal style={{ backgroundColor: 'rgba(13,13,14,0.6)', borderRadius: 4, padding: 8 }}>
+                <Text style={{ fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }), fontSize: 10, color: '#e4e4e7' }}>
                   {JSON.stringify(input, null, 2)}
                 </Text>
               </ScrollView>
@@ -131,7 +130,7 @@ export function ToolCard({ name, input, status, result, isError }: Props) {
           )}
           {view && view.kind !== 'empty' && (
             <View>
-              <Text className="text-muted mb-1 text-[9px] uppercase tracking-wide">Result</Text>
+              <Text style={{ color: '#71717a', marginBottom: 4, fontSize: 9, textTransform: 'uppercase', letterSpacing: 0.5 }}>Result</Text>
               <ResultRenderer view={view} />
             </View>
           )}

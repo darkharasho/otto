@@ -48,19 +48,19 @@ export default function MachineListScreen() {
           ),
         }}
       />
-      <View className="flex-1 bg-bg px-4 pt-4">
+      <View style={{ flex: 1, backgroundColor: '#1a1a1c', paddingHorizontal: 16, paddingTop: 16 }}>
         {machines.length === 0 ? (
-          <View className="flex-1 items-center justify-center px-8" style={{ marginTop: -72 }}>
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, marginTop: -72 }}>
             <Image source={logo} style={{ width: 72, height: 72, marginBottom: 16, opacity: 0.6 }} />
-            <Text className="text-text text-lg font-semibold mb-2">No machines paired</Text>
-            <Text className="text-muted text-sm text-center mb-6">
+            <Text style={{ color: '#e4e4e7', fontSize: 18, fontWeight: '600', marginBottom: 8 }}>No machines paired</Text>
+            <Text style={{ color: '#71717a', fontSize: 14, textAlign: 'center', marginBottom: 24 }}>
               Tap the + button to scan a QR code from your desktop's Otto settings.
             </Text>
             <Pressable
               onPress={() => router.push('/scan')}
-              className="bg-accent rounded-xl px-6 py-3"
+              style={{ backgroundColor: '#6366f1', borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 }}
             >
-              <Text className="text-white font-medium">Add machine</Text>
+              <Text style={{ color: '#ffffff', fontWeight: '500' }}>Add machine</Text>
             </Pressable>
           </View>
         ) : (

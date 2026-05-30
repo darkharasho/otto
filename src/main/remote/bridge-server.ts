@@ -1,9 +1,13 @@
 import http from 'node:http';
+import https from 'node:https';
 import { AddressInfo } from 'node:net';
 import { randomBytes } from 'node:crypto';
 import { hostname } from 'node:os';
+import { execSync } from 'node:child_process';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { promises as fsp } from 'node:fs';
 import nodePath from 'node:path';
+import { tmpdir } from 'node:os';
 import { WebSocketServer, WebSocket } from 'ws';
 import { logger } from '../logger';
 import type { PairingStore } from './pairing-store';
@@ -14,6 +18,20 @@ import { resolveImageRequest } from '../screenshot/protocol';
 
 type ImageRef = Extract<ContentBlock, { type: 'image-ref' }>;
 type StagedEntry = { ref: ImageRef; t: number };
+
+function generateSelfSignedCert(ips: string[]): { key: string; cert: string } {
+  const dir = mkdtempSync(nodePath.join(tmpdir(), 'otto-cert-'));
+  const keyPath = nodePath.join(dir, 'key.pem');
+  const certPath = nodePath.join(dir, 'cert.pem');
+  const san = ips.map(ip => `IP:${ip}`).join(',');
+  execSync(
+    `openssl req -x509 -newkey rsa:2048 -keyout ${keyPath} -out ${certPath} -days 365 -nodes -subj "/CN=Otto Bridge" -addext "subjectAltName=${san}" 2>/dev/null`,
+  );
+  return {
+    key: readFileSync(keyPath, 'utf8'),
+    cert: readFileSync(certPath, 'utf8'),
+  };
+}
 
 export interface BridgeServerOpts {
   tailnetIp: string | null;
@@ -44,7 +62,7 @@ interface PairingCode {
 }
 
 export class BridgeServer {
-  private server: http.Server | null = null;
+  private server: https.Server | null = null;
   private wss: WebSocketServer | null = null;
   private readonly codes = new Map<string, PairingCode>();
   private readonly PAIR_TTL_MS = 120_000;
@@ -89,7 +107,8 @@ export class BridgeServer {
     if (!this.opts.tailnetIp) {
       throw new Error('tailnet IP not available; refusing to bind to 0.0.0.0 or 127.0.0.1');
     }
-    const server = http.createServer((req, res) => {
+    const { key, cert } = generateSelfSignedCert([this.opts.tailnetIp, '127.0.0.1']);
+    const server = https.createServer({ key, cert }, (req, res) => {
       void this.handle(req, res);
     });
     const desiredPort = this.opts.port ?? BridgeServer.DEFAULT_PORT;
@@ -119,7 +138,7 @@ export class BridgeServer {
     const { port } = server.address() as AddressInfo;
     this.wss = new WebSocketServer({ server, path: '/ws' });
     this.wss.on('connection', (ws, req) => this.handleWs(ws, req));
-    logger.info(`remote bridge listening on http://${this.opts.tailnetIp}:${port}`);
+    logger.info(`remote bridge listening on https://${this.opts.tailnetIp}:${port}`);
     return { port };
   }
 
