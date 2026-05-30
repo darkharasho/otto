@@ -86,8 +86,10 @@ export function ConversationSidebar({
       </div>
 
       <div className="px-2.5 pb-2.5">
-        <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-[9px]"
-          style={{ background: '#0a0b0e', border: '1px solid #1c1d23' }}>
+        <div
+          className="flex items-center gap-2 px-2.5 py-1.5 rounded-[9px] transition-shadow focus-within:shadow-[0_0_0_1px_rgba(124,125,255,0.35),0_0_12px_rgba(124,125,255,0.08)]"
+          style={{ background: '#0a0b0e', border: '1px solid #1c1d23' }}
+        >
           <Search className="w-[13px] h-[13px] text-[#5b5e66] flex-shrink-0" strokeWidth={2.2} aria-hidden />
           <input
             value={query}
@@ -144,11 +146,16 @@ export function ConversationSidebar({
 
       <div className="px-3 py-2 flex items-center gap-2.5"
         style={{ borderTop: '1px solid rgba(255,255,255,0.04)', background: '#0a0b0e' }}>
-        <div className="flex items-center gap-1.5 px-2 py-1 rounded-full"
-          style={{ background: 'rgba(82,210,126,0.1)', border: '1px solid rgba(82,210,126,0.35)' }}>
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          className="flex items-center gap-1.5 px-2 py-1 rounded-full transition-colors hover:brightness-110"
+          style={{ background: 'rgba(82,210,126,0.1)', border: '1px solid rgba(82,210,126,0.35)' }}
+          aria-label={`Autonomy: ${autonomyLabel} — open settings`}
+        >
           <span className="w-[5px] h-[5px] rounded-full" style={{ background: '#52d27e', boxShadow: '0 0 6px #52d27e' }} />
           <span className="text-[9px] text-[#9be3b3] font-bold tracking-[0.6px]">{autonomyLabel}</span>
-        </div>
+        </button>
         <div className="flex-1" />
         <button
           type="button"

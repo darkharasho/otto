@@ -54,7 +54,9 @@ export function ChatTitlebar({
         <OttoMark className="w-5 h-5 text-[#7c7dff]" />
         <span className="text-[13px] text-[#ebecf1] font-semibold">Otto</span>
         <span className="w-[3px] h-[3px] rounded-full bg-[#3a3b41] flex-shrink-0" />
-        <span className="text-[12px] text-[#9598a0] truncate max-w-[280px]">
+        <span
+          className={`text-[12px] truncate max-w-[280px] ${sessionTitle ? 'text-[#9598a0]' : 'text-[#5b5e66]'}`}
+        >
           {sessionTitle || 'New conversation'}
         </span>
         {isLive && (
@@ -63,7 +65,7 @@ export function ChatTitlebar({
             style={{ background: 'rgba(124,125,255,0.1)', border: '1px solid rgba(124,125,255,0.25)' }}
           >
             <span
-              className="w-[5px] h-[5px] rounded-full"
+              className="w-[5px] h-[5px] rounded-full otto-pulse-dot"
               style={{ background: '#7c7dff', boxShadow: '0 0 6px #7c7dff' }}
             />
             <span className="text-[10px] text-[#cfd0ff] font-semibold tracking-[0.3px]">LIVE</span>

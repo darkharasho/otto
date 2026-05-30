@@ -127,6 +127,9 @@ export function ChatWindow({
               <div className="text-[12px] text-[#9598a0] max-w-[280px] leading-relaxed">
                 Ask Otto to do something, or pick a conversation from the sidebar.
               </div>
+              <div className="text-[10px] text-[#5b5e66] mt-1">
+                <kbd className="px-1.5 py-[1px] rounded-[5px] bg-[#1b1c22] border border-[#2a2b2e] font-mono text-[#9598a0]">⌘N</kbd> for a new conversation
+              </div>
             </div>
           ) : (
             <MessageList
