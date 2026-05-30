@@ -8,6 +8,9 @@
   "scripts": {
     "predev": "node scripts/ensure-abi.mjs electron && node scripts/codesign-dev.mjs",
     "dev": "electron-vite dev",
+    "mobile": "npm --prefix otto-mobile start",
+    "mobile:install": "npm --prefix otto-mobile install --legacy-peer-deps",
+    "dev:all": "concurrently -n desktop,mobile -c blue,magenta \"npm run dev\" \"npm run mobile\"",
     "prebuild": "node scripts/ensure-abi.mjs electron && node scripts/fetch-embedding-model.mjs",
     "build": "electron-vite build && vite build --config vite.config.pwa.ts",
     "build:pwa": "vite build --config vite.config.pwa.ts",
@@ -69,6 +72,7 @@
     "@typescript-eslint/parser": "^8.15.0",
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
+    "concurrently": "^10.0.0",
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
