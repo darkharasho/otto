@@ -17,5 +17,5 @@ module.exports = {
       { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
     ],
   },
-  ignorePatterns: ['out/', 'dist/', 'node_modules/', '.superpowers/'],
+  ignorePatterns: ['out/', 'dist/', 'node_modules/', '.superpowers/', 'otto-mobile/'],
 };
