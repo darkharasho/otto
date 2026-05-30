@@ -69,10 +69,11 @@ export async function resolveTailnetEndpoint(opts: { exec?: () => Promise<ExecRe
     const ips = j.Self?.TailscaleIPs ?? [];
     const ip = ips.find((s) => IPV4_RE.test(s)) ?? null;
     let host: string | null = null;
-    if (j.MagicDNSSuffix && j.Self?.HostName) {
-      host = `${j.Self.HostName}.${j.MagicDNSSuffix.replace(/\.$/, '')}`;
-    } else if (j.Self?.DNSName) {
+    if (j.Self?.DNSName) {
+      // DNSName is already sanitised by Tailscale (no spaces, lowercase).
       host = j.Self.DNSName.replace(/\.$/, '') || null;
+    } else if (j.MagicDNSSuffix && j.Self?.HostName) {
+      host = `${j.Self.HostName}.${j.MagicDNSSuffix.replace(/\.$/, '')}`;
     }
     return { ip, host };
   } catch {

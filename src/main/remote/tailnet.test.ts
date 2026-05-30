@@ -26,7 +26,18 @@ describe('resolveTailnetIp', () => {
 });
 
 describe('resolveTailnetEndpoint', () => {
-  it('returns ip + composed host from MagicDNSSuffix', async () => {
+  it('prefers DNSName over HostName+MagicDNSSuffix', async () => {
+    const ep = await resolveTailnetEndpoint({
+      exec: async () => ({ stdout: JSON.stringify({
+        MagicDNSSuffix: 'tail-scale.ts.net',
+        Self: { HostName: 'My Computer', DNSName: 'my-computer.tail-scale.ts.net.', TailscaleIPs: ['100.64.1.2'] },
+      }), stderr: '', code: 0 }),
+    });
+    // Should use sanitised DNSName, not raw HostName which may contain spaces
+    expect(ep).toEqual({ ip: '100.64.1.2', host: 'my-computer.tail-scale.ts.net' });
+  });
+
+  it('falls back to HostName+MagicDNSSuffix when DNSName missing', async () => {
     const ep = await resolveTailnetEndpoint({
       exec: async () => ({ stdout: JSON.stringify({
         MagicDNSSuffix: 'tail-scale.ts.net',
@@ -36,7 +47,7 @@ describe('resolveTailnetEndpoint', () => {
     expect(ep).toEqual({ ip: '100.64.1.2', host: 'otto.tail-scale.ts.net' });
   });
 
-  it('falls back to Self.DNSName when MagicDNSSuffix missing, strips trailing dot', async () => {
+  it('uses DNSName when MagicDNSSuffix missing, strips trailing dot', async () => {
     const ep = await resolveTailnetEndpoint({
       exec: async () => ({ stdout: JSON.stringify({
         Self: { HostName: 'otto', DNSName: 'otto.tail-scale.ts.net.', TailscaleIPs: ['100.64.1.2'] },
