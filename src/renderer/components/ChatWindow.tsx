@@ -103,7 +103,7 @@ export function ChatWindow({
             messages={activeSession?.messages ?? []}
             streaming={activeSession?.currentTurnActive ?? false}
           />
-          <div style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+          <div className="px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
             <CommandBar
               onSubmit={onSubmit}
               ensureSession={ensureSession}
