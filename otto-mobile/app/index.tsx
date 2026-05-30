@@ -1,11 +1,10 @@
-import { View, Text, FlatList, Pressable, Alert, Image } from 'react-native';
+import { View, Text, FlatList, Pressable, Alert } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { Plus } from 'lucide-react-native';
 import { useAppStore } from '@/lib/store';
 import { useTheme } from '@/lib/theme';
 import { MachineCard } from '@/components/MachineCard';
-
-const logo = require('@/assets/icon.png');
+import { OttoMark } from '@/components/OttoMark';
 
 export default function MachineListScreen() {
   const machines = useAppStore((s) => s.machines);
@@ -37,7 +36,7 @@ export default function MachineListScreen() {
         options={{
           headerTitle: () => (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 }}>
-              <Image source={logo} style={{ width: 28, height: 28, borderRadius: 6 }} />
+              <OttoMark size={24} color={t.accent} />
               <Text style={{ color: t.text, fontSize: 17, fontWeight: '600' }}>Otto</Text>
             </View>
           ),
@@ -53,8 +52,8 @@ export default function MachineListScreen() {
       <View style={{ flex: 1, backgroundColor: t.bg, paddingHorizontal: 16, paddingTop: 16 }}>
         {machines.length === 0 ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32, marginTop: -72 }}>
-            <View style={{ padding: 16, borderRadius: 20, backgroundColor: t.surface, marginBottom: 16 }}>
-              <Image source={logo} style={{ width: 72, height: 72, borderRadius: 16, opacity: 0.8 }} />
+            <View style={{ marginBottom: 16, opacity: 0.8 }}>
+              <OttoMark size={72} color={t.accent} />
             </View>
             <Text style={{ color: t.text, fontSize: 18, fontWeight: '600', marginBottom: 8 }}>No machines paired</Text>
             <Text style={{ color: t.textMuted, fontSize: 14, textAlign: 'center', marginBottom: 24 }}>

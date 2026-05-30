@@ -4,7 +4,11 @@
     "slug": "otto-mobile",
     "version": "0.1.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": {
+      "light": "./assets/icon.png",
+      "dark": "./assets/icon-dark.png",
+      "tinted": "./assets/icon-tinted.png"
+    },
     "scheme": "otto",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -15,7 +19,11 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.project96.otto",
-      "icon": "./assets/icon.png",
+      "icon": {
+        "light": "./assets/icon.png",
+        "dark": "./assets/icon-dark.png",
+        "tinted": "./assets/icon-tinted.png"
+      },
       "infoPlist": {
         "NSCameraUsageDescription": "Otto needs camera access to scan pairing QR codes from your desktop.",
         "ITSAppUsesNonExemptEncryption": false,
