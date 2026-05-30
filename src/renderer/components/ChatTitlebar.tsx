@@ -3,11 +3,18 @@ import { OttoMark } from './OttoMark';
 interface Props {
   sessionTitle: string;
   isLive: boolean;
+  isMaximized: boolean;
   onMinimize: () => void;
   onToggleMaximize: () => void;
 }
 
-export function ChatTitlebar({ sessionTitle, isLive, onMinimize, onToggleMaximize }: Props) {
+export function ChatTitlebar({
+  sessionTitle,
+  isLive,
+  isMaximized,
+  onMinimize,
+  onToggleMaximize,
+}: Props) {
   return (
     <div
       className="otto-app-drag relative flex items-center justify-between px-3.5 py-2.5"
@@ -16,22 +23,16 @@ export function ChatTitlebar({ sessionTitle, isLive, onMinimize, onToggleMaximiz
         borderBottom: '1px solid rgba(255,255,255,0.04)',
       }}
     >
-      <div aria-hidden className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex gap-[3px] opacity-[0.16]">
-        {[0, 1, 2, 3].map((i) => (
-          <span key={i} className="w-[3px] h-[3px] rounded-full bg-white" />
-        ))}
-      </div>
-
-      <div className="flex items-center gap-2.5 z-10">
+      <div className="flex items-center gap-2.5 z-10 min-w-0">
         <OttoMark className="w-5 h-5 text-[#7c7dff]" />
         <span className="text-[13px] text-[#ebecf1] font-semibold">Otto</span>
-        <span className="w-[3px] h-[3px] rounded-full bg-[#3a3b41]" />
+        <span className="w-[3px] h-[3px] rounded-full bg-[#3a3b41] flex-shrink-0" />
         <span className="text-[12px] text-[#9598a0] truncate max-w-[280px]">
           {sessionTitle || 'New conversation'}
         </span>
         {isLive && (
           <span
-            className="ml-1.5 inline-flex items-center gap-1.5 px-2 py-[2px] rounded-full"
+            className="ml-1.5 inline-flex items-center gap-1.5 px-2 py-[2px] rounded-full flex-shrink-0"
             style={{ background: 'rgba(124,125,255,0.1)', border: '1px solid rgba(124,125,255,0.25)' }}
           >
             <span
@@ -60,7 +61,7 @@ export function ChatTitlebar({ sessionTitle, isLive, onMinimize, onToggleMaximiz
           <button
             type="button"
             onClick={onMinimize}
-            className="w-[26px] h-[26px] rounded-[7px] flex items-center justify-center text-[#9598a0]"
+            className="w-[26px] h-[26px] rounded-[7px] flex items-center justify-center text-[#9598a0] transition-colors hover:text-white hover:bg-[#1b1c22]"
             style={{ background: '#15161a', border: '1px solid #2a2b2e' }}
             aria-label="Minimize"
           >
@@ -79,21 +80,36 @@ export function ChatTitlebar({ sessionTitle, isLive, onMinimize, onToggleMaximiz
           <button
             type="button"
             onClick={onToggleMaximize}
-            className="w-[26px] h-[26px] rounded-[7px] flex items-center justify-center text-[#9598a0]"
+            className="w-[26px] h-[26px] rounded-[7px] flex items-center justify-center text-[#9598a0] transition-colors hover:text-white hover:bg-[#1b1c22]"
             style={{ background: '#15161a', border: '1px solid #2a2b2e' }}
-            aria-label="Maximize"
+            aria-label={isMaximized ? 'Restore' : 'Maximize'}
           >
-            <svg
-              width="10"
-              height="10"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.2"
-              strokeLinejoin="round"
-            >
-              <rect x="4" y="4" width="16" height="16" rx="2" />
-            </svg>
+            {isMaximized ? (
+              <svg
+                width="10"
+                height="10"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinejoin="round"
+              >
+                <rect x="7" y="3" width="14" height="14" rx="2" />
+                <rect x="3" y="7" width="14" height="14" rx="2" fill="#15161a" />
+              </svg>
+            ) : (
+              <svg
+                width="10"
+                height="10"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinejoin="round"
+              >
+                <rect x="4" y="4" width="16" height="16" rx="2" />
+              </svg>
+            )}
           </button>
         </div>
       </div>

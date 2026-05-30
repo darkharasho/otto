@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { Sparkles } from 'lucide-react';
 import { ChatTitlebar } from './ChatTitlebar';
 import { ConversationSidebar } from './ConversationSidebar';
 import { MessageList } from './MessageList';
@@ -35,6 +36,8 @@ export function ChatWindow({
 
   const streaming = isSessionBusy(activeSession);
   const isFreshSession = !activeSession || activeSession.messages.length === 0;
+  const [isMaximized, setIsMaximized] = useState(false);
+  const showEmptyPane = !activeSession;
 
   const sidebarSessions: SidebarSession[] = useMemo(
     () =>
@@ -75,8 +78,12 @@ export function ChatWindow({
       <ChatTitlebar
         sessionTitle={activeTitle}
         isLive={streaming}
+        isMaximized={isMaximized}
         onMinimize={() => void ipc.invoke('window.minimize', undefined)}
-        onToggleMaximize={() => void ipc.invoke('window.toggleMaximize', undefined)}
+        onToggleMaximize={() => {
+          setIsMaximized((v) => !v);
+          void ipc.invoke('window.toggleMaximize', undefined);
+        }}
       />
 
       <div className="flex flex-1 min-h-0">
@@ -98,11 +105,28 @@ export function ChatWindow({
         />
 
         <main className="flex-1 flex flex-col min-w-0 min-h-0" style={{ background: '#16171c' }}>
-          <MessageList
-            sessionId={activeSession?.id ?? null}
-            messages={activeSession?.messages ?? []}
-            streaming={activeSession?.currentTurnActive ?? false}
-          />
+          {showEmptyPane ? (
+            <div className="flex-1 flex flex-col items-center justify-center px-8 text-center gap-3">
+              <div
+                className="w-9 h-9 rounded-[10px] flex items-center justify-center"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(124,125,255,0.14), rgba(168,130,255,0.06))',
+                  border: '1px solid rgba(124,125,255,0.22)',
+                }}
+              >
+                <Sparkles className="w-[15px] h-[15px] text-[#a882ff]" strokeWidth={1.6} aria-hidden />
+              </div>
+              <div className="text-[12px] text-[#9598a0] max-w-[280px] leading-relaxed">
+                Ask Otto to do something, or pick a conversation from the sidebar.
+              </div>
+            </div>
+          ) : (
+            <MessageList
+              sessionId={activeSession?.id ?? null}
+              messages={activeSession?.messages ?? []}
+              streaming={activeSession?.currentTurnActive ?? false}
+            />
+          )}
           <div className="px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
             <CommandBar
               onSubmit={onSubmit}
