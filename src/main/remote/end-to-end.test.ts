@@ -42,6 +42,7 @@ function setup(opts: { pwaDir?: string | null; sendPrompt?: (text: string, origi
       activeSessionId: () => 's1',
       resolveApproval: (id, choice) => { resolved.push({ decisionId: id, choice }); return true; },
       sendPrompt: opts.sendPrompt,
+      plainHttp: true,
     }),
   };
 }

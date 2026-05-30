@@ -22,12 +22,14 @@ interface FakeBridge {
   start(): Promise<{ port: number }>;
   stop(): Promise<void>;
   mintPairingCode(): string;
+  readonly isPlainHttp: boolean;
   startCalls: number;
 }
 
 function makeFakeBridge(opts: { throwOnce?: boolean } = {}): FakeBridge {
   let thrown = false;
   return {
+    isPlainHttp: false,
     startCalls: 0,
     async start() {
       this.startCalls++;
@@ -66,7 +68,7 @@ describe('RemoteModule', () => {
     });
     await mod.start();
     expect(mod.status().running).toBe(true);
-    expect(mod.status().url).toBe('http://otto.example.ts.net:9000');
+    expect(mod.status().url).toBe('https://otto.example.ts.net:9000');
     expect(bridge.startCalls).toBe(1);
     await mod.stop();
   });
@@ -81,7 +83,7 @@ describe('RemoteModule', () => {
       pollMs: 0,
     });
     await mod.start();
-    expect(mod.status().url).toBe('http://100.64.1.2:9000');
+    expect(mod.status().url).toBe('https://100.64.1.2:9000');
     await mod.stop();
   });
 
