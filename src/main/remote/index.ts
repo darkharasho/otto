@@ -8,6 +8,7 @@ export interface RemoteModuleBridge {
   stop(): Promise<void>;
   mintPairingCode(): string;
   signScreenshotUrl(id: string): string;
+  readonly isPlainHttp: boolean;
 }
 
 export interface RemoteModuleStatus {
@@ -69,12 +70,13 @@ export class RemoteModule {
       throw new Error('remote bridge not running');
     }
     const code = this.bridge.mintPairingCode();
-    // Always use the tailnet IP. The mobile dev client's SSL trust override
-    // (OttoSSL swizzle) works reliably with IP-pinned self-signed certs;
-    // hostname URLs fail in NSURLSession even though Safari/curl accept them.
+    const scheme = this.bridge.isPlainHttp ? 'http' : 'https';
+    // In plainHttp (dev) mode, use 127.0.0.1 since the server binds to
+    // 0.0.0.0 and the iOS simulator can't route to the tailnet IP.
+    const host = this.bridge.isPlainHttp ? '127.0.0.1' : this.currentIp;
     return {
       code,
-      url: `https://${this.currentIp}:${this.currentPort}/?code=${code}`,
+      url: `${scheme}://${host}:${this.currentPort}/?code=${code}`,
       expiresAt: Date.now() + 120_000,
     };
   }
@@ -83,7 +85,9 @@ export class RemoteModule {
     const displayHost = this.currentHost ?? this.currentIp;
     return {
       running: this.bridge !== null && this.currentPort !== null,
-      url: displayHost && this.currentPort ? `https://${displayHost}:${this.currentPort}` : null,
+      url: displayHost && this.currentPort
+        ? `${this.bridge?.isPlainHttp ? 'http' : 'https'}://${displayHost}:${this.currentPort}`
+        : null,
       reason: this.reason,
       pairedCount: this.opts.pairing.list().filter((d) => !d.revokedAt).length,
     };

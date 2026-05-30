@@ -54,6 +54,10 @@ export interface BridgeServerOpts {
   port?: number;
   /** Directory where Otto config/data is stored; used to persist user-uploaded images. */
   configDir?: string;
+  /** When true, serve plain HTTP instead of HTTPS. Useful for dev/simulator
+   *  builds where self-signed certs are rejected by iOS ATS / new-arch RN.
+   *  The tailnet already provides encryption, so this is safe on private nets. */
+  plainHttp?: boolean;
 }
 
 interface PairingCode {
@@ -62,7 +66,7 @@ interface PairingCode {
 }
 
 export class BridgeServer {
-  private server: https.Server | null = null;
+  private server: http.Server | https.Server | null = null;
   private wss: WebSocketServer | null = null;
   private readonly codes = new Map<string, PairingCode>();
   private readonly PAIR_TTL_MS = 120_000;
@@ -103,22 +107,32 @@ export class BridgeServer {
     }
   }
 
+  get isPlainHttp(): boolean { return this.opts.plainHttp === true; }
+
   async start(): Promise<{ port: number }> {
     if (!this.opts.tailnetIp) {
       throw new Error('tailnet IP not available; refusing to bind to 0.0.0.0 or 127.0.0.1');
     }
-    const { key, cert } = generateSelfSignedCert([this.opts.tailnetIp, '127.0.0.1']);
-    const server = https.createServer({ key, cert }, (req, res) => {
+    const handler = (req: http.IncomingMessage, res: http.ServerResponse) => {
       void this.handle(req, res);
-    });
+    };
+    let server: http.Server | https.Server;
+    if (this.opts.plainHttp) {
+      server = http.createServer(handler);
+      logger.info('remote bridge: plain HTTP mode (TLS disabled)');
+    } else {
+      const { key, cert } = generateSelfSignedCert([this.opts.tailnetIp, '127.0.0.1']);
+      server = https.createServer({ key, cert }, handler);
+    }
     const desiredPort = this.opts.port ?? BridgeServer.DEFAULT_PORT;
+    const bindAddr = this.opts.plainHttp ? '0.0.0.0' : this.opts.tailnetIp!;
     const tryListen = (p: number) => new Promise<void>((resolve, reject) => {
       const onError = (err: Error & { code?: string }) => {
         server.removeListener('error', onError);
         reject(err);
       };
       server.once('error', onError);
-      server.listen(p, this.opts.tailnetIp!, () => {
+      server.listen(p, bindAddr, () => {
         server.removeListener('error', onError);
         resolve();
       });
@@ -138,7 +152,8 @@ export class BridgeServer {
     const { port } = server.address() as AddressInfo;
     this.wss = new WebSocketServer({ server, path: '/ws' });
     this.wss.on('connection', (ws, req) => this.handleWs(ws, req));
-    logger.info(`remote bridge listening on https://${this.opts.tailnetIp}:${port}`);
+    const scheme = this.opts.plainHttp ? 'http' : 'https';
+    logger.info(`remote bridge listening on ${scheme}://${this.opts.tailnetIp}:${port}`);
     return { port };
   }
 
@@ -284,6 +299,17 @@ export class BridgeServer {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     if (req.method === 'OPTIONS') { res.statusCode = 204; res.end(); return; }
     try {
+      // Dev-only: mint a pairing code via HTTP (only available in plainHttp mode)
+      if (this.opts.plainHttp && req.method === 'POST' && req.url === '/dev/mint') {
+        const code = this.mintPairingCode();
+        const addr = this.server!.address() as AddressInfo;
+        const host = addr.address === '0.0.0.0' ? '127.0.0.1' : addr.address;
+        const url = `http://${host}:${addr.port}/?code=${code}`;
+        res.statusCode = 200;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ code, url, expiresAt: Date.now() + this.PAIR_TTL_MS }));
+        return;
+      }
       if (req.method === 'POST' && req.url === '/pair') return await this.handlePair(req, res);
       if (req.method === 'GET' && req.url?.startsWith('/history')) return await this.handleHistory(req, res);
       if (req.method === 'GET' && req.url?.startsWith('/sessions/')) return await this.handleSessionMessages(req, res);

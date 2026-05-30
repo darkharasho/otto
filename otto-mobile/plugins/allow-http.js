@@ -246,6 +246,22 @@ module.exports = function allowHttp(config) {
     mod.modResults.NSAppTransportSecurity = {
       NSAllowsArbitraryLoads: true,
       NSAllowsLocalNetworking: true,
+      // iOS 26 ignores NSAllowsArbitraryLoads for NSURLSession; explicit
+      // exception domains are required to permit plain HTTP from fetch().
+      NSExceptionDomains: {
+        // Tailscale MagicDNS — covers *.ts.net hostnames
+        'ts.net': {
+          NSExceptionAllowsInsecureHTTPLoads: true,
+          NSIncludesSubdomains: true,
+        },
+        // Direct IP access (loopback for simulator, LAN for local dev)
+        '127.0.0.1': {
+          NSExceptionAllowsInsecureHTTPLoads: true,
+        },
+        'localhost': {
+          NSExceptionAllowsInsecureHTTPLoads: true,
+        },
+      },
     };
     mod.modResults.NSLocalNetworkUsageDescription =
       'Otto needs local network access to communicate with your desktop over Tailscale.';
