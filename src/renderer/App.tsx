@@ -146,8 +146,10 @@ export function App() {
     async (id: string) => {
       const messages = await ipc.invoke('session.load', { sessionId: id });
       loadSession(id, messages);
-      setWindowMode('panel');
-      void ipc.invoke('window.setMode', { mode: 'panel' });
+      if (useOttoStore.getState().windowMode === 'bar') {
+        setWindowMode('panel');
+        void ipc.invoke('window.setMode', { mode: 'panel' });
+      }
     },
     [loadSession, setWindowMode]
   );
@@ -155,8 +157,10 @@ export function App() {
   const handleNewSession = useCallback(async () => {
     const { sessionId } = await ipc.invoke('session.start', { model });
     beginSession(sessionId);
-    setWindowMode('panel');
-    void ipc.invoke('window.setMode', { mode: 'panel' });
+    if (useOttoStore.getState().windowMode === 'bar') {
+      setWindowMode('panel');
+      void ipc.invoke('window.setMode', { mode: 'panel' });
+    }
   }, [beginSession, setWindowMode, model]);
 
   const handleNewConversation = useCallback(

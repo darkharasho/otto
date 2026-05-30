@@ -46,11 +46,15 @@ export function ConversationSidebarItem({
           style={{ background: 'linear-gradient(180deg,#7c7dff,#a882ff)', boxShadow: '0 0 8px rgba(124,125,255,0.7)' }}
         />
       )}
-      <span
-        aria-hidden
-        className={`flex-shrink-0 w-[7px] h-[7px] rounded-full ${status === 'running' ? 'otto-pulse-dot' : ''}`}
-        style={{ background: DOT_COLOR[status], boxShadow: status === 'running' ? '0 0 8px #7c7dff' : 'none' }}
-      />
+      {status === 'running' || status === 'errored' ? (
+        <span
+          className={`flex-shrink-0 w-[7px] h-[7px] rounded-full ${status === 'running' ? 'otto-pulse-dot' : ''}`}
+          style={{ background: DOT_COLOR[status], boxShadow: status === 'running' ? '0 0 8px #7c7dff' : '0 0 6px #e25555' }}
+          title={status === 'running' ? 'Otto is working…' : 'Last run errored'}
+        />
+      ) : (
+        <span aria-hidden className="flex-shrink-0 w-[7px] h-[7px]" />
+      )}
       <div className="flex-1 min-w-0">
         <div className={`text-[12px] truncate ${active ? 'text-white font-semibold' : 'text-[#cfd2d8] font-medium'}`}>
           {session.title}

@@ -108,7 +108,7 @@ export function ConversationSidebar({
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto px-1.5 pb-1.5">
+      <div className="otto-scrollbar flex-1 overflow-auto px-1.5 pb-1.5">
         {hasNoSessions ? (
           <div className="flex flex-col items-center justify-center text-center px-5 pt-12 pb-8 gap-2.5">
             <MessagesSquare className="w-5 h-5 text-[#3a3b41]" strokeWidth={1.5} aria-hidden />
