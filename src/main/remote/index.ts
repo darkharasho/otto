@@ -22,7 +22,7 @@ export interface RemoteModuleOpts {
   pairing: PairingStore;
   bus: SessionBus;
   resolveTailnetEndpoint: () => Promise<TailnetEndpoint>;
-  makeBridge: (tailnetIp: string) => RemoteModuleBridge;
+  makeBridge: (tailnetIp: string, tailnetHost: string | null) => RemoteModuleBridge;
   pollMs?: number;         // default 60_000
   restartDelayMs?: number; // default 1_000
 }
@@ -102,7 +102,7 @@ export class RemoteModule {
     this.currentHost = ep.host;
     this.reason = null;
     try {
-      const bridge = this.opts.makeBridge(ep.ip);
+      const bridge = this.opts.makeBridge(ep.ip, ep.host);
       const { port } = await bridge.start();
       this.bridge = bridge;
       this.currentPort = port;
@@ -124,7 +124,7 @@ export class RemoteModule {
     const ip = this.currentIp;
     if (!ip) return;
     try {
-      const bridge = this.opts.makeBridge(ip);
+      const bridge = this.opts.makeBridge(ip, this.currentHost);
       const { port } = await bridge.start();
       this.bridge = bridge;
       this.currentPort = port;

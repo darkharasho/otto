@@ -407,8 +407,9 @@ async function startElectron(): Promise<void> {
     pairing: pairingStore,
     bus: sessionBus,
     resolveTailnetEndpoint,
-    makeBridge: (tailnetIp) => new BridgeServer({
+    makeBridge: (tailnetIp, tailnetHost) => new BridgeServer({
       tailnetIp,
+      tailnetHost,
       port: 17829,
       plainHttp: !!process.env.OTTO_DEV_HTTP,
       pairing: pairingStore,

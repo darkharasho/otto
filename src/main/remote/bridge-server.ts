@@ -19,11 +19,14 @@ import { resolveImageRequest } from '../screenshot/protocol';
 type ImageRef = Extract<ContentBlock, { type: 'image-ref' }>;
 type StagedEntry = { ref: ImageRef; t: number };
 
-function generateSelfSignedCert(ips: string[]): { key: string; cert: string } {
+function generateSelfSignedCert(ips: string[], dnsNames: string[] = []): { key: string; cert: string } {
   const dir = mkdtempSync(nodePath.join(tmpdir(), 'otto-cert-'));
   const keyPath = nodePath.join(dir, 'key.pem');
   const certPath = nodePath.join(dir, 'cert.pem');
-  const san = ips.map(ip => `IP:${ip}`).join(',');
+  const san = [
+    ...ips.map(ip => `IP:${ip}`),
+    ...dnsNames.map(name => `DNS:${name}`),
+  ].join(',');
   execSync(
     `openssl req -x509 -newkey rsa:2048 -keyout ${keyPath} -out ${certPath} -days 365 -nodes -subj "/CN=Otto Bridge" -addext "subjectAltName=${san}" 2>/dev/null`,
   );
@@ -35,6 +38,7 @@ function generateSelfSignedCert(ips: string[]): { key: string; cert: string } {
 
 export interface BridgeServerOpts {
   tailnetIp: string | null;
+  tailnetHost?: string | null;
   pairing: PairingStore;
   bus: SessionBus;
   pwaDir: string | null;
@@ -121,7 +125,8 @@ export class BridgeServer {
       server = http.createServer(handler);
       logger.info('remote bridge: plain HTTP mode (TLS disabled)');
     } else {
-      const { key, cert } = generateSelfSignedCert([this.opts.tailnetIp, '127.0.0.1']);
+      const dnsNames = this.opts.tailnetHost ? [this.opts.tailnetHost] : [];
+      const { key, cert } = generateSelfSignedCert([this.opts.tailnetIp, '127.0.0.1'], dnsNames);
       server = https.createServer({ key, cert }, handler);
     }
     const desiredPort = this.opts.port ?? BridgeServer.DEFAULT_PORT;
