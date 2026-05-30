@@ -277,16 +277,21 @@ export function App() {
     return () => window.removeEventListener('keydown', handler);
   }, [windowMode, setWindowMode]);
 
-  // Down arrow demotes chat→panel
+  // Down arrow demotes chat→panel→bar
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'ArrowDown') return;
-      if (windowMode !== 'chat') return;
       const input = document.querySelector('input[type="text"]');
       if (document.activeElement !== input) return;
-      e.preventDefault();
-      setWindowMode('panel');
-      void ipc.invoke('window.setMode', { mode: 'panel' });
+      if (windowMode === 'chat') {
+        e.preventDefault();
+        setWindowMode('panel');
+        void ipc.invoke('window.setMode', { mode: 'panel' });
+      } else if (windowMode === 'panel') {
+        e.preventDefault();
+        setWindowMode('bar');
+        void ipc.invoke('window.setMode', { mode: 'bar' });
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
