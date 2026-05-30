@@ -489,6 +489,12 @@ async function startElectron(): Promise<void> {
   });
 
   const onToggle = () => {
+    // Resume the current tier when the user was in chat — otherwise the
+    // hotkey would collapse them back to the bar after every hide/show cycle.
+    if (window.getMode() === 'chat') {
+      window.toggle('chat');
+      return;
+    }
     const mode = shouldResume(repo, sessions) ? 'panel' : 'bar';
     window.toggle(mode);
   };
@@ -550,6 +556,10 @@ async function startElectron(): Promise<void> {
 
   tray = new TrayManager({
     onShow: () => {
+      if (window.getMode() === 'chat') {
+        window.show('chat');
+        return;
+      }
       const mode = shouldResume(repo, sessions) ? 'panel' : 'bar';
       window.show(mode);
     },
