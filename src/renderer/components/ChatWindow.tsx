@@ -97,14 +97,12 @@ export function ChatWindow({
           onOpenSettings={() => void ipc.invoke('settings.open', undefined)}
         />
 
-        <main className="flex-1 flex flex-col min-w-0" style={{ background: '#16171c' }}>
-          <div className="flex-1 overflow-auto">
-            <MessageList
-              sessionId={activeSession?.id ?? null}
-              messages={activeSession?.messages ?? []}
-              streaming={activeSession?.currentTurnActive ?? false}
-            />
-          </div>
+        <main className="flex-1 flex flex-col min-w-0 min-h-0" style={{ background: '#16171c' }}>
+          <MessageList
+            sessionId={activeSession?.id ?? null}
+            messages={activeSession?.messages ?? []}
+            streaming={activeSession?.currentTurnActive ?? false}
+          />
           <div style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
             <CommandBar
               onSubmit={onSubmit}
