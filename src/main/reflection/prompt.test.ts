@@ -48,4 +48,30 @@ describe('buildReflectorPrompt', () => {
     expect(out).toContain('Fact = ');
     expect(out).toContain('preference');
   });
+
+  it('instructs the model when to set preference: true', () => {
+    const out = buildReflectorPrompt({
+      originalRequest: '',
+      transcript: '',
+      knowledgeText: '',
+      existingTitles: [],
+    });
+    expect(out).toContain('"preference": true');
+    expect(out.toLowerCase()).toContain('durable');
+    expect(out.toLowerCase()).toMatch(/future system prompt|future session/);
+    expect(out.toLowerCase()).toContain('ephemeral');
+  });
+
+  it('covers taste/identity preferences, not just environment facts', () => {
+    const out = buildReflectorPrompt({
+      originalRequest: '',
+      transcript: '',
+      knowledgeText: '',
+      existingTitles: [],
+    });
+    const lower = out.toLowerCase();
+    expect(lower).toContain('identity');
+    expect(lower).toContain('taste');
+    expect(lower).toMatch(/sci-fi|genre|hobbies|habits/);
+  });
 });
