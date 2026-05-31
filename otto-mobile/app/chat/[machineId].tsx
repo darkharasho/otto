@@ -395,6 +395,9 @@ export default function ChatScreen() {
       onConnected: () => { setConnected(true); setUnreachable(false); },
       onDisconnected: () => { setConnected(false); },
       onUnreachable: () => { setUnreachable(true); },
+      onBaseUrlChanged: (newBaseUrl) => {
+        updateMachineRef.current(machine.id, { baseUrl: newBaseUrl });
+      },
     });
 
     connRef.current = conn;

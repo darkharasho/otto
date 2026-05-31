@@ -10,6 +10,16 @@ export interface ConnectionHandlers {
   onConnected(): void;
   onDisconnected(): void;
   onUnreachable(): void;
+  /** Called after a successful auth on a scheme that differs from the one
+   *  the connection was constructed with — lets the caller persist the new
+   *  baseUrl so future launches skip the fallback dance. */
+  onBaseUrlChanged?(newBaseUrl: string): void;
+}
+
+function swapScheme(baseUrl: string): string {
+  if (baseUrl.startsWith('https://')) return 'http://' + baseUrl.slice('https://'.length);
+  if (baseUrl.startsWith('http://')) return 'https://' + baseUrl.slice('http://'.length);
+  return baseUrl;
 }
 
 export class MachineConnection {
@@ -20,12 +30,23 @@ export class MachineConnection {
   private failedReconnects = 0;
   private _connected = false;
   private destroyed = false;
+  /** Current effective base URL; may flip schemes after repeated failures. */
+  private effectiveBaseUrl: string;
+  /** Original scheme of the saved baseUrl; used to detect when we've swapped
+   *  and should notify the caller to persist the new value. */
+  private readonly originalBaseUrl: string;
+  /** Set true once we've auth_ok'd at any scheme during this connection's
+   *  lifetime. Used to gate the scheme-swap fallback. */
+  private everAuthed = false;
 
   constructor(
-    private readonly baseUrl: string,
+    baseUrl: string,
     private readonly token: string,
     private readonly handlers: ConnectionHandlers,
-  ) {}
+  ) {
+    this.effectiveBaseUrl = baseUrl;
+    this.originalBaseUrl = baseUrl;
+  }
 
   get connected(): boolean {
     return this._connected;
@@ -33,7 +54,7 @@ export class MachineConnection {
 
   connect(): void {
     if (this.destroyed) return;
-    const url = wsUrl(this.baseUrl);
+    const url = wsUrl(this.effectiveBaseUrl);
     const ws = new WebSocket(url);
 
     ws.onopen = () => {
@@ -53,6 +74,10 @@ export class MachineConnection {
         this._connected = true;
         this.failedReconnects = 0;
         this.backoff = 1000;
+        this.everAuthed = true;
+        if (this.effectiveBaseUrl !== this.originalBaseUrl) {
+          this.handlers.onBaseUrlChanged?.(this.effectiveBaseUrl);
+        }
         this.handlers.onConnected();
         this.handlers.onAuthOk(typeof msg.deviceLabel === 'string' ? msg.deviceLabel : '');
         this.startPing();
@@ -67,6 +92,14 @@ export class MachineConnection {
       this.handlers.onDisconnected();
       this.stopPing();
       this.failedReconnects += 1;
+      // If we've never succeeded at the current scheme, try the other one
+      // on the next reconnect. Covers the case where the bridge flipped
+      // between http and https (e.g. user toggled OTTO_REMOTE_HTTPS) and
+      // the saved baseUrl is now stale. Flip on the 2nd consecutive miss
+      // so a transient blip doesn't whiplash the scheme.
+      if (!this.everAuthed && this.failedReconnects >= 2) {
+        this.effectiveBaseUrl = swapScheme(this.effectiveBaseUrl);
+      }
       if (this.failedReconnects >= 3) {
         this.handlers.onUnreachable();
       }
