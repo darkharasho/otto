@@ -411,7 +411,14 @@ async function startElectron(): Promise<void> {
       tailnetIp,
       tailnetHost,
       port: 17829,
-      plainHttp: !!process.env.OTTO_DEV_HTTP,
+      // Tailnet is already an authenticated overlay network, and self-signed
+      // HTTPS causes desktop browsers to silently reject the WSS handshake
+      // (and rotates on every restart, invalidating any cert exception users
+      // accept). Default to plain HTTP on the tailnet; set OTTO_REMOTE_HTTPS=1
+      // to opt back into self-signed TLS. OTTO_DEV_HTTP=1 additionally binds
+      // to 0.0.0.0 and exposes /dev/mint for the iOS simulator.
+      plainHttp: !process.env.OTTO_REMOTE_HTTPS,
+      devEndpoints: !!process.env.OTTO_DEV_HTTP,
       pairing: pairingStore,
       bus: sessionBus,
       pwaDir: path.join(app.getAppPath(), 'out', 'renderer-remote'),

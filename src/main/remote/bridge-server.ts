@@ -4,7 +4,7 @@ import { AddressInfo } from 'node:net';
 import { randomBytes } from 'node:crypto';
 import { hostname } from 'node:os';
 import { execSync } from 'node:child_process';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { promises as fsp } from 'node:fs';
 import nodePath from 'node:path';
 import { tmpdir } from 'node:os';
@@ -36,6 +36,40 @@ function generateSelfSignedCert(ips: string[], dnsNames: string[] = []): { key: 
   };
 }
 
+/**
+ * Load a self-signed cert from <configDir>/remote-cert/ that matches the
+ * current SAN inputs, regenerating it if missing, stale, or for different
+ * IPs/hosts. Persistence is what lets a browser cert exception survive Otto
+ * restarts — without it, every restart rotates the cert and the user gets
+ * the warning page again (and silent WSS failures from the old exception).
+ */
+function loadOrCreateCert(configDir: string, ips: string[], dnsNames: string[]): { key: string; cert: string } {
+  const certDir = nodePath.join(configDir, 'remote-cert');
+  const keyPath = nodePath.join(certDir, 'key.pem');
+  const certPath = nodePath.join(certDir, 'cert.pem');
+  const metaPath = nodePath.join(certDir, 'meta.json');
+  const sanKey = JSON.stringify({ ips: [...ips].sort(), dnsNames: [...dnsNames].sort() });
+
+  if (existsSync(keyPath) && existsSync(certPath) && existsSync(metaPath)) {
+    try {
+      const meta = JSON.parse(readFileSync(metaPath, 'utf8')) as { san?: string };
+      if (meta.san === sanKey) {
+        return {
+          key: readFileSync(keyPath, 'utf8'),
+          cert: readFileSync(certPath, 'utf8'),
+        };
+      }
+    } catch { /* fall through to regenerate */ }
+  }
+
+  const { key, cert } = generateSelfSignedCert(ips, dnsNames);
+  mkdirSync(certDir, { recursive: true });
+  writeFileSync(keyPath, key, { mode: 0o600 });
+  writeFileSync(certPath, cert);
+  writeFileSync(metaPath, JSON.stringify({ san: sanKey }));
+  return { key, cert };
+}
+
 export interface BridgeServerOpts {
   tailnetIp: string | null;
   tailnetHost?: string | null;
@@ -58,10 +92,14 @@ export interface BridgeServerOpts {
   port?: number;
   /** Directory where Otto config/data is stored; used to persist user-uploaded images. */
   configDir?: string;
-  /** When true, serve plain HTTP instead of HTTPS. Useful for dev/simulator
-   *  builds where self-signed certs are rejected by iOS ATS / new-arch RN.
-   *  The tailnet already provides encryption, so this is safe on private nets. */
+  /** When true, serve plain HTTP instead of HTTPS. The tailnet already
+   *  provides encryption + authentication, and self-signed HTTPS breaks
+   *  desktop browsers' WSS handshake. */
   plainHttp?: boolean;
+  /** When true, bind to 0.0.0.0 (all interfaces) and expose POST /dev/mint
+   *  for CLI-driven pairing. Used by the iOS simulator and integration tests;
+   *  never enabled in production. */
+  devEndpoints?: boolean;
 }
 
 interface PairingCode {
@@ -126,11 +164,14 @@ export class BridgeServer {
       logger.info('remote bridge: plain HTTP mode (TLS disabled)');
     } else {
       const dnsNames = this.opts.tailnetHost ? [this.opts.tailnetHost] : [];
-      const { key, cert } = generateSelfSignedCert([this.opts.tailnetIp, '127.0.0.1'], dnsNames);
+      const ips = [this.opts.tailnetIp, '127.0.0.1'];
+      const { key, cert } = this.opts.configDir
+        ? loadOrCreateCert(this.opts.configDir, ips, dnsNames)
+        : generateSelfSignedCert(ips, dnsNames);
       server = https.createServer({ key, cert }, handler);
     }
     const desiredPort = this.opts.port ?? BridgeServer.DEFAULT_PORT;
-    const bindAddr = this.opts.plainHttp ? '0.0.0.0' : this.opts.tailnetIp!;
+    const bindAddr = this.opts.devEndpoints ? '0.0.0.0' : this.opts.tailnetIp!;
     const tryListen = (p: number) => new Promise<void>((resolve, reject) => {
       const onError = (err: Error & { code?: string }) => {
         server.removeListener('error', onError);
@@ -304,8 +345,8 @@ export class BridgeServer {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     if (req.method === 'OPTIONS') { res.statusCode = 204; res.end(); return; }
     try {
-      // Dev-only: mint a pairing code via HTTP (only available in plainHttp mode)
-      if (this.opts.plainHttp && req.method === 'POST' && req.url === '/dev/mint') {
+      // Dev-only: mint a pairing code via HTTP (gated behind devEndpoints).
+      if (this.opts.devEndpoints && req.method === 'POST' && req.url === '/dev/mint') {
         const code = this.mintPairingCode();
         const addr = this.server!.address() as AddressInfo;
         const host = addr.address === '0.0.0.0' ? '127.0.0.1' : addr.address;
