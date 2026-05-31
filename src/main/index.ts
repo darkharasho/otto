@@ -255,11 +255,16 @@ async function startElectron(): Promise<void> {
 
   async function runReflectorSdk(prompt: string, opts: { model?: string; signal?: AbortSignal }): Promise<string> {
     const sdkMod = await import('@anthropic-ai/claude-agent-sdk');
+    const { getSdkSpawnOverrides } = await import('./agent/sdk-client');
     const ac = new AbortController();
     // Propagate the external abort signal (e.g. from the reflector timeout).
     if (opts.signal) {
       opts.signal.addEventListener('abort', () => ac.abort(), { once: true });
     }
+    // In packaged builds we must tell the SDK where claude-agent-sdk's cli.js
+    // lives and spawn Electron-as-node — the AppImage has no `node`/`claude`
+    // on PATH. Without this the subprocess exits with code 1 immediately.
+    const spawnOverrides = getSdkSpawnOverrides();
     const iter = sdkMod.query({
       prompt,
       options: {
@@ -274,6 +279,7 @@ async function startElectron(): Promise<void> {
         allowDangerouslySkipPermissions: true,
         persistSession: false,
         maxTurns: 1,
+        ...(spawnOverrides ?? {}),
       },
     });
     const chunks: string[] = [];

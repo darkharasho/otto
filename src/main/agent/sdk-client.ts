@@ -65,7 +65,7 @@ type SdkSpawnOverrides = {
   env: NodeJS.ProcessEnv;
 };
 
-function getSdkSpawnOverrides(): SdkSpawnOverrides | undefined {
+export function getSdkSpawnOverrides(): SdkSpawnOverrides | undefined {
   // Electron sets process.resourcesPath only when packaged. In dev,
   // `process.execPath` is `node`, so leaving overrides off is correct.
   const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
