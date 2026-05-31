@@ -277,6 +277,9 @@ export class DarwinAdapter implements PlatformAdapter {
       const exited = new Promise<{ exitCode: number | null; signal: NodeJS.Signals | null }>(
         (resolve) => {
           child.once('exit', (code, signal) => resolve({ exitCode: code, signal }));
+          // If the spawn itself fails (e.g. ENOENT), 'exit' may never fire.
+          // Resolve with -1 so the executor doesn't hang until timeout.
+          child.once('error', () => resolve({ exitCode: -1, signal: null }));
         }
       );
       return {
@@ -287,7 +290,24 @@ export class DarwinAdapter implements PlatformAdapter {
         exited,
       };
     },
-    composeEnv: (): NodeJS.ProcessEnv => ({ ...process.env }),
+    composeEnv: (): NodeJS.ProcessEnv => {
+      const env = { ...process.env };
+      // macOS GUI apps launched from Finder/Dock inherit a minimal PATH that
+      // excludes Homebrew, nvm, pyenv, and other common tool directories.
+      // Prepend well-known paths so user-installed tools are discoverable.
+      const extraPaths = [
+        '/opt/homebrew/bin',       // Homebrew (Apple Silicon)
+        '/opt/homebrew/sbin',
+        '/usr/local/bin',          // Homebrew (Intel) & other installers
+        '/usr/local/sbin',
+      ];
+      const currentPath = env.PATH ?? '/usr/bin:/bin:/usr/sbin:/sbin';
+      const missing = extraPaths.filter((p) => !currentPath.split(':').includes(p));
+      if (missing.length > 0) {
+        env.PATH = [...missing, currentPath].join(':');
+      }
+      return env;
+    },
   };
 
   screenshot = {
