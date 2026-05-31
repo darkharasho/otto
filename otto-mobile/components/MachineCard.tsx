@@ -49,10 +49,9 @@ export function MachineCard({ machine, onPress, onDelete, onRename }: Props) {
         backgroundColor: t.surface,
         borderWidth: 1,
         borderColor: t.border,
-        borderRadius: 12,
+        borderRadius: 14,
         paddingHorizontal: 16,
-        paddingVertical: 12,
-        marginBottom: 12,
+        paddingVertical: 14,
         opacity: pressed ? 0.7 : 1,
       })}
     >

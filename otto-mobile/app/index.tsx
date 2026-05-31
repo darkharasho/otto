@@ -78,6 +78,12 @@ export default function MachineListScreen() {
                 onRename={(name) => updateMachine(item.id, { label: name })}
               />
             )}
+            ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
+            ListHeaderComponent={
+              <Text style={{ color: t.textMuted, fontSize: 13, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 12 }}>
+                Your machines
+              </Text>
+            }
             contentContainerStyle={{ paddingBottom: 32 }}
           />
         )}
