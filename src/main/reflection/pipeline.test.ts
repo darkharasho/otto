@@ -130,6 +130,23 @@ describe('ReflectionPipeline.run', () => {
     expect(factRepo.counts().total).toBe(1);
   });
 
+  it('skips reflection for a private session and never calls the reflector', async () => {
+    const runReflector = vi.fn(async () => REFLECTOR_OK());
+    const pipeline = new ReflectionPipeline({
+      repo,
+      artifactRepo,
+      factRepo,
+      configDir: dir,
+      runReflector,
+      appendSystemNote: vi.fn(),
+      isPrivate: (id) => id === 's1',
+    });
+    const out = await pipeline.run({ sessionId: 's1', sinceSeq: -1 });
+    expect(out.skipped).toBe(true);
+    expect(out.reason).toBe('private');
+    expect(runReflector).not.toHaveBeenCalled();
+  });
+
   it('refuses to insert new artifacts once a kind hits the 500 hard cap', async () => {
     for (let i = 0; i < 500; i += 1) {
       await artifactRepo.upsert({ kind: 'playbook', title: `pb-${i}`, body: 'b', tags: [] });
