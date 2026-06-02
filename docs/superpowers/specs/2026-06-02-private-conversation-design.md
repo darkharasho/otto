@@ -101,16 +101,22 @@ passes it through. The `session.ensureForSubmit` main handler threads it into
 **6. Main wiring — `src/main/index.ts`**
 - Wrap the real `Repo` in `PrivacyAwareRepo`; pass the wrapper everywhere `repo`
   is used today (SessionManager, ReflectionPipeline deps, IPC handlers).
-- Reflection gate: in the `CompletionDetector` `onTrigger` callback, return early
-  when `repo.isPrivate(sessionId)` (covers idle, turn-count, and
-  `mark_task_complete` triggers, since all route through `onTrigger`).
+- Reflection gate: `ReflectionPipeline` gains an `isPrivate(sessionId)` dep;
+  `run()` returns a skipped result (`reason: 'private'`) before loading messages.
+  This is the single chokepoint for every trigger path (idle, turn-count, and
+  `mark_task_complete` all route through `pipeline.run`). The gate must live in
+  the pipeline, not rely on an empty transcript — `PrivacyAwareRepo.loadMessages`
+  returns the in-memory private messages, so without the gate they'd be reflected
+  on.
 - Memory-write gates in the `createRealSdkClient` deps:
   - `appendKnowledge(note, sessionId)` → if `repo.isPrivate(sessionId)`, return
     without writing (the tool still reports "noted" to the model so it isn't
     confused).
   - `bumpFactUse(ids, sessionId)` → if `repo.isPrivate(sessionId)`, no-op (avoids
     recording the private session in `fact_session` / use counts).
-- On `session.close` for a private id, call `repo.dropPrivate(id)` to free memory.
+- In the `session.close` IPC handler, after `await sessions.close(args)`, call
+  `repo.dropPrivate(args.sessionId)` to free memory (`SessionManager` stays
+  privacy-unaware; `dropPrivate` is a no-op for non-private ids).
 
 **7. `SessionManager.start` — `src/main/agent/session.ts`**
 `start` already accepts `{ resume?, model? }`. Add `private?: boolean`, threaded
@@ -125,8 +131,9 @@ handler passes the flag through.
    creates an in-memory meta. Nothing is written to SQLite.
 3. Turns stream as normal; messages persist to the in-memory map. The renderer
    displays them from its own Zustand store (unchanged).
-4. Reflection triggers fire but `onTrigger` returns early for the private id.
-   `knowledge_append` / `bumpFactUse` no-op.
+4. Reflection triggers fire but `ReflectionPipeline.run` returns
+   `skipped: true, reason: 'private'` for the private id. `knowledge_append` /
+   `bumpFactUse` no-op.
 5. On close (e.g. starting another conversation), `dropPrivate` frees memory.
    Nothing remains on disk.
 
@@ -136,9 +143,9 @@ handler passes the flag through.
   residue — the privacy guarantee holds even on unclean exit.
 - **Memory growth:** private sessions retain messages in memory until
   `dropPrivate` or app exit. Expected to be small; no cap in v1.
-- **Reflection race:** the gate lives in `onTrigger`, which is the single choke
-  point for every trigger path, so there's no window where a private session can
-  reach `pipeline.run`.
+- **Reflection race:** the gate lives at the top of `ReflectionPipeline.run`,
+  the single chokepoint every trigger path funnels through, so there's no window
+  where a private session's transcript gets reflected on.
 
 ## Testing
 
@@ -149,8 +156,8 @@ handler passes the flag through.
 - New `privacy-aware-repo.test.ts` — private writes never hit the underlying
   `Repo` (assert with a spy/in-memory base), reads come from memory,
   `listSessions` excludes private, `isPrivate`/`dropPrivate` behave.
-- Reflection gate — a unit test that `onTrigger` for a private session does not
-  invoke `pipeline.run` (or pipeline-level: `isPrivate` short-circuits).
+- Reflection gate — a `pipeline.test.ts` case: `run()` for a private session id
+  returns `skipped: true, reason: 'private'` and never calls `runReflector`.
 - `appendKnowledge` / `bumpFactUse` no-op for a private session id.
 
 ## Out of scope (v1)
