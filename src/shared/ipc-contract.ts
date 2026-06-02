@@ -17,6 +17,8 @@ export interface StructuredError {
 export interface SessionStartArgs {
   resume?: string;
   model?: string;
+  /** When true, start an ephemeral private session: never persisted, never reflected on. */
+  private?: boolean;
 }
 export interface SessionStartResult {
   sessionId: string;
@@ -53,6 +55,8 @@ export interface SessionLoadArgs {
 export interface SessionEnsureForSubmitArgs {
   current: string | null;
   model?: string;
+  /** When creating a new session here (current is null / idle timeout), make it private. */
+  private?: boolean;
 }
 
 export interface SessionEnsureForSubmitResult {

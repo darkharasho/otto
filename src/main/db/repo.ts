@@ -6,6 +6,8 @@ export interface CreateSessionArgs {
   model: string;
   createdAt: number;
   lastActive: number;
+  /** Routed to PrivacyAwareRepo's in-memory store; the base Repo ignores it. */
+  private?: boolean;
 }
 
 interface SessionRow {
