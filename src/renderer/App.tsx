@@ -150,6 +150,8 @@ export function App() {
 
   const handleSelectSession = useCallback(
     async (id: string) => {
+      // Navigating to an existing session cancels any pending private arming.
+      pendingPrivate.current = false;
       const messages = await ipc.invoke('session.load', { sessionId: id });
       loadSession(id, messages);
       if (useOttoStore.getState().windowMode === 'bar') {
@@ -161,6 +163,8 @@ export function App() {
   );
 
   const handleNewSession = useCallback(async () => {
+    // Explicit new (non-private) session cancels any pending private arming.
+    pendingPrivate.current = false;
     const { sessionId } = await ipc.invoke('session.start', { model });
     beginSession(sessionId);
     if (useOttoStore.getState().windowMode === 'bar') {
