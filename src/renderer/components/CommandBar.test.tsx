@@ -45,6 +45,45 @@ describe('CommandBar', () => {
     expect(input.value).toBe('');
   });
 
+  it('fires onPrivateConversation immediately when input value becomes "/p "', async () => {
+    const onSubmit = vi.fn();
+    const onPrivateConversation = vi.fn();
+    render(
+      <CommandBar
+        onSubmit={onSubmit}
+        ensureSession={noopEnsure}
+        onPrivateConversation={onPrivateConversation}
+      />,
+    );
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    await userEvent.type(input, '/p ');
+    expect(onPrivateConversation).toHaveBeenCalledWith({ text: '', attachments: [] });
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(input.value).toBe('');
+  });
+
+  it('routes a "/p text" submit to onPrivateConversation with the remainder', () => {
+    // Set the whole value at once (as paste / programmatic set does) so it
+    // bypasses the char-by-char path where "/p " momentarily matches the prefix
+    // and fires the immediate-private branch. This exercises handleSubmit's
+    // parsePrivateConversationPrefix routing directly.
+    const onSubmit = vi.fn();
+    const onPrivateConversation = vi.fn();
+    render(
+      <CommandBar
+        onSubmit={onSubmit}
+        ensureSession={noopEnsure}
+        onPrivateConversation={onPrivateConversation}
+      />,
+    );
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '/p hush hush' } });
+    fireEvent.submit(document.querySelector('form')!);
+    expect(onPrivateConversation).toHaveBeenCalledWith({ text: 'hush hush', attachments: [] });
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(input.value).toBe('');
+  });
+
   it('submits with attachments when only an image is staged via paste', async () => {
     const onSubmit = vi.fn();
     const mockRef = {

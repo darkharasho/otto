@@ -4,7 +4,12 @@ import { OttoMark } from './OttoMark';
 import { ipc } from '../ipc';
 import { extFromMime } from '@shared/messages';
 import type { ContentBlock } from '@shared/messages';
-import { parseNewConversationPrefix, NEW_CONVERSATION_PREFIX } from '@shared/manual-prefix';
+import {
+  parseNewConversationPrefix,
+  NEW_CONVERSATION_PREFIX,
+  parsePrivateConversationPrefix,
+  PRIVATE_CONVERSATION_PREFIX,
+} from '@shared/manual-prefix';
 
 type ImageRef = Extract<ContentBlock, { type: 'image-ref' }>;
 
@@ -15,6 +20,7 @@ interface Props {
   /** Called when Shift+Enter is pressed while busy — interrupts the current turn then sends. */
   onInterruptAndSend?(args: { text: string; attachments: ImageRef[] }): void;
   onNewConversation?(args: { text: string; attachments: ImageRef[] }): void;
+  onPrivateConversation?(args: { text: string; attachments: ImageRef[] }): void;
   autoFocus?: boolean;
   busy?: boolean;
   queueDepth?: number;
@@ -27,6 +33,7 @@ export function CommandBar({
   onStop,
   onInterruptAndSend,
   onNewConversation,
+  onPrivateConversation,
   autoFocus = true,
   busy = false,
   queueDepth = 0,
@@ -98,10 +105,20 @@ export function CommandBar({
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    const parsed = parseNewConversationPrefix(value);
-    if (parsed && onNewConversation) {
-      const remainder = parsed.remainder.trimEnd();
+    const parsedNew = parseNewConversationPrefix(value);
+    if (parsedNew && onNewConversation) {
+      const remainder = parsedNew.remainder.trimEnd();
       onNewConversation({ text: remainder, attachments });
+      setValue('');
+      setAttachments([]);
+      setSendTick((n) => n + 1);
+      inputRef.current?.focus();
+      return;
+    }
+    const parsedPrivate = parsePrivateConversationPrefix(value);
+    if (parsedPrivate && onPrivateConversation) {
+      const remainder = parsedPrivate.remainder.trimEnd();
+      onPrivateConversation({ text: remainder, attachments });
       setValue('');
       setAttachments([]);
       setSendTick((n) => n + 1);
@@ -197,6 +214,12 @@ export function CommandBar({
               setValue('');
               setAttachments([]);
               onNewConversation({ text: '', attachments });
+              return;
+            }
+            if (next === PRIVATE_CONVERSATION_PREFIX && onPrivateConversation) {
+              setValue('');
+              setAttachments([]);
+              onPrivateConversation({ text: '', attachments });
               return;
             }
             setValue(next);
