@@ -44,7 +44,7 @@ async function startElectron(): Promise<void> {
     return;
   }
   const { openDatabase } = await import('./db/db');
-  const { Repo } = await import('./db/repo');
+  const { PrivacyAwareRepo } = await import('./db/privacy-aware-repo');
   const { WindowManager, rendererEntry } = await import('./window');
   const { HotkeyManager } = await import('./hotkey');
   const { getPlatformAdapter } = await import('./platform');
@@ -122,7 +122,7 @@ async function startElectron(): Promise<void> {
     return;
   }
 
-  const repo = new Repo(db);
+  const repo = new PrivacyAwareRepo(db);
   const platform = getPlatformAdapter();
   const window = new WindowManager();
 
@@ -301,6 +301,7 @@ async function startElectron(): Promise<void> {
     artifactRepo,
     factRepo,
     configDir: ottoConfigDir,
+    isPrivate: (sessionId) => repo.isPrivate(sessionId),
     runReflector: (prompt) =>
       reflect({
         sdk: { run: async (p, opts) => runReflectorSdk(p, opts) },
@@ -367,8 +368,12 @@ async function startElectron(): Promise<void> {
         ids: pinned.map((f) => f.id),
       };
     },
-    bumpFactUse: (ids, sessionId) => factRepo.bumpUse(ids, sessionId),
+    bumpFactUse: (ids, sessionId) => {
+      if (repo.isPrivate(sessionId)) return;
+      factRepo.bumpUse(ids, sessionId);
+    },
     appendKnowledge: async (note, sessionId) => {
+      if (repo.isPrivate(sessionId)) return; // private convos never write durable memory
       await factRepo.upsert({ body: note, preference: true, sourceSessionId: sessionId });
       factRepo.rerank();
       await regenerateKnowledgeFile(ottoConfigDir, factRepo);
