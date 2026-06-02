@@ -71,6 +71,7 @@ export function App() {
   // stageFile paste and handleSubmit racing) always await the same promise
   // and end up with the same sessionId.
   const inFlightSessionStart = useRef<Promise<string> | null>(null);
+  const pendingPrivate = useRef(false);
   const lastUserSubmitAt = useRef<number>(Date.now());
   const [pendingTopicShift, setPendingTopicShift] = useState<
     { text: string; attachments: ImageRef[] } | null
@@ -78,13 +79,18 @@ export function App() {
 
   const ensureSession = useCallback(async (): Promise<string> => {
     if (inFlightSessionStart.current) return inFlightSessionStart.current;
+    const wantPrivate = pendingPrivate.current;
     const p = ipc
       .invoke('session.ensureForSubmit', {
         current: activeSession?.id ?? null,
         model,
+        private: wantPrivate,
       })
       .then(({ sessionId, isNew }) => {
-        if (isNew) beginSession(sessionId);
+        if (isNew) {
+          beginSession(sessionId);
+          if (wantPrivate) pendingPrivate.current = false; // consumed
+        }
         inFlightSessionStart.current = null;
         return sessionId;
       });
@@ -165,6 +171,9 @@ export function App() {
 
   const handleNewConversation = useCallback(
     async ({ text, attachments }: { text: string; attachments: ImageRef[] }) => {
+      // Choosing a (non-private) new conversation cancels any pending private
+      // arming from a prior bare "/p " trigger.
+      pendingPrivate.current = false;
       const prevId = useOttoStore.getState().activeSession?.id ?? null;
       if (prevId) {
         // Use close (not interrupt) so the old SDK subprocess is fully torn
@@ -195,6 +204,37 @@ export function App() {
       void ipc.invoke('session.list', undefined).then(setSessions);
     },
     [abandonActiveSession, beginSession, setWindowMode, setSessions, appendUserMessage, model],
+  );
+
+  const handlePrivateConversation = useCallback(
+    async ({ text, attachments }: { text: string; attachments: ImageRef[] }) => {
+      const prevId = useOttoStore.getState().activeSession?.id ?? null;
+      if (prevId) {
+        void ipc.invoke('session.close', { sessionId: prevId }).catch(() => {});
+      }
+      // Empty trigger ("/p" + space): drop the old session and arm the next
+      // submit to be private. Collapse to the bar so the next submit lazily
+      // starts a fresh private session via ensureForSubmit.
+      if (text.length === 0 && attachments.length === 0) {
+        abandonActiveSession();
+        pendingPrivate.current = true;
+        if (useOttoStore.getState().windowMode !== 'chat') {
+          setWindowMode('bar');
+          void ipc.invoke('window.setMode', { mode: 'bar' });
+        }
+        return;
+      }
+      const { sessionId } = await ipc.invoke('session.start', { model, private: true });
+      beginSession(sessionId);
+      if (useOttoStore.getState().windowMode === 'bar') {
+        setWindowMode('panel');
+        void ipc.invoke('window.setMode', { mode: 'panel' });
+      }
+      appendUserMessage(crypto.randomUUID(), text, attachments);
+      await ipc.invoke('session.send', { sessionId, text, attachments });
+      // Intentionally do NOT refresh session.list — private sessions stay out of history.
+    },
+    [abandonActiveSession, beginSession, setWindowMode, appendUserMessage, model],
   );
 
   const streaming = isSessionBusy(activeSession);
@@ -325,6 +365,7 @@ export function App() {
         onStop={handleStop}
         onInterruptAndSend={handleInterruptAndSend}
         onNewConversation={handleNewConversation}
+        onPrivateConversation={handlePrivateConversation}
         onSelectSession={handleSelectSession}
       />
     );
@@ -339,6 +380,7 @@ export function App() {
           onStop={handleStop}
           onInterruptAndSend={handleInterruptAndSend}
           onNewConversation={handleNewConversation}
+          onPrivateConversation={handlePrivateConversation}
           busy={streaming}
           queueDepth={activeSession?.queueDepth ?? 0}
           welcome={isFreshSession}
@@ -381,6 +423,7 @@ export function App() {
               onStop={handleStop}
               onInterruptAndSend={handleInterruptAndSend}
               onNewConversation={handleNewConversation}
+              onPrivateConversation={handlePrivateConversation}
               busy={streaming}
               queueDepth={activeSession?.queueDepth ?? 0}
               welcome={isFreshSession}

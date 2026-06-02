@@ -17,6 +17,7 @@ interface Props {
   onStop: () => void;
   onInterruptAndSend: (args: { text: string; attachments: ImageRef[] }) => void | Promise<void>;
   onNewConversation: (args: { text: string; attachments: ImageRef[] }) => void | Promise<void>;
+  onPrivateConversation: (args: { text: string; attachments: ImageRef[] }) => void | Promise<void>;
   onSelectSession: (id: string) => void | Promise<void>;
 }
 
@@ -26,6 +27,7 @@ export function ChatWindow({
   onStop,
   onInterruptAndSend,
   onNewConversation,
+  onPrivateConversation,
   onSelectSession,
 }: Props) {
   const sessions = useOttoStore((s) => s.sessions);
@@ -145,6 +147,7 @@ export function ChatWindow({
               onStop={onStop}
               onInterruptAndSend={onInterruptAndSend}
               onNewConversation={onNewConversation}
+              onPrivateConversation={onPrivateConversation}
               busy={streaming}
               queueDepth={activeSession?.queueDepth ?? 0}
               welcome={isFreshSession}
