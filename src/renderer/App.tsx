@@ -72,6 +72,8 @@ export function App() {
   // and end up with the same sessionId.
   const inFlightSessionStart = useRef<Promise<string> | null>(null);
   const pendingPrivate = useRef(false);
+  // Reactive mirror of pendingPrivate for the UI indicator (refs don't re-render).
+  const [armedPrivate, setArmedPrivate] = useState(false);
   const lastUserSubmitAt = useRef<number>(Date.now());
   const [pendingTopicShift, setPendingTopicShift] = useState<
     { text: string; attachments: ImageRef[] } | null
@@ -88,8 +90,11 @@ export function App() {
       })
       .then(({ sessionId, isNew }) => {
         if (isNew) {
-          beginSession(sessionId);
-          if (wantPrivate) pendingPrivate.current = false; // consumed
+          beginSession(sessionId, { private: wantPrivate });
+          if (wantPrivate) {
+            pendingPrivate.current = false; // consumed
+            setArmedPrivate(false);
+          }
         }
         inFlightSessionStart.current = null;
         return sessionId;
@@ -152,6 +157,7 @@ export function App() {
     async (id: string) => {
       // Navigating to an existing session cancels any pending private arming.
       pendingPrivate.current = false;
+      setArmedPrivate(false);
       const messages = await ipc.invoke('session.load', { sessionId: id });
       loadSession(id, messages);
       if (useOttoStore.getState().windowMode === 'bar') {
@@ -165,6 +171,7 @@ export function App() {
   const handleNewSession = useCallback(async () => {
     // Explicit new (non-private) session cancels any pending private arming.
     pendingPrivate.current = false;
+    setArmedPrivate(false);
     const { sessionId } = await ipc.invoke('session.start', { model });
     beginSession(sessionId);
     if (useOttoStore.getState().windowMode === 'bar') {
@@ -178,6 +185,7 @@ export function App() {
       // Choosing a (non-private) new conversation cancels any pending private
       // arming from a prior bare "/p " trigger.
       pendingPrivate.current = false;
+      setArmedPrivate(false);
       const prevId = useOttoStore.getState().activeSession?.id ?? null;
       if (prevId) {
         // Use close (not interrupt) so the old SDK subprocess is fully torn
@@ -222,6 +230,7 @@ export function App() {
       if (text.length === 0 && attachments.length === 0) {
         abandonActiveSession();
         pendingPrivate.current = true;
+        setArmedPrivate(true);
         if (useOttoStore.getState().windowMode !== 'chat') {
           setWindowMode('bar');
           void ipc.invoke('window.setMode', { mode: 'bar' });
@@ -229,7 +238,7 @@ export function App() {
         return;
       }
       const { sessionId } = await ipc.invoke('session.start', { model, private: true });
-      beginSession(sessionId);
+      beginSession(sessionId, { private: true });
       if (useOttoStore.getState().windowMode === 'bar') {
         setWindowMode('panel');
         void ipc.invoke('window.setMode', { mode: 'panel' });
@@ -243,6 +252,9 @@ export function App() {
 
   const streaming = isSessionBusy(activeSession);
   const isFreshSession = !activeSession || activeSession.messages.length === 0;
+  // Private when the active session is private, or while a bare "/p " has armed
+  // the next message (before the session exists yet).
+  const showPrivate = (activeSession?.private ?? false) || armedPrivate;
 
   const handleStop = useCallback(() => {
     if (!activeSession?.id) return;
@@ -371,6 +383,7 @@ export function App() {
         onNewConversation={handleNewConversation}
         onPrivateConversation={handlePrivateConversation}
         onSelectSession={handleSelectSession}
+        isPrivate={showPrivate}
       />
     );
   }
@@ -385,6 +398,7 @@ export function App() {
           onInterruptAndSend={handleInterruptAndSend}
           onNewConversation={handleNewConversation}
           onPrivateConversation={handlePrivateConversation}
+          isPrivate={showPrivate}
           busy={streaming}
           queueDepth={activeSession?.queueDepth ?? 0}
           welcome={isFreshSession}

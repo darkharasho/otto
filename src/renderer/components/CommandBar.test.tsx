@@ -84,6 +84,17 @@ describe('CommandBar', () => {
     expect(input.value).toBe('');
   });
 
+  it('shows the private indicator when isPrivate is set', () => {
+    render(<CommandBar onSubmit={() => {}} ensureSession={noopEnsure} isPrivate />);
+    expect(screen.getByTestId('private-indicator')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/private/i)).toBeInTheDocument();
+  });
+
+  it('hides the private indicator by default', () => {
+    render(<CommandBar onSubmit={() => {}} ensureSession={noopEnsure} />);
+    expect(screen.queryByTestId('private-indicator')).toBeNull();
+  });
+
   it('submits with attachments when only an image is staged via paste', async () => {
     const onSubmit = vi.fn();
     const mockRef = {

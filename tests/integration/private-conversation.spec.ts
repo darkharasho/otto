@@ -29,7 +29,9 @@ function launch(cfg: string): Promise<ElectronApplication> {
 // main process so better-sqlite3's native ABI matches the running app.
 async function dbCounts(app: ElectronApplication, dbPath: string) {
   return app.evaluate(async (_electronModule, p) => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    // require (not import): this runs inside the Electron main process via
+    // app.evaluate, where ESM import isn't available.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
     const Database = require('better-sqlite3');
     const db = new Database(p, { readonly: true });
     const sessions = (db.prepare('SELECT COUNT(*) AS n FROM sessions').get() as { n: number }).n;

@@ -10,6 +10,8 @@ export interface ActiveSessionState {
   currentTurnActive: boolean;
   queueDepth: number;
   error: StructuredError | null;
+  /** True for a private (/p) conversation: never persisted, learned, or saved. */
+  private?: boolean;
 }
 
 export function isSessionBusy(s: ActiveSessionState | null): boolean {
@@ -25,7 +27,7 @@ interface OttoState {
 
   pinnedSessionIds: string[];
   setWindowMode(mode: WindowMode): void;
-  beginSession(id: string): void;
+  beginSession(id: string, opts?: { private?: boolean }): void;
   loadSession(id: string, messages: Message[]): void;
   abandonActiveSession(): void;
   appendUserMessage(id: string, text: string, attachments?: Array<Extract<ContentBlock, { type: 'image-ref' }>>): void;
@@ -92,13 +94,13 @@ export const useOttoStore = create<OttoState>((set, get) => ({
     set({ windowMode: mode });
   },
 
-  beginSession(id) {
+  beginSession(id, opts) {
     // Mark the session we're leaving (if any) as abandoned so its remaining
     // events don't yank activeSession back via auto-attach.
     const prev = get().activeSession?.id;
     if (prev && prev !== id) abandonedSessions.add(prev);
     attachInFlight.clear();
-    set({ activeSession: { id, messages: [], currentTurnActive: false, queueDepth: 0, error: null } });
+    set({ activeSession: { id, messages: [], currentTurnActive: false, queueDepth: 0, error: null, private: opts?.private } });
   },
 
   loadSession(id, messages) {

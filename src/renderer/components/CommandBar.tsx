@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent, useEffect } from 'react';
-import { Paperclip } from 'lucide-react';
+import { Paperclip, Lock } from 'lucide-react';
 import { OttoMark } from './OttoMark';
 import { ipc } from '../ipc';
 import { extFromMime } from '@shared/messages';
@@ -21,6 +21,8 @@ interface Props {
   onInterruptAndSend?(args: { text: string; attachments: ImageRef[] }): void;
   onNewConversation?(args: { text: string; attachments: ImageRef[] }): void;
   onPrivateConversation?(args: { text: string; attachments: ImageRef[] }): void;
+  /** Show the private-conversation treatment (lock pill + violet accent). */
+  isPrivate?: boolean;
   autoFocus?: boolean;
   busy?: boolean;
   queueDepth?: number;
@@ -34,6 +36,7 @@ export function CommandBar({
   onInterruptAndSend,
   onNewConversation,
   onPrivateConversation,
+  isPrivate = false,
   autoFocus = true,
   busy = false,
   queueDepth = 0,
@@ -164,7 +167,11 @@ export function CommandBar({
     }
   }
 
-  const placeholder = busy ? 'Otto is working — your message will queue' : 'Ask Otto to do something…';
+  const placeholder = busy
+    ? 'Otto is working — your message will queue'
+    : isPrivate
+      ? 'Private — nothing here is saved, learned, or remembered'
+      : 'Ask Otto to do something…';
   const canSend = value.trim().length > 0 || attachments.length > 0;
 
   return (
@@ -175,24 +182,43 @@ export function CommandBar({
       onDragOver={handleDragOver}
       onDrop={handleDrop}
       aria-busy={busy}
+      data-private={isPrivate || undefined}
       className={[
         'relative flex items-center gap-3 px-4 py-3 rounded-2xl border shadow-2xl transition-colors',
-        'focus-within:border-accent/70',
+        isPrivate ? 'focus-within:border-[#7c7dff]/70' : 'focus-within:border-accent/70',
         busy
           ? 'bg-surface/80 border-accent/60 ring-1 ring-accent/40'
-          : 'bg-surface border-border',
+          : isPrivate
+            ? 'bg-surface border-[#7c7dff]/60 ring-1 ring-[#7c7dff]/30'
+            : 'bg-surface border-border',
       ].join(' ')}
     >
       <div className="flex items-center gap-3 flex-1 min-w-0">
         <span
           className={[
             'relative flex items-center justify-center w-5 h-5 shrink-0',
-            busy ? 'text-accent animate-pulse' : welcome ? 'text-accent' : 'text-muted',
+            busy
+              ? 'text-accent animate-pulse'
+              : isPrivate
+                ? 'text-[#7c7dff]'
+                : welcome
+                  ? 'text-accent'
+                  : 'text-muted',
           ].join(' ')}
         >
-          {welcome && !busy && value.length === 0 && <span aria-hidden className="otto-halo" />}
+          {welcome && !busy && !isPrivate && value.length === 0 && <span aria-hidden className="otto-halo" />}
           <OttoMark className="relative w-5 h-5" />
         </span>
+        {isPrivate && (
+          <span
+            data-testid="private-indicator"
+            title="Private conversation — nothing here is saved to history, learned, or written to memory"
+            className="shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-[#7c7dff]/15 text-[#b9b9ff] border border-[#7c7dff]/40"
+          >
+            <Lock className="h-3 w-3" aria-hidden />
+            private
+          </span>
+        )}
         {isDev && (
           <span
             title="Development build"

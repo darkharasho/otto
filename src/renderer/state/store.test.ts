@@ -28,6 +28,16 @@ describe('useOttoStore', () => {
     });
   });
 
+  it('marks the active session private when beginSession opts.private is true', () => {
+    useOttoStore.getState().beginSession('p1', { private: true });
+    expect(useOttoStore.getState().activeSession?.private).toBe(true);
+  });
+
+  it('begins a non-private session by default', () => {
+    useOttoStore.getState().beginSession('s2');
+    expect(useOttoStore.getState().activeSession?.private).toBeFalsy();
+  });
+
   it('handles message-start by appending an empty assistant placeholder', () => {
     useOttoStore.getState().beginSession('s1');
     useOttoStore.getState().applyEvent({
