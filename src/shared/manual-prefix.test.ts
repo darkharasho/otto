@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { parseNewConversationPrefix, NEW_CONVERSATION_PREFIX } from './manual-prefix';
+import {
+  parsePrivateConversationPrefix,
+  PRIVATE_CONVERSATION_PREFIX,
+} from './manual-prefix';
 
 describe('parseNewConversationPrefix', () => {
   it('exports the literal prefix "/n "', () => {
@@ -29,5 +33,32 @@ describe('parseNewConversationPrefix', () => {
   it('does not match "/n" without a trailing space', () => {
     expect(parseNewConversationPrefix('/n')).toBeNull();
     expect(parseNewConversationPrefix('/nhello')).toBeNull();
+  });
+});
+
+describe('parsePrivateConversationPrefix', () => {
+  it('exports the literal prefix "/p "', () => {
+    expect(PRIVATE_CONVERSATION_PREFIX).toBe('/p ');
+  });
+
+  it('returns null when buffer does not start with the prefix', () => {
+    expect(parsePrivateConversationPrefix('hello')).toBeNull();
+    expect(parsePrivateConversationPrefix('say /p now')).toBeNull();
+    expect(parsePrivateConversationPrefix('/ping this')).toBeNull();
+  });
+
+  it('returns empty remainder when buffer is exactly the prefix', () => {
+    expect(parsePrivateConversationPrefix('/p ')).toEqual({ remainder: '' });
+  });
+
+  it('returns the trailing text as remainder', () => {
+    expect(parsePrivateConversationPrefix('/p secret thing')).toEqual({
+      remainder: 'secret thing',
+    });
+  });
+
+  it('does not match "/p" without a trailing space', () => {
+    expect(parsePrivateConversationPrefix('/p')).toBeNull();
+    expect(parsePrivateConversationPrefix('/phello')).toBeNull();
   });
 });

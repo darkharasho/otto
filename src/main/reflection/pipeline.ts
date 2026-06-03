@@ -17,6 +17,8 @@ export interface PipelineDeps {
   configDir: string;
   runReflector: (prompt: string) => Promise<ReflectOutcome>;
   appendSystemNote: (sessionId: string, content: ContentBlock) => void;
+  /** Returns true for private sessions, which must never be reflected on. */
+  isPrivate?: (sessionId: string) => boolean;
 }
 
 export interface PipelineResult {
@@ -32,7 +34,17 @@ export class ReflectionPipeline {
   constructor(private readonly deps: PipelineDeps) {}
 
   async run(args: { sessionId: string; sinceSeq: number }): Promise<PipelineResult> {
-    const { repo, artifactRepo, factRepo, runReflector, appendSystemNote } = this.deps;
+    const { repo, artifactRepo, factRepo, runReflector, appendSystemNote, isPrivate } = this.deps;
+    if (isPrivate?.(args.sessionId)) {
+      return {
+        savedFacts: 0,
+        savedArtifacts: 0,
+        savedByKind: { fact: 0, playbook: 0, anti_pattern: 0, heuristic: 0 },
+        capReached: [],
+        skipped: true,
+        reason: 'private',
+      };
+    }
     const allMessages = repo.loadMessages(args.sessionId);
     const slice = allMessages.filter((m) => m.seq > args.sinceSeq);
     if (slice.length === 0) {

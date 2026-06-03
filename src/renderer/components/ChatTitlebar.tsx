@@ -1,9 +1,10 @@
-import { ArrowDown, Minus, Square, Copy } from 'lucide-react';
+import { ArrowDown, Minus, Square, Copy, Lock } from 'lucide-react';
 import { OttoMark } from './OttoMark';
 
 interface Props {
   sessionTitle: string;
   isLive: boolean;
+  isPrivate?: boolean;
   isMaximized: boolean;
   hideChord: string | null;
   onMinimize: () => void;
@@ -37,6 +38,7 @@ function renderChord(chord: string): string {
 export function ChatTitlebar({
   sessionTitle,
   isLive,
+  isPrivate = false,
   isMaximized,
   hideChord,
   onMinimize,
@@ -59,6 +61,17 @@ export function ChatTitlebar({
         >
           {sessionTitle || 'New conversation'}
         </span>
+        {isPrivate && (
+          <span
+            data-testid="private-indicator"
+            title="Private conversation — nothing here is saved to history, learned, or written to memory"
+            className="ml-1.5 inline-flex items-center gap-1 px-2 py-[2px] rounded-full flex-shrink-0"
+            style={{ background: 'rgba(124,125,255,0.12)', border: '1px solid rgba(124,125,255,0.3)' }}
+          >
+            <Lock className="w-[10px] h-[10px] text-[#cfd0ff]" strokeWidth={2.4} aria-hidden />
+            <span className="text-[10px] text-[#cfd0ff] font-semibold tracking-[0.3px]">PRIVATE</span>
+          </span>
+        )}
         {isLive && (
           <span
             className="ml-1.5 inline-flex items-center gap-1.5 px-2 py-[2px] rounded-full flex-shrink-0"

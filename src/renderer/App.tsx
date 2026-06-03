@@ -71,6 +71,9 @@ export function App() {
   // stageFile paste and handleSubmit racing) always await the same promise
   // and end up with the same sessionId.
   const inFlightSessionStart = useRef<Promise<string> | null>(null);
+  const pendingPrivate = useRef(false);
+  // Reactive mirror of pendingPrivate for the UI indicator (refs don't re-render).
+  const [armedPrivate, setArmedPrivate] = useState(false);
   const lastUserSubmitAt = useRef<number>(Date.now());
   const [pendingTopicShift, setPendingTopicShift] = useState<
     { text: string; attachments: ImageRef[] } | null
@@ -78,13 +81,21 @@ export function App() {
 
   const ensureSession = useCallback(async (): Promise<string> => {
     if (inFlightSessionStart.current) return inFlightSessionStart.current;
+    const wantPrivate = pendingPrivate.current;
     const p = ipc
       .invoke('session.ensureForSubmit', {
         current: activeSession?.id ?? null,
         model,
+        private: wantPrivate,
       })
       .then(({ sessionId, isNew }) => {
-        if (isNew) beginSession(sessionId);
+        if (isNew) {
+          beginSession(sessionId, { private: wantPrivate });
+          if (wantPrivate) {
+            pendingPrivate.current = false; // consumed
+            setArmedPrivate(false);
+          }
+        }
         inFlightSessionStart.current = null;
         return sessionId;
       });
@@ -144,6 +155,9 @@ export function App() {
 
   const handleSelectSession = useCallback(
     async (id: string) => {
+      // Navigating to an existing session cancels any pending private arming.
+      pendingPrivate.current = false;
+      setArmedPrivate(false);
       const messages = await ipc.invoke('session.load', { sessionId: id });
       loadSession(id, messages);
       if (useOttoStore.getState().windowMode === 'bar') {
@@ -155,6 +169,9 @@ export function App() {
   );
 
   const handleNewSession = useCallback(async () => {
+    // Explicit new (non-private) session cancels any pending private arming.
+    pendingPrivate.current = false;
+    setArmedPrivate(false);
     const { sessionId } = await ipc.invoke('session.start', { model });
     beginSession(sessionId);
     if (useOttoStore.getState().windowMode === 'bar') {
@@ -165,6 +182,10 @@ export function App() {
 
   const handleNewConversation = useCallback(
     async ({ text, attachments }: { text: string; attachments: ImageRef[] }) => {
+      // Choosing a (non-private) new conversation cancels any pending private
+      // arming from a prior bare "/p " trigger.
+      pendingPrivate.current = false;
+      setArmedPrivate(false);
       const prevId = useOttoStore.getState().activeSession?.id ?? null;
       if (prevId) {
         // Use close (not interrupt) so the old SDK subprocess is fully torn
@@ -197,8 +218,43 @@ export function App() {
     [abandonActiveSession, beginSession, setWindowMode, setSessions, appendUserMessage, model],
   );
 
+  const handlePrivateConversation = useCallback(
+    async ({ text, attachments }: { text: string; attachments: ImageRef[] }) => {
+      const prevId = useOttoStore.getState().activeSession?.id ?? null;
+      if (prevId) {
+        void ipc.invoke('session.close', { sessionId: prevId }).catch(() => {});
+      }
+      // Empty trigger ("/p" + space): drop the old session and arm the next
+      // submit to be private. Collapse to the bar so the next submit lazily
+      // starts a fresh private session via ensureForSubmit.
+      if (text.length === 0 && attachments.length === 0) {
+        abandonActiveSession();
+        pendingPrivate.current = true;
+        setArmedPrivate(true);
+        if (useOttoStore.getState().windowMode !== 'chat') {
+          setWindowMode('bar');
+          void ipc.invoke('window.setMode', { mode: 'bar' });
+        }
+        return;
+      }
+      const { sessionId } = await ipc.invoke('session.start', { model, private: true });
+      beginSession(sessionId, { private: true });
+      if (useOttoStore.getState().windowMode === 'bar') {
+        setWindowMode('panel');
+        void ipc.invoke('window.setMode', { mode: 'panel' });
+      }
+      appendUserMessage(crypto.randomUUID(), text, attachments);
+      await ipc.invoke('session.send', { sessionId, text, attachments });
+      // Intentionally do NOT refresh session.list — private sessions stay out of history.
+    },
+    [abandonActiveSession, beginSession, setWindowMode, appendUserMessage, model],
+  );
+
   const streaming = isSessionBusy(activeSession);
   const isFreshSession = !activeSession || activeSession.messages.length === 0;
+  // Private when the active session is private, or while a bare "/p " has armed
+  // the next message (before the session exists yet).
+  const showPrivate = (activeSession?.private ?? false) || armedPrivate;
 
   const handleStop = useCallback(() => {
     if (!activeSession?.id) return;
@@ -325,7 +381,9 @@ export function App() {
         onStop={handleStop}
         onInterruptAndSend={handleInterruptAndSend}
         onNewConversation={handleNewConversation}
+        onPrivateConversation={handlePrivateConversation}
         onSelectSession={handleSelectSession}
+        isPrivate={showPrivate}
       />
     );
   }
@@ -339,6 +397,8 @@ export function App() {
           onStop={handleStop}
           onInterruptAndSend={handleInterruptAndSend}
           onNewConversation={handleNewConversation}
+          onPrivateConversation={handlePrivateConversation}
+          isPrivate={showPrivate}
           busy={streaming}
           queueDepth={activeSession?.queueDepth ?? 0}
           welcome={isFreshSession}
@@ -381,6 +441,8 @@ export function App() {
               onStop={handleStop}
               onInterruptAndSend={handleInterruptAndSend}
               onNewConversation={handleNewConversation}
+              onPrivateConversation={handlePrivateConversation}
+              isPrivate={showPrivate}
               busy={streaming}
               queueDepth={activeSession?.queueDepth ?? 0}
               welcome={isFreshSession}
@@ -389,6 +451,7 @@ export function App() {
               model={model}
               sessionId={activeSession?.id ?? null}
               mode={mode}
+              isPrivate={showPrivate}
             />
           </div>
         }

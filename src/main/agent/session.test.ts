@@ -245,6 +245,21 @@ describe('SessionManager', () => {
     expect(user.content).toEqual([{ type: 'text', text: 'look' }, ref]);
   });
 
+  it('starts a private session that is not persisted to history', async () => {
+    const { PrivacyAwareRepo } = await import('../db/privacy-aware-repo');
+    const privRepo = new PrivacyAwareRepo(openDatabase(path.join(dir, 'priv.db')));
+    const { openStream } = makeFakeOpenStream(async function* () {
+      yield { type: 'message-end' };
+      yield { type: 'done' };
+    });
+    const privSdk: SdkClient = { startSession: vi.fn(async () => ({ id: 'sdk-priv' })), openStream };
+    const mgr = new SessionManager(privRepo, privSdk, 'claude-sonnet-4-6', () => {});
+    const { sessionId } = await mgr.start({ private: true });
+    expect(privRepo.isPrivate(sessionId)).toBe(true);
+    expect(privRepo.listSessions().find((s) => s.id === sessionId)).toBeUndefined();
+    expect(privRepo.getSession(sessionId)?.model).toBe('claude-sonnet-4-6');
+  });
+
   it('rewrites image blocks in tool_result.result.content to image-ref blocks', async () => {
     const { openStream } = makeFakeOpenStream(async function* () {
       yield { type: 'tool-call-start', callId: 'cs-1', name: 'screenshot', input: {} };

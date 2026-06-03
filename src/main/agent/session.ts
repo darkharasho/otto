@@ -107,7 +107,7 @@ export class SessionManager {
     for (const cb of this.activityListeners) cb();
   }
 
-  async start(args: { resume?: string; model?: string }): Promise<{ sessionId: string }> {
+  async start(args: { resume?: string; model?: string; private?: boolean }): Promise<{ sessionId: string }> {
     const model = args.model ?? this.defaultModel;
     const sdkSession = await this.sdk.startSession({ resume: args.resume, model });
     const now = Date.now();
@@ -117,6 +117,7 @@ export class SessionManager {
         model,
         createdAt: now,
         lastActive: now,
+        private: args.private,
       });
     } else {
       this.repo.updateSessionActivity(sdkSession.id, now, 'active');

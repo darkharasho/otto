@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron';
-import type { Repo } from '../db/repo';
+import type { PrivacyAwareRepo } from '../db/privacy-aware-repo';
 import type { SessionManager } from '../agent/session';
 import type { ConversationPolicy } from '../agent/conversation-policy';
 import type { TopicShiftDetector } from '../agent/topic-shift-detector';
@@ -43,7 +43,7 @@ import type { RemoteSettings } from '../remote/settings';
 import type { RemoteCeilingChoice } from '@shared/ipc-contract';
 
 export function registerIpcHandlers(deps: {
-  repo: Repo;
+  repo: PrivacyAwareRepo;
   sessions: SessionManager;
   window: WindowManager;
   broker: DecisionBroker;
@@ -103,6 +103,7 @@ export function registerIpcHandlers(deps: {
 
   ipcMain.handle('session.close', async (_e, args: { sessionId: string }): Promise<void> => {
     await sessions.close(args);
+    repo.dropPrivate(args.sessionId);
   });
 
   ipcMain.handle(
@@ -116,12 +117,12 @@ export function registerIpcHandlers(deps: {
       // after the user abandons via /n).
       const current = args.current;
       if (!current) {
-        const { sessionId } = await sessions.start({ model: args.model });
+        const { sessionId } = await sessions.start({ model: args.model, private: args.private });
         conversationPolicy.recordActivity();
         return { sessionId, isNew: true, reason: 'no-session' };
       }
       if (conversationPolicy.shouldStartFresh()) {
-        const { sessionId } = await sessions.start({ model: args.model });
+        const { sessionId } = await sessions.start({ model: args.model, private: args.private });
         conversationPolicy.recordActivity();
         return { sessionId, isNew: true, reason: 'idle-timeout' };
       }

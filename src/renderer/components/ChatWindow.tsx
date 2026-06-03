@@ -17,7 +17,9 @@ interface Props {
   onStop: () => void;
   onInterruptAndSend: (args: { text: string; attachments: ImageRef[] }) => void | Promise<void>;
   onNewConversation: (args: { text: string; attachments: ImageRef[] }) => void | Promise<void>;
+  onPrivateConversation: (args: { text: string; attachments: ImageRef[] }) => void | Promise<void>;
   onSelectSession: (id: string) => void | Promise<void>;
+  isPrivate?: boolean;
 }
 
 export function ChatWindow({
@@ -26,7 +28,9 @@ export function ChatWindow({
   onStop,
   onInterruptAndSend,
   onNewConversation,
+  onPrivateConversation,
   onSelectSession,
+  isPrivate = false,
 }: Props) {
   const sessions = useOttoStore((s) => s.sessions);
   const activeSession = useOttoStore((s) => s.activeSession);
@@ -85,6 +89,7 @@ export function ChatWindow({
       <ChatTitlebar
         sessionTitle={activeTitle}
         isLive={streaming}
+        isPrivate={isPrivate}
         isMaximized={isMaximized}
         hideChord={hideChord}
         onMinimize={() => void ipc.invoke('window.minimize', undefined)}
@@ -145,6 +150,8 @@ export function ChatWindow({
               onStop={onStop}
               onInterruptAndSend={onInterruptAndSend}
               onNewConversation={onNewConversation}
+              onPrivateConversation={onPrivateConversation}
+              isPrivate={isPrivate}
               busy={streaming}
               queueDepth={activeSession?.queueDepth ?? 0}
               welcome={isFreshSession}
