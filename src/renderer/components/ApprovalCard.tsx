@@ -24,12 +24,20 @@ export function ApprovalCard({ block }: Props) {
 
   const decided = block.decision !== 'pending';
 
+  const tagClass: Record<string, string> = {
+    read: 'bg-white/[0.05] text-muted border border-border',
+    reversible: 'bg-amber-500/15 text-amber-300 border border-amber-500/40',
+    destructive: 'bg-danger/15 text-danger border border-danger/40',
+    irreversible: 'bg-danger/20 text-danger border border-danger/50',
+  };
+  const tag = tagClass[block.actionClass] ?? tagClass.read;
+
   return (
-    <div className="my-2 rounded-lg border border-accent/40 bg-accent/10 p-3 text-sm">
+    <div className="my-2 rounded-[11px] border border-accent/40 bg-gradient-to-b from-accent/[0.08] to-accent/[0.02] p-3 text-sm shadow-[0_0_24px_-8px_rgba(124,125,255,0.4)]">
       <div className="flex items-baseline justify-between mb-2">
         <div className="font-medium">
           <span>{block.name}</span>
-          <span className="ml-2 text-[10px] uppercase tracking-wide text-muted">
+          <span className={`ml-2 inline-block text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-md ${tag}`}>
             {block.actionClass}
           </span>
         </div>
@@ -45,7 +53,7 @@ export function ApprovalCard({ block }: Props) {
           type="button"
           onClick={() => submit('approve')}
           disabled={decided}
-          className="px-2 py-1 text-xs rounded bg-accent text-bg disabled:opacity-50"
+          className="otto-send px-3 py-1 text-xs rounded-md hover:brightness-110 disabled:opacity-50"
         >
           Approve
         </button>
@@ -53,7 +61,7 @@ export function ApprovalCard({ block }: Props) {
           type="button"
           onClick={() => submit('approve-session')}
           disabled={decided}
-          className="px-2 py-1 text-xs rounded border border-accent text-accent disabled:opacity-50"
+          className="px-3 py-1 text-xs rounded-md border border-accent/60 text-accent hover:bg-accent/10 disabled:opacity-50"
         >
           Approve for session
         </button>
@@ -61,7 +69,7 @@ export function ApprovalCard({ block }: Props) {
           type="button"
           onClick={() => submit('deny')}
           disabled={decided}
-          className="px-2 py-1 text-xs rounded border border-danger text-danger disabled:opacity-50"
+          className="px-3 py-1 text-xs rounded-md border border-border text-muted hover:text-danger hover:border-danger/50 disabled:opacity-50"
         >
           Deny
         </button>
