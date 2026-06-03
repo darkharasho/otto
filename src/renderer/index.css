@@ -264,3 +264,30 @@ button {
   border-radius: 3px;
 }
 .otto-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.12); }
+
+/* ===== UI refresh helpers ===== */
+/* Elevated surface: subtle gradient + inner top-highlight + soft shadow. */
+.otto-elevated {
+  background: linear-gradient(180deg, #1a1b1f, #161619);
+  border: 1px solid #292a30;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 14px 30px -16px rgba(0, 0, 0, 0.7);
+}
+/* Violet gradient action button (send / primary). */
+.otto-send {
+  background: linear-gradient(135deg, #8889ff, #6e6fff);
+  box-shadow: 0 3px 10px rgba(110, 111, 255, 0.45);
+  color: #fff;
+}
+/* Soft accent pill (status / mode chips). */
+.otto-accent-pill {
+  background: rgba(124, 125, 255, 0.12);
+  border: 1px solid rgba(124, 125, 255, 0.30);
+  color: #cdcdff;
+}
+/* Radial violet halo placed behind the Otto mark on anchor surfaces. */
+.otto-mark-halo { position: relative; display: inline-flex; align-items: center; }
+.otto-mark-halo::after {
+  content: ''; position: absolute; inset: -6px; border-radius: 9999px;
+  background: radial-gradient(circle, rgba(124, 125, 255, 0.22), transparent 70%);
+  pointer-events: none;
+}
