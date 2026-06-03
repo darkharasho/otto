@@ -63,12 +63,6 @@ export function ProcessCard({ block }: Props) {
 
   const glyphStatus = mapGlyphStatus(block.status, block.exitCode);
 
-  const statusColor = {
-    running: 'text-muted',
-    done: 'text-accent',
-    error: 'text-danger',
-  }[glyphStatus];
-
   const statusLabel = {
     running: 'RUNNING',
     exited: block.exitCode !== null && block.exitCode !== 0 ? `EXITED ${block.exitCode}` : 'EXITED',
@@ -123,7 +117,7 @@ export function ProcessCard({ block }: Props) {
       : 'text-muted';
 
   return (
-    <div className="my-2 rounded-lg border border-border bg-bg/40 overflow-hidden">
+    <div className="my-2 rounded-[10px] otto-elevated overflow-hidden">
       {/* Header row — click on the row to toggle; cancel is an independent <button> */}
       <div
         aria-expanded={open}
@@ -131,7 +125,7 @@ export function ProcessCard({ block }: Props) {
         className="w-full flex items-center justify-between gap-3 px-3 py-2 text-sm hover:bg-surface/40 transition-colors cursor-pointer"
       >
         <span className="flex items-center gap-2.5 min-w-0 flex-1">
-          <span className="w-6 h-6 rounded-md bg-accent/10 text-accent flex items-center justify-center flex-shrink-0">
+          <span className="w-6 h-6 rounded-md bg-gradient-to-br from-accent/30 to-accent2/20 text-[#b9b9ff] flex items-center justify-center flex-shrink-0">
             <ToolIcon name="terminal" className="w-3.5 h-3.5" />
           </span>
           <span className="flex flex-col min-w-0 text-left">
@@ -153,8 +147,17 @@ export function ProcessCard({ block }: Props) {
               Cancel
             </button>
           )}
-          <StatusGlyph status={glyphStatus} />
-          <span className={`uppercase tracking-wide text-[10px] ${statusColor}`}>{statusLabel}</span>
+          <span className={[
+            'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wide',
+            glyphStatus === 'error'
+              ? 'bg-danger/15 text-danger border border-danger/30'
+              : glyphStatus === 'running'
+                ? 'bg-white/[0.04] text-muted border border-border'
+                : 'otto-accent-pill',
+          ].join(' ')}>
+            <StatusGlyph status={glyphStatus} />
+            {statusLabel}
+          </span>
           <svg
             viewBox="0 0 24 24"
             className={`w-3 h-3 text-muted transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
