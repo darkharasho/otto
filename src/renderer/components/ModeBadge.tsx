@@ -39,7 +39,7 @@ export function ModeBadge({ mode }: Props) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         disabled={busy}
-        className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide px-2 py-0.5 rounded border border-border bg-bg/60 hover:bg-surface/60 disabled:opacity-50"
+        className="flex items-center gap-1.5 text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border border-border bg-white/[0.04] hover:bg-surface/60 disabled:opacity-50"
       >
         <span className={`inline-block w-2 h-2 rounded-full ${DOT_BY_MODE[mode]}`} />
         <span>{mode}</span>
