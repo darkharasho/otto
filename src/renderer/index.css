@@ -281,13 +281,20 @@ button {
 /* Soft accent pill (status / mode chips). */
 .otto-accent-pill {
   background: rgba(124, 125, 255, 0.12);
-  border: 1px solid rgba(124, 125, 255, 0.30);
+  border: 1px solid rgba(124, 125, 255, 0.3);
   color: #cdcdff;
 }
 /* Radial violet halo placed behind the Otto mark on anchor surfaces. */
-.otto-mark-halo { position: relative; display: inline-flex; align-items: center; }
+.otto-mark-halo {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
 .otto-mark-halo::after {
-  content: ''; position: absolute; inset: -6px; border-radius: 9999px;
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border-radius: 9999px;
   background: radial-gradient(circle, rgba(124, 125, 255, 0.22), transparent 70%);
   pointer-events: none;
 }
