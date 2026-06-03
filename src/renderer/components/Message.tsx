@@ -81,7 +81,7 @@ const markdownComponents: Components = {
 
 function MarkdownBlock({ text, caret }: { text: string; caret?: boolean }) {
   return (
-    <div className="md text-sm leading-relaxed">
+    <div className="md text-sm leading-[1.6]">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeEmojiIcons]}
@@ -127,7 +127,7 @@ export function MessageView({ message, isStreamingTarget = false }: Props) {
   if (message.role === 'user') {
     return (
       <div data-testid="message-user" className="otto-msg-enter flex justify-end my-3">
-        <div className="max-w-[80%] rounded-2xl rounded-br-md bg-accent/20 border border-accent/30 px-4 py-2 text-sm">
+        <div className="max-w-[80%] rounded-2xl rounded-br-md px-4 py-2 text-sm text-text bg-gradient-to-b from-accent/[0.18] to-accent/[0.12] border border-accent/30 shadow-[0_2px_10px_-4px_rgba(110,111,255,0.35)]">
           {message.content.map((b, i) => {
             if (b.type === 'text') return <span key={i}>{b.text}</span>;
             if (b.type === 'image-ref') {
@@ -160,7 +160,7 @@ export function MessageView({ message, isStreamingTarget = false }: Props) {
     return (
       <div data-testid="message-assistant" className={cls}>
         <div className="flex items-center gap-1.5 mb-1 text-xs font-medium text-muted">
-          <OttoMark className="w-3.5 h-3.5 text-accent" />
+          <span className="otto-mark-halo"><OttoMark className="w-3.5 h-3.5 text-accent" /></span>
           <span>Otto</span>
         </div>
         {renderBlocks(message.content, isStreamingTarget)}
