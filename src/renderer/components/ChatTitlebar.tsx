@@ -1,5 +1,7 @@
 import { ArrowDown, Minus, Square, Copy, Lock } from 'lucide-react';
+import type { AutonomyMode } from '@shared/messages';
 import { OttoMark } from './OttoMark';
+import { ModeBadge } from './ModeBadge';
 
 interface Props {
   sessionTitle: string;
@@ -7,6 +9,7 @@ interface Props {
   isPrivate?: boolean;
   isMaximized: boolean;
   hideChord: string | null;
+  mode: AutonomyMode;
   onMinimize: () => void;
   onToggleMaximize: () => void;
 }
@@ -41,6 +44,7 @@ export function ChatTitlebar({
   isPrivate = false,
   isMaximized,
   hideChord,
+  mode,
   onMinimize,
   onToggleMaximize,
 }: Props) {
@@ -87,6 +91,7 @@ export function ChatTitlebar({
       </div>
 
       <div className="z-10 flex items-center gap-2.5">
+        <div className="otto-app-no-drag"><ModeBadge mode={mode} openDirection="down" /></div>
         <div className="flex items-center gap-1.5 text-[10px] text-[#5b5e66]">
           <kbd className="inline-flex items-center justify-center px-1 py-[3px] rounded-[5px] bg-[#1b1c22] border border-[#2a2b2e] text-[#9598a0]">
             <ArrowDown className="w-[10px] h-[10px]" strokeWidth={2} aria-hidden />
