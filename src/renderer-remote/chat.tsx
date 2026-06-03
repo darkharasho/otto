@@ -87,22 +87,25 @@ function ToolCard({ item }: { item: ToolItem }): JSX.Element {
     : item.isError ? 'error'
     : 'done';
   const statusLabel = status === 'running' ? '…' : status;
-  const statusClass =
-    status === 'running' ? 'text-muted'
-    : status === 'done' ? 'text-emerald-500'
-    : 'text-danger';
 
   const desc = describeTool(item.name);
   const summary = summarizeInput(item.name, item.input);
   const view = item.result === undefined ? null : classifyResult(item.name, item.result, Boolean(item.isError), item.input);
 
+  const pillClass =
+    status === 'running'
+      ? 'bg-white/[0.04] border border-border text-muted'
+      : status === 'done'
+        ? 'otto-accent-pill'
+        : 'bg-danger/15 text-danger border border-danger/30';
+
   return (
-    <div className="rounded-md border border-border bg-surface overflow-hidden">
+    <div className="otto-elevated rounded-[10px] overflow-hidden">
       <button
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between gap-2 px-2.5 py-2 text-xs min-h-[44px] hover:bg-bg/40"
+        className="w-full flex items-center justify-between gap-2 px-2.5 py-2 text-xs min-h-[44px] hover:bg-white/[0.03]"
       >
         <span className="flex items-center gap-2 min-w-0 flex-1">
           <span className="w-5 h-5 rounded bg-accent/10 text-accent flex items-center justify-center flex-shrink-0">
@@ -121,7 +124,7 @@ function ToolCard({ item }: { item: ToolItem }): JSX.Element {
           </span>
         </span>
         <span className="flex items-center gap-1.5 flex-shrink-0">
-          <span className={`uppercase tracking-wide text-[10px] ${statusClass}`}>{statusLabel}</span>
+          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wide ${pillClass}`}>{statusLabel}</span>
           <svg
             viewBox="0 0 24 24"
             className={`w-3 h-3 text-muted transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
@@ -132,7 +135,7 @@ function ToolCard({ item }: { item: ToolItem }): JSX.Element {
         </span>
       </button>
       {open && (
-        <div className="px-2.5 pb-2.5 space-y-2 border-t border-border/40 pt-2 text-[11px]">
+        <div className="px-2.5 pb-2.5 space-y-2 border-t border-white/[0.06] pt-2 text-[11px]">
           {item.input !== undefined && item.input !== null && (
             <div>
               <div className="text-muted mb-1 text-[9px] uppercase tracking-wide">Input</div>
@@ -732,7 +735,7 @@ export function Chat(): JSX.Element {
             const imageRefs = (it.content ?? []).filter((b) => b.type === 'image-ref') as Array<{ type: 'image-ref'; id: string; sessionId: string; mimeType: string; [k: string]: unknown }>;
             return (
               <div key={it.id} className="flex justify-end">
-                <div className="rounded-md bg-accent/15 text-text px-3 py-2 text-sm break-words max-w-[85%] space-y-1">
+                <div className="rounded-[10px] bg-gradient-to-br from-accent/20 to-accent/10 border border-accent/20 text-text px-3 py-2 text-sm break-words max-w-[85%] space-y-1 shadow-sm">
                   {imageRefs.length > 0 && (
                     <div className="flex flex-wrap gap-1 mb-1">
                       {imageRefs.map((ref) => {
@@ -911,7 +914,7 @@ export function Chat(): JSX.Element {
           <button
             onClick={onSend}
             disabled={!connected || (!input.trim() && confirmedAttachments.length === 0) || pendingUploads.length > 0}
-            className="rounded-md bg-accent text-white px-4 py-2 text-sm font-medium disabled:opacity-50"
+            className="otto-send rounded-md px-4 py-2 text-sm font-medium disabled:opacity-50"
           >
             Send
           </button>
