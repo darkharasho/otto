@@ -442,6 +442,7 @@ export function App() {
               onInterruptAndSend={handleInterruptAndSend}
               onNewConversation={handleNewConversation}
               onPrivateConversation={handlePrivateConversation}
+              isPrivate={showPrivate}
               busy={streaming}
               queueDepth={activeSession?.queueDepth ?? 0}
               welcome={isFreshSession}
@@ -450,6 +451,7 @@ export function App() {
               model={model}
               sessionId={activeSession?.id ?? null}
               mode={mode}
+              isPrivate={showPrivate}
             />
           </div>
         }
