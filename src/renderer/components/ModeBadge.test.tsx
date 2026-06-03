@@ -19,7 +19,7 @@ describe('ModeBadge', () => {
     render(<ModeBadge mode="balanced" />);
     await userEvent.click(screen.getByRole('button', { name: /balanced/i }));
     expect(screen.getByText(/strict/i)).toBeInTheDocument();
-    expect(screen.getByText(/full-allow/i)).toBeInTheDocument();
+    expect(screen.getByText(/full access/i)).toBeInTheDocument();
   });
 
   it('selecting a different mode invokes autonomy.setMode', async () => {

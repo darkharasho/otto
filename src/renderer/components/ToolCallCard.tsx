@@ -24,12 +24,6 @@ export function ToolCallCard({ name, input, result, isError }: Props) {
     input === null ||
     (typeof input === 'object' && !Array.isArray(input) && Object.keys(input as object).length === 0);
 
-  const statusColor = {
-    running: 'text-muted',
-    done: 'text-accent',
-    error: 'text-danger',
-  }[status];
-
   const wasRunning = useRef(status === 'running');
   const [justFinished, setJustFinished] = useState(false);
   useEffect(() => {
@@ -53,7 +47,7 @@ export function ToolCallCard({ name, input, result, isError }: Props) {
   }, [open, view]);
 
   return (
-    <div className="my-2 rounded-lg border border-border bg-bg/40 overflow-hidden">
+    <div className="my-2 rounded-[10px] otto-elevated overflow-hidden">
       <button
         type="button"
         aria-expanded={open}
@@ -61,7 +55,7 @@ export function ToolCallCard({ name, input, result, isError }: Props) {
         className="w-full flex items-center justify-between gap-3 px-3 py-2 text-sm hover:bg-surface/40 transition-colors"
       >
         <span className="flex items-center gap-2.5 min-w-0 flex-1">
-          <span className="w-6 h-6 rounded-md bg-accent/10 text-accent flex items-center justify-center flex-shrink-0">
+          <span className="w-6 h-6 rounded-md bg-gradient-to-br from-accent/30 to-accent2/20 text-[#b9b9ff] flex items-center justify-center flex-shrink-0">
             <ToolIcon name={desc.icon} className="w-3.5 h-3.5" />
           </span>
           <span className="flex flex-col min-w-0 text-left">
@@ -77,8 +71,17 @@ export function ToolCallCard({ name, input, result, isError }: Props) {
           </span>
         </span>
         <span className="flex items-center gap-2 flex-shrink-0">
-          <StatusGlyph status={status} justFinished={justFinished} />
-          <span className={`uppercase tracking-wide text-[10px] ${statusColor}`}>{status}</span>
+          <span className={[
+            'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wide',
+            status === 'error'
+              ? 'bg-danger/15 text-danger border border-danger/30'
+              : status === 'running'
+                ? 'bg-white/[0.04] text-muted border border-border'
+                : 'otto-accent-pill',
+          ].join(' ')}>
+            <StatusGlyph status={status} justFinished={justFinished} />
+            {status}
+          </span>
           <svg
             viewBox="0 0 24 24"
             className={`w-3 h-3 text-muted transition-transform duration-200 ${open ? 'rotate-180' : ''}`}

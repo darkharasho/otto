@@ -12,7 +12,6 @@ interface Props {
   sessions: SidebarSession[];
   activeSessionId: string | null;
   pinnedIds: string[];
-  autonomyLabel: string;
   conversationCount: number;
   onNew: () => void;
   onSelect: (id: string) => void;
@@ -32,7 +31,7 @@ function formatSubtitle(s: SidebarSession, now: number): string {
 }
 
 export function ConversationSidebar({
-  sessions, activeSessionId, pinnedIds, autonomyLabel, conversationCount,
+  sessions, activeSessionId, pinnedIds, conversationCount,
   onNew, onSelect, onTogglePin, onOpenSettings,
 }: Props) {
   const [query, setQuery] = useState('');
@@ -144,18 +143,8 @@ export function ConversationSidebar({
         )}
       </div>
 
-      <div className="px-3 py-2 flex items-center gap-2.5"
+      <div className="px-3 py-2 flex items-center"
         style={{ borderTop: '1px solid rgba(255,255,255,0.04)', background: '#0a0b0e' }}>
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          className="flex items-center gap-1.5 px-2 py-1 rounded-full transition-colors hover:brightness-110"
-          style={{ background: 'rgba(82,210,126,0.1)', border: '1px solid rgba(82,210,126,0.35)' }}
-          aria-label={`Autonomy: ${autonomyLabel} — open settings`}
-        >
-          <span className="w-[5px] h-[5px] rounded-full" style={{ background: '#52d27e', boxShadow: '0 0 6px #52d27e' }} />
-          <span className="text-[9px] text-[#9be3b3] font-bold tracking-[0.6px]">{autonomyLabel}</span>
-        </button>
         <div className="flex-1" />
         <button
           type="button"

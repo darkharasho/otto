@@ -184,13 +184,13 @@ export function CommandBar({
       aria-busy={busy}
       data-private={isPrivate || undefined}
       className={[
-        'relative flex items-center gap-3 px-4 py-3 rounded-2xl border shadow-2xl transition-colors',
+        'relative flex items-center gap-3 px-4 py-3 rounded-[14px] transition-colors',
         isPrivate ? 'focus-within:border-[#7c7dff]/70' : 'focus-within:border-accent/70',
         busy
-          ? 'bg-surface/80 border-accent/60 ring-1 ring-accent/40'
+          ? 'otto-elevated border-accent/60 ring-1 ring-accent/40'
           : isPrivate
-            ? 'bg-surface border-[#7c7dff]/60 ring-1 ring-[#7c7dff]/30'
-            : 'bg-surface border-border',
+            ? 'otto-elevated border-[#7c7dff]/60 ring-1 ring-[#7c7dff]/30'
+            : 'otto-elevated',
       ].join(' ')}
     >
       <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -203,7 +203,7 @@ export function CommandBar({
                 ? 'text-[#7c7dff]'
                 : welcome
                   ? 'text-accent'
-                  : 'text-muted',
+                  : 'text-muted otto-mark-halo',
           ].join(' ')}
         >
           {welcome && !busy && !isPrivate && value.length === 0 && <span aria-hidden className="otto-halo" />}
@@ -334,7 +334,7 @@ export function CommandBar({
           <button
             type="submit"
             aria-label="Send"
-            className="flex items-center justify-center w-6 h-6 rounded-md bg-accent/90 hover:bg-accent text-white shadow transition-colors"
+            className="otto-send flex items-center justify-center w-6 h-6 rounded-md hover:brightness-110 transition"
           >
             <svg viewBox="0 0 24 24" className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 19V5" />
@@ -348,7 +348,7 @@ export function CommandBar({
       {busy && (
         <span
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-[2px] overflow-hidden rounded-b-2xl"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-[2px] overflow-hidden rounded-b-[14px]"
         >
           <span className="block h-full w-1/3 bg-accent/70 animate-[shimmer_1.4s_ease-in-out_infinite]" />
         </span>

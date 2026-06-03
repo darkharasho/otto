@@ -11,6 +11,7 @@ export default {
         text: '#e9eaec',
         muted: '#8b8d92',
         accent: '#7c7dff',
+        accent2: '#6e6fff',
         danger: '#ef4444',
       },
       fontFamily: {

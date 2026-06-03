@@ -92,6 +92,7 @@ export function ChatWindow({
         isPrivate={isPrivate}
         isMaximized={isMaximized}
         hideChord={hideChord}
+        mode={autonomyMode}
         onMinimize={() => void ipc.invoke('window.minimize', undefined)}
         onToggleMaximize={() => {
           setIsMaximized((v) => !v);
@@ -104,7 +105,6 @@ export function ChatWindow({
           sessions={sidebarSessions}
           activeSessionId={activeSession?.id ?? null}
           pinnedIds={pinnedIds}
-          autonomyLabel={autonomyMode.toUpperCase()}
           conversationCount={sidebarSessions.length}
           onNew={() => void onNewConversation({ text: '', attachments: [] })}
           onSelect={(id) => void onSelectSession(id)}

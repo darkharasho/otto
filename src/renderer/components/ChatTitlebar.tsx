@@ -1,5 +1,7 @@
 import { ArrowDown, Minus, Square, Copy, Lock } from 'lucide-react';
+import type { AutonomyMode } from '@shared/messages';
 import { OttoMark } from './OttoMark';
+import { ModeBadge } from './ModeBadge';
 
 interface Props {
   sessionTitle: string;
@@ -7,6 +9,7 @@ interface Props {
   isPrivate?: boolean;
   isMaximized: boolean;
   hideChord: string | null;
+  mode: AutonomyMode;
   onMinimize: () => void;
   onToggleMaximize: () => void;
 }
@@ -41,6 +44,7 @@ export function ChatTitlebar({
   isPrivate = false,
   isMaximized,
   hideChord,
+  mode,
   onMinimize,
   onToggleMaximize,
 }: Props) {
@@ -48,8 +52,8 @@ export function ChatTitlebar({
     <div
       className="otto-app-drag relative flex items-center justify-between px-3.5 py-2.5"
       style={{
-        background: 'linear-gradient(180deg, rgba(124,125,255,0.04), transparent 80%), #0f1014',
-        borderBottom: '1px solid rgba(255,255,255,0.04)',
+        background: '#0e0e10',
+        borderBottom: '1px solid rgba(255,255,255,0.05)',
       }}
     >
       <div className="flex items-center gap-2.5 z-10 min-w-0">
@@ -87,6 +91,7 @@ export function ChatTitlebar({
       </div>
 
       <div className="z-10 flex items-center gap-2.5">
+        <div className="otto-app-no-drag"><ModeBadge mode={mode} openDirection="down" /></div>
         <div className="flex items-center gap-1.5 text-[10px] text-[#5b5e66]">
           <kbd className="inline-flex items-center justify-center px-1 py-[3px] rounded-[5px] bg-[#1b1c22] border border-[#2a2b2e] text-[#9598a0]">
             <ArrowDown className="w-[10px] h-[10px]" strokeWidth={2} aria-hidden />
@@ -107,8 +112,7 @@ export function ChatTitlebar({
           <button
             type="button"
             onClick={onMinimize}
-            className="w-[26px] h-[26px] rounded-[7px] flex items-center justify-center text-[#9598a0] transition-colors hover:text-white hover:bg-[#1b1c22]"
-            style={{ background: '#15161a', border: '1px solid #2a2b2e' }}
+            className="w-[26px] h-[26px] rounded-[7px] flex items-center justify-center text-[#9598a0] transition-colors hover:text-white hover:bg-white/[0.06]"
             aria-label="Minimize"
           >
             <Minus className="w-[11px] h-[11px]" strokeWidth={2.4} aria-hidden />
@@ -116,8 +120,7 @@ export function ChatTitlebar({
           <button
             type="button"
             onClick={onToggleMaximize}
-            className="w-[26px] h-[26px] rounded-[7px] flex items-center justify-center text-[#9598a0] transition-colors hover:text-white hover:bg-[#1b1c22]"
-            style={{ background: '#15161a', border: '1px solid #2a2b2e' }}
+            className="w-[26px] h-[26px] rounded-[7px] flex items-center justify-center text-[#9598a0] transition-colors hover:text-white hover:bg-white/[0.06]"
             aria-label={isMaximized ? 'Restore' : 'Maximize'}
           >
             {isMaximized ? (

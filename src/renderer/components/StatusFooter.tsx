@@ -21,7 +21,7 @@ export function StatusFooter({ model, sessionId, mode, isPrivate = false }: Prop
   return (
     <div className="flex items-center justify-between text-[10px] text-muted">
       <div className="flex items-center gap-2">
-        <span className="px-1.5 py-0.5 rounded bg-bg/60 border border-border" title={model}>
+        <span className="px-1.5 py-0.5 rounded-md bg-white/[0.04] border border-border" title={model}>
           {modelLabel(model)}
         </span>
         {isPrivate ? (

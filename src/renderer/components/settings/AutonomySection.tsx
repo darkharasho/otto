@@ -17,7 +17,7 @@ export function AutonomySection({
         options={[
           { value: 'strict', label: 'Strict', description: 'Ask before any reversible or destructive action.' },
           { value: 'balanced', label: 'Balanced', description: 'Run read-only freely, ask for destructive or irreversible.' },
-          { value: 'full-allow', label: 'Full allow', description: 'Run everything without asking. Use at your own risk.' },
+          { value: 'full-allow', label: 'Full access', description: 'Run everything without asking. Use at your own risk.' },
         ]}
       />
     </SubsectionPage>

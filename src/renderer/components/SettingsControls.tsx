@@ -56,7 +56,7 @@ export function Toggle({
           'group/toggle mt-0.5 box-content relative w-[28px] h-[14px] p-[2px] rounded-full',
           'border transition-colors flex-shrink-0',
           checked
-            ? 'bg-accent border-accent'
+            ? 'border-accent shadow-[0_2px_8px_-2px_rgba(110,111,255,0.6)] [background:linear-gradient(135deg,#8889ff,#6e6fff)]'
             : 'bg-bg/60 border-border hover:border-accent/60',
         ].join(' ')}
       >
@@ -96,7 +96,9 @@ export function RadioGroup<T extends string>({
             onClick={() => onChange(opt.value)}
             className={[
               'relative w-full text-left pl-3 pr-2.5 py-2.5 rounded-lg transition-colors',
-              active ? 'bg-accent/10 text-text' : 'text-text hover:bg-bg/60',
+              active
+                ? 'bg-gradient-to-r from-accent/[0.14] to-accent/[0.04] text-text shadow-[inset_0_0_14px_rgba(124,125,255,0.08)]'
+                : 'text-text hover:bg-bg/60',
             ].join(' ')}
           >
             {active && (
