@@ -48,8 +48,8 @@ export function ChatTitlebar({
     <div
       className="otto-app-drag relative flex items-center justify-between px-3.5 py-2.5"
       style={{
-        background: 'linear-gradient(180deg, rgba(124,125,255,0.04), transparent 80%), #0f1014',
-        borderBottom: '1px solid rgba(255,255,255,0.04)',
+        background: '#0e0e10',
+        borderBottom: '1px solid rgba(255,255,255,0.05)',
       }}
     >
       <div className="flex items-center gap-2.5 z-10 min-w-0">
@@ -107,8 +107,7 @@ export function ChatTitlebar({
           <button
             type="button"
             onClick={onMinimize}
-            className="w-[26px] h-[26px] rounded-[7px] flex items-center justify-center text-[#9598a0] transition-colors hover:text-white hover:bg-[#1b1c22]"
-            style={{ background: '#15161a', border: '1px solid #2a2b2e' }}
+            className="w-[26px] h-[26px] rounded-[7px] flex items-center justify-center text-[#9598a0] transition-colors hover:text-white hover:bg-white/[0.06]"
             aria-label="Minimize"
           >
             <Minus className="w-[11px] h-[11px]" strokeWidth={2.4} aria-hidden />
@@ -116,8 +115,7 @@ export function ChatTitlebar({
           <button
             type="button"
             onClick={onToggleMaximize}
-            className="w-[26px] h-[26px] rounded-[7px] flex items-center justify-center text-[#9598a0] transition-colors hover:text-white hover:bg-[#1b1c22]"
-            style={{ background: '#15161a', border: '1px solid #2a2b2e' }}
+            className="w-[26px] h-[26px] rounded-[7px] flex items-center justify-center text-[#9598a0] transition-colors hover:text-white hover:bg-white/[0.06]"
             aria-label={isMaximized ? 'Restore' : 'Maximize'}
           >
             {isMaximized ? (
