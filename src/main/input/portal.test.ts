@@ -58,19 +58,16 @@ class StubBus {
 
 let dir: string;
 let bus: StubBus;
-let getCursor: () => { x: number; y: number };
 
 beforeEach(() => {
   dir = mkdtempSync(path.join(tmpdir(), 'otto-portal-'));
   bus = new StubBus();
-  getCursor = () => ({ x: 100, y: 100 });
 });
 
 function build(): InputHandle {
   return createPortalInput({
     configDir: dir,
     bus: bus as unknown as import('dbus-next').MessageBus,
-    getCursor: () => getCursor(),
   });
 }
 
@@ -153,31 +150,62 @@ describe('createPortalInput', () => {
     cleanup();
   });
 
-  it('click issues a single relative motion then button press/release for small deltas', async () => {
+  it('click homes to the corner, travels to the target, then presses/releases', async () => {
     scriptHandshakeOK();
     const input = build();
-    getCursor = () => ({ x: 100, y: 200 });
     await input.click(150, 250, 'left');
     const events = bus.log
       .filter((c) => c.member.startsWith('NotifyPointer'))
-      .map((c) => ({ m: c.member, args: c.args }));
-    expect(events).toHaveLength(3);
-    expect(events[0]!.m).toBe('NotifyPointerMotion');
-    const [, , dx, dy] = events[0]!.args as [unknown, unknown, number, number];
-    expect(dx).toBe(50);
-    expect(dy).toBe(50);
-    expect(events[1]!.m).toBe('NotifyPointerButton');
-    expect((events[1]!.args as unknown[])[2]).toBe(0x110); // BTN_LEFT
-    expect((events[1]!.args as unknown[])[3]).toBe(1); // press
-    expect(events[2]!.m).toBe('NotifyPointerButton');
-    expect((events[2]!.args as unknown[])[3]).toBe(0); // release
+      .map((c) => ({ m: c.member, args: c.args as [unknown, unknown, number, number] }));
+    const motions = events.filter((e) => e.m === 'NotifyPointerMotion');
+    // First motion is the corner-homing slam (one large negative delta).
+    expect(motions[0]!.args[2]).toBeLessThan(-1000);
+    expect(motions[0]!.args[3]).toBeLessThan(-1000);
+    // The rest travels from origin (0,0) and sums to the target.
+    const travel = motions.slice(1);
+    expect(travel.reduce((s, m) => s + m.args[2], 0)).toBe(150);
+    expect(travel.reduce((s, m) => s + m.args[3], 0)).toBe(250);
+    // Then a left-button press and release, in that order.
+    const buttons = events.filter((e) => e.m === 'NotifyPointerButton');
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]!.args[2]).toBe(0x110); // BTN_LEFT
+    expect(buttons[0]!.args[3]).toBe(1); // press
+    expect(buttons[1]!.args[3]).toBe(0); // release
     cleanup();
   });
 
-  it('chunks long motion into MAX_DELTA_PX (150px) steps to avoid pointer-accel overshoot', async () => {
+  it('homes to the corner before a standalone move, ignoring any prior/stale position', async () => {
+    // Regression: on Wayland we cannot read the cursor reliably (Electron's
+    // getCursorScreenPoint freezes once the pointer leaves an Electron
+    // surface — e.g. while over a Wine/XWayland window). The old code trusted
+    // that stale reading as the relative-motion origin, so clicks landed at
+    // (real_cursor + delta-from-phantom-origin) and missed entirely. Now every
+    // standalone move first slams the cursor into the top-left corner (which
+    // KWin clamps to the virtual-desktop origin 0,0), giving a known origin.
     scriptHandshakeOK();
     const input = build();
-    getCursor = () => ({ x: 0, y: 0 });
+    // Place the cursor far away, then move twice. Neither move may trust the
+    // previous landing spot as a free origin — each re-homes.
+    await input.move(800, 600);
+    const firstMotions = bus.log
+      .filter((c) => c.member === 'NotifyPointerMotion')
+      .map((c) => c.args as [unknown, unknown, number, number]);
+    // First event of the move is the corner-homing slam: one large negative
+    // delta, deliberately unchunked (the oversize is what forces the clamp).
+    expect(firstMotions[0]![2]).toBeLessThan(-1000);
+    expect(firstMotions[0]![3]).toBeLessThan(-1000);
+    // Travel that follows sums to the target from origin (0,0).
+    const travel = firstMotions.slice(1);
+    const sumX = travel.reduce((s, m) => s + m[2], 0);
+    const sumY = travel.reduce((s, m) => s + m[3], 0);
+    expect(sumX).toBe(800);
+    expect(sumY).toBe(600);
+    cleanup();
+  });
+
+  it('chunks long travel into MAX_DELTA_PX (150px) steps to avoid pointer-accel overshoot', async () => {
+    scriptHandshakeOK();
+    const input = build();
     await input.move(500, 0);
     const deltas = bus.log
       .filter((c) => c.member === 'NotifyPointerMotion')
@@ -185,7 +213,9 @@ describe('createPortalInput', () => {
         const [, , dx, dy] = c.args as [unknown, unknown, number, number];
         return { dx, dy };
       });
-    expect(deltas).toEqual([
+    // First delta is the corner-homing slam; the rest is the chunked travel.
+    expect(deltas[0]!.dx).toBeLessThan(-1000);
+    expect(deltas.slice(1)).toEqual([
       { dx: 150, dy: 0 },
       { dx: 150, dy: 0 },
       { dx: 150, dy: 0 },
@@ -194,13 +224,25 @@ describe('createPortalInput', () => {
     cleanup();
   });
 
-  it('skips the motion call entirely when the target equals the tracked cursor', async () => {
+  it('drag homes once for the press, then travels from the press point (no re-home)', async () => {
     scriptHandshakeOK();
     const input = build();
-    getCursor = () => ({ x: 100, y: 100 });
-    await input.move(100, 100);
-    const motions = bus.log.filter((c) => c.member === 'NotifyPointerMotion');
-    expect(motions).toHaveLength(0);
+    await input.drag(100, 100, 400, 100, 'left');
+    const motions = bus.log
+      .filter((c) => c.member === 'NotifyPointerMotion')
+      .map((c) => c.args as [unknown, unknown, number, number]);
+    // Exactly one corner-homing slam — for the first leg only.
+    const homes = motions.filter((m) => m[2] <= -1000 || m[3] <= -1000);
+    expect(homes).toHaveLength(1);
+    // The second leg travels the (300,0) delta from the press point, not via
+    // the corner: its motion chunks are all positive and sum to the delta.
+    const firstButtonIdx = bus.log.findIndex((c) => c.member === 'NotifyPointerButton');
+    const leg2 = bus.log
+      .slice(firstButtonIdx)
+      .filter((c) => c.member === 'NotifyPointerMotion')
+      .map((c) => c.args as [unknown, unknown, number, number]);
+    expect(leg2.every((m) => m[2] >= 0)).toBe(true);
+    expect(leg2.reduce((s, m) => s + m[2], 0)).toBe(300);
     cleanup();
   });
 
@@ -213,16 +255,20 @@ describe('createPortalInput', () => {
     const events = bus.log
       .filter((c) => c.member.startsWith('NotifyPointer'))
       .map((c) => c.member);
-    // click(100,100) from cursor (100,100) is a no-op motion (delta 0,0);
-    // then button press/release. Then move(500,500) from lastSentCursor
-    // (100,100) — delta (400,400) — gets chunked into 3 steps under the
-    // 150px cap: (150,150), (150,150), (100,100).
+    // click(100,100): home slam + one travel chunk (0,0)→(100,100), then
+    // press/release. Then move(500,500): home slam + four travel chunks
+    // (150,150)x3 + (50,50). All of the click's events precede all of the
+    // move's — proving the two gestures never interleave.
     expect(events).toEqual([
-      'NotifyPointerButton',
-      'NotifyPointerButton',
-      'NotifyPointerMotion',
-      'NotifyPointerMotion',
-      'NotifyPointerMotion',
+      'NotifyPointerMotion', // click: home
+      'NotifyPointerMotion', // click: travel to (100,100)
+      'NotifyPointerButton', // press
+      'NotifyPointerButton', // release
+      'NotifyPointerMotion', // move: home
+      'NotifyPointerMotion', // move: travel chunk 1
+      'NotifyPointerMotion', // move: travel chunk 2
+      'NotifyPointerMotion', // move: travel chunk 3
+      'NotifyPointerMotion', // move: travel chunk 4
     ]);
     cleanup();
   });

@@ -1,5 +1,4 @@
 import dbus, { Variant, type MessageBus } from 'dbus-next';
-import { screen } from 'electron';
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -22,8 +21,6 @@ export interface PortalDeps {
   configDir: string;
   /** Inject a bus for tests; real callers omit and we connect to the session bus. */
   bus?: MessageBus;
-  /** Inject the cursor reader for tests. Defaults to Electron's screen API. */
-  getCursor?: () => { x: number; y: number };
 }
 
 const PORTAL_SERVICE = 'org.freedesktop.portal.Desktop';
@@ -40,12 +37,16 @@ const SCROLL_NOTCH = 10;
 const DOUBLE_CLICK_DELAY_MS = 50;
 const KEY_DELAY_MS = 12;
 // KWin's pointer acceleration knee sits around ~200px per motion event.
-// Stay comfortably below it so big jumps remain in the linear region.
+// Stay comfortably below it so precise travel stays in the linear region.
 const MAX_DELTA_PX = 150;
-// How long lastSentCursor is trusted after we set it. Beyond this window,
-// rawMove resyncs from Electron — a focus-stealing event (e.g. a portal
-// approval dialog) may have moved the cursor without our knowledge.
-const TRACKED_STALE_MS = 2000;
+// A single oversized negative delta that KWin clamps to the top-left of the
+// leftmost display — the virtual-desktop origin (0,0), which is also Otto's
+// coordinate origin. Larger than any real desktop so the clamp always fires.
+// Used to re-establish a known cursor origin before each gesture WITHOUT
+// reading the cursor (Electron's getCursorScreenPoint freezes on Wayland once
+// the pointer leaves an Electron surface — e.g. while over a Wine/XWayland
+// window — so any read-based origin is a phantom that makes clicks miss).
+const HOME_DELTA_PX = 100_000;
 
 function clampStep(remaining: number): number {
   if (remaining > MAX_DELTA_PX) return MAX_DELTA_PX;
@@ -140,20 +141,18 @@ function offListener(iface: AnyIface, event: string, handler: (...args: unknown[
 
 export function createPortalInput(deps: PortalDeps): InputHandle {
   const tokenPath = path.join(deps.configDir, 'remote-desktop-token');
-  const getCursor = deps.getCursor ?? (() => screen.getCursorScreenPoint());
 
   let busRef: MessageBus | null = deps.bus ?? null;
   let sessionPath: string | null = null;
   let handshakePromise: Promise<void> | null = null;
   let tail: Promise<void> = Promise.resolve();
-  // We track the cursor we last moved to ourselves because Electron's
-  // screen.getCursorScreenPoint() returns stale values on Wayland once the
-  // cursor leaves any Electron window. Without this, every move after the
-  // first computes a delta from the wrong "current" and overshoots.
-  // The tracked position is only trusted within TRACKED_STALE_MS of being
-  // set — beyond that, focus-stealing events may have invalidated it.
+  // Where we last placed the cursor ourselves. Only trusted as a free origin
+  // within a single multi-leg gesture (a drag's second leg follows its first
+  // by microseconds with nothing in between). A standalone move/click always
+  // re-homes instead, because between tool calls a focus-stealing event (an
+  // approval dialog, Otto's own window) can move the cursor without our
+  // knowledge — and we cannot read its real position on Wayland.
   let lastSentCursor: { x: number; y: number } | null = null;
-  let lastMoveTime = 0;
 
   async function getBus(): Promise<MessageBus> {
     if (busRef) return busRef;
@@ -346,26 +345,34 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
     return run;
   }
 
-  async function rawMove(x: number, y: number): Promise<void> {
+  // Slam the cursor into the top-left corner. KWin clamps the oversized
+  // negative delta to the virtual-desktop origin (0,0), giving us a known
+  // starting point without reading the (unreliable on Wayland) cursor. This
+  // ONE event is deliberately unchunked — the oversize is what forces the
+  // clamp; chunking it would just walk it back into the linear region.
+  async function homeToOrigin(rd: AnyIface): Promise<void> {
+    await callMember(rd, 'NotifyPointerMotion', sessionPath!, {}, -HOME_DELTA_PX, -HOME_DELTA_PX);
+    lastSentCursor = { x: 0, y: 0 };
+  }
+
+  // Move the cursor to absolute (x, y). The portal only speaks relative
+  // motion, so we need a trusted origin to subtract from. Standalone gestures
+  // (home defaults true) re-home to (0,0) first; a multi-leg gesture's later
+  // legs pass home=false to travel from where the previous leg just landed.
+  //
+  // Travel is chunked under MAX_DELTA_PX: KWin scales large per-event deltas
+  // nonlinearly (past ~200px they shoot off-screen and clamp), so sub-knee
+  // chunks stay in the linear region and land where we ask. Absolute motion
+  // via NotifyPointerMotionAbsolute(stream=0,…) misbehaves on multi-monitor
+  // (KWin treats the coords as primary-display local without a ScreenCast
+  // stream), so corner-homing is how we anchor absolute positioning.
+  async function rawMove(x: number, y: number, home = true): Promise<void> {
     const rd = await getRemoteDesktop();
-    // Chunked relative motion. KWin applies pointer acceleration nonlinearly
-    // to large per-event deltas — anything past roughly 200px gets scaled
-    // into off-screen territory and clamps to (0,0). Sub-knee chunks stay
-    // in the linear region and land where we ask. Absolute motion via
-    // NotifyPointerMotionAbsolute(stream=0,…) was tried briefly but it
-    // misbehaves on multi-monitor (KWin treats the coords as primary-display
-    // local without an active ScreenCast stream).
-    //
-    // Resync the starting position from Electron if our tracked position is
-    // stale. Focus-stealing events (KDE approval dialogs, Otto's own window
-    // appearing) move the cursor outside our control, leaving
-    // lastSentCursor lying about where the cursor really is.
-    const now = Date.now();
-    const fresh = lastSentCursor !== null && now - lastMoveTime < TRACKED_STALE_MS;
-    const start = fresh ? lastSentCursor! : getCursor();
+    if (home) await homeToOrigin(rd);
+    const start = lastSentCursor ?? { x: 0, y: 0 };
     let remainingDx = Math.round(x - start.x);
     let remainingDy = Math.round(y - start.y);
-    logger.info(`portal move: target=(${x},${y}) start=(${start.x},${start.y}) delta=(${remainingDx},${remainingDy}) source=${fresh ? 'tracked' : 'electron'}`);
+    logger.info(`portal move: target=(${x},${y}) start=(${start.x},${start.y}) delta=(${remainingDx},${remainingDy}) homed=${home}`);
     while (remainingDx !== 0 || remainingDy !== 0) {
       const stepDx = clampStep(remainingDx);
       const stepDy = clampStep(remainingDy);
@@ -374,7 +381,6 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
       remainingDy -= stepDy;
     }
     lastSentCursor = { x, y };
-    lastMoveTime = Date.now();
   }
 
   async function rawButton(button: MouseButton, state: 0 | 1): Promise<void> {
@@ -469,7 +475,9 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
         await ensureSession();
         await rawMove(x1, y1);
         await rawButton(button, 1);
-        await rawMove(x2, y2);
+        // Travel from the press point, not via the corner — re-homing here
+        // would drag through (0,0) and ruin the gesture path.
+        await rawMove(x2, y2, false);
         await rawButton(button, 0);
       });
     },
