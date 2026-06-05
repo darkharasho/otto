@@ -49,9 +49,14 @@ describe('MessageView', () => {
     expect(screen.getByText('echo')).toBeInTheDocument();
   });
 
-  it('marks an errored assistant message', () => {
-    render(<MessageView message={{ ...baseAssistant, errored: true } as Message} />);
-    expect(screen.getByTestId('message-assistant')).toHaveClass('opacity-60');
+  it('renders an API error as an inline error card', () => {
+    const m: Message = {
+      ...baseAssistant,
+      content: [{ type: 'text', text: '{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}' }],
+    };
+    render(<MessageView message={m} />);
+    expect(screen.getByText('The API is currently overloaded. Try again shortly.')).toBeInTheDocument();
+    expect(screen.getByText('Show details')).toBeInTheDocument();
   });
 });
 

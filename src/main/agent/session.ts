@@ -476,8 +476,22 @@ function appendText(content: ContentBlock[], text: string): void {
 
 function toStructuredError(err: unknown): StructuredError {
   const message = err instanceof Error ? err.message : String(err);
-  if (message.toLowerCase().includes('auth') || message.toLowerCase().includes('unauthorized')) {
+  const lower = message.toLowerCase();
+
+  if (lower.includes('auth') || lower.includes('unauthorized') || lower.includes('401')) {
     return { kind: 'auth-missing', message, retryable: true };
+  }
+  if (lower.includes('rate limit') || lower.includes('rate_limit') || lower.includes('429')) {
+    return { kind: 'rate-limit', message, retryable: true };
+  }
+  if (lower.includes('overloaded') || lower.includes('529') || lower.includes('503')) {
+    return { kind: 'overloaded', message, retryable: true };
+  }
+  if (lower.includes('invalid request') || lower.includes('invalid_request') || lower.includes('400')) {
+    return { kind: 'invalid-request', message, retryable: false };
+  }
+  if (lower.includes('econnrefused') || lower.includes('enotfound') || lower.includes('fetch failed') || lower.includes('network')) {
+    return { kind: 'network', message, retryable: true };
   }
   return { kind: 'sdk-stream', message, retryable: true };
 }

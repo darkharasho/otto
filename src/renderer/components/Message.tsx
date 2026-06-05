@@ -9,6 +9,7 @@ import { rehypeEmojiIcons } from './rehype-emoji-icons';
 import { EMOJI_TO_ICON, fluentEmojiUrl } from './emoji-icons';
 import { OttoMark } from './OttoMark';
 import { toLocalImageSrc } from '@shared/image-src';
+import { classifyErrorText, InlineErrorCard } from './ErrorCard';
 
 const markdownComponents: Components = {
   // The rehype plugin emits <span class="otto-emoji" data-emoji="…" />; we
@@ -152,7 +153,6 @@ export function MessageView({ message, isStreamingTarget = false }: Props) {
   if (message.role === 'assistant') {
     const cls = [
       'otto-msg-enter my-3',
-      message.errored ? 'opacity-60' : '',
       message.cancelled ? 'opacity-70 italic' : '',
     ]
       .filter(Boolean)
@@ -165,7 +165,6 @@ export function MessageView({ message, isStreamingTarget = false }: Props) {
         </div>
         {renderBlocks(message.content, isStreamingTarget)}
         {message.cancelled && <div className="text-xs text-muted mt-1">(cancelled)</div>}
-        {message.errored && <div className="text-xs text-danger mt-1">(error)</div>}
       </div>
     );
   }
@@ -193,6 +192,15 @@ function renderBlocks(content: ContentBlock[], streamingTarget: boolean) {
     }
   }
 
+  function flushText(buf: string, key: string, caret?: boolean) {
+    const classified = classifyErrorText(buf);
+    if (classified) {
+      elements.push(<InlineErrorCard key={key} headline={classified.headline} details={buf} />);
+    } else {
+      elements.push(<MarkdownBlock key={key} text={buf} caret={caret} />);
+    }
+  }
+
   let textBuffer = '';
   let textBufferStartIdx = -1;
   for (let i = 0; i < content.length; i += 1) {
@@ -203,7 +211,7 @@ function renderBlocks(content: ContentBlock[], streamingTarget: boolean) {
       continue;
     }
     if (textBuffer) {
-      elements.push(<MarkdownBlock key={`t-${textBufferStartIdx}`} text={textBuffer} />);
+      flushText(textBuffer, `t-${textBufferStartIdx}`);
       textBuffer = '';
       textBufferStartIdx = -1;
     }
@@ -236,7 +244,7 @@ function renderBlocks(content: ContentBlock[], streamingTarget: boolean) {
   }
   if (textBuffer) {
     const caretHere = streamingTarget && textBufferStartIdx <= lastTextIndex;
-    elements.push(<MarkdownBlock key="t-tail" text={textBuffer} caret={caretHere} />);
+    flushText(textBuffer, 't-tail', caretHere);
   }
   // Thinking dots: streaming target whose last block isn't actively-streaming
   // text — covers pre-first-token, gaps between tool calls, and pauses after

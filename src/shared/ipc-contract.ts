@@ -4,6 +4,10 @@ export type WindowMode = 'bar' | 'panel' | 'chat';
 
 export type ErrorKind =
   | 'auth-missing'
+  | 'rate-limit'
+  | 'overloaded'
+  | 'invalid-request'
+  | 'network'
   | 'sdk-stream'
   | 'cancelled'
   | 'internal';
