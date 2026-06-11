@@ -97,6 +97,7 @@ export type IpcRequest =
       args: SessionEnsureForSubmitArgs;
       result: SessionEnsureForSubmitResult;
     }
+  | { channel: 'session.peekFresh'; args: void; result: { fresh: boolean } }
   | { channel: 'window.setMode'; args: { mode: WindowMode }; result: void }
   | { channel: 'window.hide'; args: void; result: void }
   | { channel: 'window.minimize'; args: void; result: void }

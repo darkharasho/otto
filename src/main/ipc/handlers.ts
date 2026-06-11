@@ -142,6 +142,14 @@ export function registerIpcHandlers(deps: {
     },
   );
 
+  // Read-only probe: would the idle timeout roll the next message into a
+  // fresh session? Lets the renderer proactively show the fresh-start UI on
+  // summon instead of waiting for submit. Deliberately does NOT record
+  // activity — peeking must not keep a conversation alive.
+  ipcMain.handle('session.peekFresh', async (): Promise<{ fresh: boolean }> => {
+    return { fresh: conversationPolicy.shouldStartFresh() };
+  });
+
   ipcMain.handle(
     'topicShift.evaluate',
     async (

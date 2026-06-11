@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useState, useRef } from 'react';
 import { ipc } from './ipc';
-import { useOttoStore, isSessionBusy } from './state/store';
+import { useOttoStore, isSessionBusy, canProactivelyReset } from './state/store';
 import type { ContentBlock } from '@shared/messages';
 import { IDLE_GATE_MS, TOPIC_SHIFT_EVALUATE_TIMEOUT_MS } from '@shared/topic-shift-constants';
 import { CommandBar } from './components/CommandBar';
@@ -59,6 +59,33 @@ export function App() {
   useEffect(() => {
     const onVisibility = () => {
       if (document.visibilityState === 'visible') setEnterTick((n) => n + 1);
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, []);
+
+  // Proactive idle rollover: when Otto is summoned after the new-conversation
+  // idle timeout, show the fresh-session UI immediately instead of revealing
+  // the stale conversation until the next submit. peekFresh is read-only on
+  // the main side (records no activity); ensureForSubmit remains the
+  // authoritative rollover at submit time. The old conversation stays
+  // reachable from history.
+  useEffect(() => {
+    const maybeReset = () => {
+      const s = useOttoStore.getState().activeSession;
+      if (!canProactivelyReset(s)) return;
+      void ipc.invoke('session.peekFresh', undefined).then(({ fresh }) => {
+        if (!fresh) return;
+        const cur = useOttoStore.getState().activeSession;
+        // Re-check: a turn may have started while we awaited the IPC.
+        if (canProactivelyReset(cur) && cur?.id === s?.id) {
+          useOttoStore.getState().abandonActiveSession();
+        }
+      });
+    };
+    maybeReset(); // app mount (window may come up already visible)
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') maybeReset();
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);

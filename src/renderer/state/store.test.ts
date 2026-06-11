@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useOttoStore } from './store';
+import { useOttoStore, canProactivelyReset, type ActiveSessionState } from './store';
 
 beforeEach(() => {
   useOttoStore.getState().reset();
@@ -431,5 +431,33 @@ describe('store: shell process events', () => {
     const b = blocks[0]!;
     if (b.type !== 'process_output') throw new Error('unexpected block');
     expect(b.status).toBe('killed');
+  });
+});
+
+describe('canProactivelyReset', () => {
+  const base: ActiveSessionState = {
+    id: 's1',
+    messages: [{ id: 'm1' } as never],
+    currentTurnActive: false,
+    queueDepth: 0,
+    error: null,
+  };
+
+  it('allows reset for an idle non-private session with messages', () => {
+    expect(canProactivelyReset(base)).toBe(true);
+  });
+
+  it('never resets when there is no active session or no messages', () => {
+    expect(canProactivelyReset(null)).toBe(false);
+    expect(canProactivelyReset({ ...base, messages: [] })).toBe(false);
+  });
+
+  it('never resets a busy session (running turn or queued messages)', () => {
+    expect(canProactivelyReset({ ...base, currentTurnActive: true })).toBe(false);
+    expect(canProactivelyReset({ ...base, queueDepth: 1 })).toBe(false);
+  });
+
+  it('never resets a private session (not recoverable from history)', () => {
+    expect(canProactivelyReset({ ...base, private: true })).toBe(false);
   });
 });

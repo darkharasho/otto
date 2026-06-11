@@ -19,6 +19,17 @@ export function isSessionBusy(s: ActiveSessionState | null): boolean {
 }
 
 /**
+ * May the idle-timeout proactively swap the view to a fresh session?
+ * Never mid-turn or with queued messages; never an already-empty view; and
+ * never a private session — those aren't in the history list, so abandoning
+ * one without a user action would destroy it (a normal session stays
+ * reachable from history after the reset).
+ */
+export function canProactivelyReset(s: ActiveSessionState | null): boolean {
+  return !!s && !s.private && s.messages.length > 0 && !isSessionBusy(s);
+}
+
+/**
  * Last line of defense for renderer RAM: the main process normalizes inline
  * image blocks to disk-backed image-refs before emitting, but anything that
  * slips through would sit in the store for the whole session (~4MB base64
