@@ -8,12 +8,18 @@ import { logger } from '../logger';
 const K_FTS = 30;
 const K_VEC = 30;
 const RRF_K = 60;
-// Value boost weights: text relevance (RRF) stays dominant; proven memories
-// (high distinct-session score / use count) float above cold ones that match
-// the same words. Multiplicative-with-log so value breaks ties rather than
-// overriding relevance. Exported for tests.
+// Fact value boost: text relevance (RRF) stays dominant; proven facts (high
+// distinct-session score) float above cold ones matching the same words.
+// Multiplicative-with-log so value breaks ties rather than overriding
+// relevance. Safe from recall feedback: bumpRecall never touches the
+// distinct-sessions score this boost reads.
+//
+// Artifacts deliberately get NO multiplicative boost — their only value
+// signal is use_count, which recall returns themselves inflate. A boost on
+// it entrenches whatever was returned first (caught by the recall eval:
+// every query returned the same artifacts). use_count is a sort tiebreaker
+// only, where RRF positions are genuinely equal across kinds.
 export const FACT_VALUE_WEIGHT = 0.25;
-export const ARTIFACT_VALUE_WEIGHT = 0.15;
 
 export type MemoryKind = 'fact' | ArtifactKind;
 
@@ -86,20 +92,19 @@ export class MemorySearch {
       this.deps.factRepo.bumpRecall(facts.map((f) => f.id));
     }
 
-    const artifactCandidates: Array<{ artifact: Artifact; final: number }> = [];
+    const artifactCandidates: Array<{ artifact: Artifact; rrf: number }> = [];
     for (const k of artifactKinds) {
       const ids = artifactIdsByKind.get(k) ?? [];
       ids.forEach((id, rank) => {
         const a = this.deps.artifactRepo.get(id);
         if (a && !a.archived) {
-          artifactCandidates.push({
-            artifact: a,
-            final: this.rrfAt(rank) * (1 + ARTIFACT_VALUE_WEIGHT * Math.log1p(a.useCount)),
-          });
+          artifactCandidates.push({ artifact: a, rrf: this.rrfAt(rank) });
         }
       });
     }
-    artifactCandidates.sort((a, b) => b.final - a.final);
+    artifactCandidates.sort(
+      (a, b) => (b.rrf - a.rrf) || (b.artifact.useCount - a.artifact.useCount)
+    );
     const artifacts = artifactCandidates.slice(0, args.limit).map((c) => c.artifact);
     for (const a of artifacts) this.deps.artifactRepo.bumpUse(a.id);
 

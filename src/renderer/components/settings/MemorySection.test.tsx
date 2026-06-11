@@ -27,15 +27,35 @@ describe('MemorySection', () => {
     expect(invokeMock).toHaveBeenCalledWith('memory.list', expect.objectContaining({ kind: 'playbook' }));
   });
 
-  it('renders facts list when kind is "fact"', async () => {
+  it('renders facts with provenance when kind is "fact"', async () => {
     invokeMock.mockResolvedValueOnce({
       artifacts: [],
-      facts: [{ id: 'f1', body: 'Browser is Zen', pinned: true, useCount: 4, lastUsedAt: null }],
+      facts: [{
+        id: 'f1', body: 'Browser is Zen', pinned: true, useCount: 4,
+        lastUsedAt: Date.UTC(2026, 5, 10, 12), createdAt: Date.UTC(2026, 4, 1, 12),
+        distinctSessions: 3, archived: false,
+      }],
     });
     render(<MemorySection kind="fact" />);
     await waitFor(() => expect(screen.getByText(/Browser is Zen/)).toBeTruthy());
     expect(screen.getByText(/pinned/i)).toBeTruthy();
-    expect(screen.getByText(/4×/)).toBeTruthy();
+    const provenance = screen.getByText(/learned .*2026/);
+    expect(provenance.textContent).toMatch(/last used/);
+    expect(provenance.textContent).toMatch(/3 sessions/);
+    expect(provenance.textContent).toMatch(/4×/);
+  });
+
+  it('shows an archived badge on archived facts', async () => {
+    invokeMock.mockResolvedValueOnce({
+      artifacts: [],
+      facts: [{
+        id: 'f2', body: 'Old fact', pinned: false, useCount: 0,
+        lastUsedAt: null, createdAt: Date.UTC(2025, 0, 1), distinctSessions: 0, archived: true,
+      }],
+    });
+    render(<MemorySection kind="fact" />);
+    await waitFor(() => expect(screen.getByText(/Old fact/)).toBeTruthy());
+    expect(screen.getByText(/archived/i)).toBeTruthy();
   });
 
   it('archive calls memory.update with archived:true and refreshes', async () => {

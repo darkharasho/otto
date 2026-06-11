@@ -12,6 +12,8 @@ class ResizeObserverStub {
 
 // jsdom doesn't implement Element.scrollTo — shim it so MessageList (and any
 // other component that calls el.scrollTo) can render without throwing.
-if (!Element.prototype.scrollTo) {
+// Element is absent entirely in files that opt into @vitest-environment node
+// (e.g. the recall eval, which needs transformers.js to take its Node path).
+if (typeof Element !== 'undefined' && !Element.prototype.scrollTo) {
   Element.prototype.scrollTo = function () {};
 }

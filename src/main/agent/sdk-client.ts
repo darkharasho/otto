@@ -17,6 +17,7 @@ import { capture } from '../screenshot/executor';
 import { withSelfHidden } from '../screenshot/self-mask';
 import { tileIfNeeded, toJpeg } from '../screenshot/processor';
 import { captureVerifyCrop } from '../screenshot/verify-crop';
+import { noteImagesSent } from './image-budget';
 
 // Tile edge cap for what we send to the model. Smaller = more screenshots fit
 // in conversation history before tripping Anthropic's ~32MB request cap.
@@ -452,6 +453,7 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
                 mimeType: 'image/png' as const,
                 source: 'screenshot' as const,
               }]);
+              noteImagesSent(ctx.sessionId, 1);
               return {
                 content: [
                   {
@@ -522,6 +524,7 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
             source: 'screenshot' as const,
           }));
           setScreenshotRefs(callId, refs);
+          noteImagesSent(ctx.sessionId, tiled.tiles.length);
           // Bytes for the current turn's API call. Re-encode as JPEG to keep the
           // payload small enough that history doesn't blow Anthropic's request cap
           // after a handful of screenshots.

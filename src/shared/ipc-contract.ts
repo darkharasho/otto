@@ -66,7 +66,7 @@ export interface SessionEnsureForSubmitArgs {
 export interface SessionEnsureForSubmitResult {
   sessionId: string;
   isNew: boolean;
-  reason: 'reused' | 'idle-timeout' | 'manual' | 'no-session';
+  reason: 'reused' | 'idle-timeout' | 'manual' | 'no-session' | 'image-budget';
 }
 
 export interface TopicShiftEvaluateArgs {
@@ -356,6 +356,9 @@ export interface MemoryFactView {
   pinned: boolean;
   useCount: number;
   lastUsedAt: number | null;
+  createdAt: number;
+  distinctSessions: number;
+  archived: boolean;
 }
 
 export interface MemoryListResult {

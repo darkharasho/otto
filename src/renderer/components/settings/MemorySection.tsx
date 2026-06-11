@@ -12,6 +12,19 @@ const KIND_LABELS: Record<MemoryKind, string> = {
   heuristic: 'Heuristics',
 };
 
+function shortDate(t: number | null): string | null {
+  if (t === null) return null;
+  return new Date(t).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function factProvenance(f: MemoryFactView): string {
+  const parts = [`learned ${shortDate(f.createdAt)}`];
+  if (f.lastUsedAt !== null) parts.push(`last used ${shortDate(f.lastUsedAt)}`);
+  if (f.distinctSessions > 0) parts.push(`${f.distinctSessions} session${f.distinctSessions === 1 ? '' : 's'}`);
+  if (f.useCount > 0) parts.push(`${f.useCount}×`);
+  return parts.join(' · ');
+}
+
 export function MemorySection({ kind }: { kind: MemoryKind }) {
   const [query, setQuery] = useState('');
   const [artifacts, setArtifacts] = useState<MemoryArtifactView[]>([]);
@@ -74,8 +87,13 @@ export function MemorySection({ kind }: { kind: MemoryKind }) {
                 {f.pinned && (
                   <span className="px-1 rounded bg-accent/20 text-accent text-[10px] uppercase">pinned</span>
                 )}
-                <span className="flex-1">{f.body}</span>
-                <span className="text-muted text-[10px] tabular-nums">{f.useCount}×</span>
+                {f.archived && (
+                  <span className="px-1 rounded bg-bg/60 text-muted text-[10px] uppercase">archived</span>
+                )}
+                <span className="flex-1">
+                  {f.body}
+                  <span className="block text-muted text-[10px] mt-0.5">{factProvenance(f)}</span>
+                </span>
               </li>
             ))
           )}
@@ -95,6 +113,8 @@ export function MemorySection({ kind }: { kind: MemoryKind }) {
                         <span key={t} className="px-1 rounded bg-bg/60">{t}</span>
                       ))}
                       <span>used {a.useCount}×</span>
+                      <span>updated {shortDate(a.updatedAt)}</span>
+                      {a.lastUsedAt !== null && <span>last used {shortDate(a.lastUsedAt)}</span>}
                     </div>
                   </div>
                   <div className="flex gap-2 text-xs">

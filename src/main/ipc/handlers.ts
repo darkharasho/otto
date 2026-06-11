@@ -2,6 +2,7 @@ import { ipcMain } from 'electron';
 import type { PrivacyAwareRepo } from '../db/privacy-aware-repo';
 import type { SessionManager } from '../agent/session';
 import type { ConversationPolicy } from '../agent/conversation-policy';
+import { overImageBudget, clearImageBudget } from '../agent/image-budget';
 import type { TopicShiftDetector } from '../agent/topic-shift-detector';
 import type { WindowManager } from '../window';
 import type { DecisionBroker } from '../autonomy/decision-broker';
@@ -104,6 +105,7 @@ export function registerIpcHandlers(deps: {
   ipcMain.handle('session.close', async (_e, args: { sessionId: string }): Promise<void> => {
     await sessions.close(args);
     repo.dropPrivate(args.sessionId);
+    clearImageBudget(args.sessionId);
   });
 
   ipcMain.handle(
@@ -125,6 +127,15 @@ export function registerIpcHandlers(deps: {
         const { sessionId } = await sessions.start({ model: args.model, private: args.private });
         conversationPolicy.recordActivity();
         return { sessionId, isNew: true, reason: 'idle-timeout' };
+      }
+      // The SDK resends the full history (screenshots included) every turn,
+      // so image-heavy conversations compound memory and token cost — roll
+      // over once the session crosses the image budget.
+      if (overImageBudget(current)) {
+        const { sessionId } = await sessions.start({ model: args.model, private: args.private });
+        clearImageBudget(current);
+        conversationPolicy.recordActivity();
+        return { sessionId, isNew: true, reason: 'image-budget' };
       }
       conversationPolicy.recordActivity();
       return { sessionId: current, isNew: false, reason: 'reused' };
@@ -326,13 +337,13 @@ export function registerIpcHandlers(deps: {
         const out = await deps.memorySearch.search({ query: args.query, kinds: ['fact'], limit: 100 });
         return {
           artifacts: [],
-          facts: out.facts.map((f) => ({ id: f.id, body: f.body, pinned: f.pinned, useCount: f.useCount, lastUsedAt: f.lastUsedAt })),
+          facts: out.facts.map((f) => ({ id: f.id, body: f.body, pinned: f.pinned, useCount: f.useCount, lastUsedAt: f.lastUsedAt, createdAt: f.createdAt, distinctSessions: f.distinctSessions, archived: f.archived })),
         };
       }
       const hits = deps.factRepo.list({ limit: 200 });
       return {
         artifacts: [],
-        facts: hits.map((f) => ({ id: f.id, body: f.body, pinned: f.pinned, useCount: f.useCount, lastUsedAt: f.lastUsedAt })),
+        facts: hits.map((f) => ({ id: f.id, body: f.body, pinned: f.pinned, useCount: f.useCount, lastUsedAt: f.lastUsedAt, createdAt: f.createdAt, distinctSessions: f.distinctSessions, archived: f.archived })),
       };
     }
     if (args.query && args.query.trim()) {

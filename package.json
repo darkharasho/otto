@@ -20,6 +20,7 @@
     "package": "electron-vite build && electron-builder",
     "pretest": "node scripts/ensure-abi.mjs node",
     "test": "vitest run",
+    "eval:memory": "OTTO_MEMORY_EVAL=1 vitest run src/main/memory/eval --maxWorkers=1",
     "test:watch": "node scripts/ensure-abi.mjs node && vitest",
     "test:integration": "node scripts/ensure-abi.mjs electron && playwright test",
     "toggle": "node out/main/index.js toggle",
