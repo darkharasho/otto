@@ -16,6 +16,7 @@ import { getPlatformAdapter } from '../platform';
 import { capture } from '../screenshot/executor';
 import { withSelfHidden } from '../screenshot/self-mask';
 import { tileIfNeeded, toJpeg } from '../screenshot/processor';
+import { captureVerifyCrop } from '../screenshot/verify-crop';
 
 // Tile edge cap for what we send to the model. Smaller = more screenshots fit
 // in conversation history before tripping Anthropic's ~32MB request cap.
@@ -139,10 +140,10 @@ function guiWorkflowSection(): string[] {
       'CRITICAL focus discipline: when the user has to click "Approve" on an autonomy prompt for an input action, focus moves to Otto\'s window. To prevent typing into Otto:',
       '- Call `shell_exec("osascript -e \'tell application \\"<AppName>\\" to activate\'")` IMMEDIATELY before EACH `type`/`key`/`click` call, after any approval. Yes — re-activate every single time you fire an input tool.',
       '- Encourage the user to choose "Approve for session" the first time so subsequent input tools don\'t need new approvals (and don\'t steal focus).',
-      '2. From the screenshot, note virtual-desktop pixel coordinates (the `monitors` array tells you which display each x/y is on).',
+      '2. From the screenshot, note virtual-desktop pixel coordinates (the `monitors` array tells you which display each x/y is on). If the target is small (under ~20px) or the capture was downscaled/tiled, take a `region` screenshot of the surrounding area first — region crops are native resolution, so your pixel estimate becomes exact.',
       '3. Click into the target (`click(x, y)`) BEFORE typing. Wait for the post-action delay to settle.',
       '4. Then `type("...")` or send a `key("Cmd+...")` combo. Note: on macOS use Cmd (⌘) instead of Control for standard shortcuts.',
-      '5. Take another screenshot to confirm the action landed where you expected. The cursor position in the new screenshot tells you the exact pixel error — adjust your next click coords by that vector and try again. Pixel estimation from screenshots is imperfect (~10–50px error is normal); use this feedback loop to converge.',
+      '5. Every click/double_click/drag result embeds a native-resolution verification crop centered on the target, captured right after the action with the cursor rendered, plus a `verify` rect giving the crop\'s virtual-desktop origin. Check it: the cursor should sit on the target and the UI should show the expected reaction. The pointer lands exactly where you ask — if the cursor is on the wrong element, your coordinate estimate was off; convert the correct spot from crop pixels via the `verify` rect and click again. Only take a full screenshot when the consequence extends beyond the crop.',
     ];
   }
   return [
@@ -162,10 +163,10 @@ function guiWorkflowSection(): string[] {
     '- Call `shell_exec("kdotool windowactivate <id>")` IMMEDIATELY before EACH `type`/`key` call, after any approval. Yes — re-activate every single time you fire a keyboard input tool.',
     '- `click` does NOT need (and should NOT use) windowactivate: clicks are injected as real pointer events at the cursor position and hit whatever window is under the cursor regardless of focus. Re-activating before a click only churns focus needlessly.',
     '- Encourage the user to choose "Approve for session" the first time so subsequent input tools don\'t need new approvals (and don\'t steal focus).',
-    '2. From the screenshot, note virtual-desktop pixel coordinates (the `monitors` array tells you which display each x/y is on).',
+    '2. From the screenshot, note virtual-desktop pixel coordinates (the `monitors` array tells you which display each x/y is on). If the target is small (under ~20px) or the capture was downscaled/tiled, take a `region` screenshot of the surrounding area first — region crops are native resolution, so your pixel estimate becomes exact.',
     '3. Click into the target (`click(x, y)`) BEFORE typing. Wait for the post-action delay to settle.',
     '4. Then `type("...")` or send a `key("Control+...")` combo.',
-    '5. Take another screenshot to confirm the action landed where you expected. The cursor IS rendered in screenshots (Spectacle -p), so you can SEE where your last click landed relative to the target. If it missed, the cursor position in the new screenshot tells you the exact pixel error — adjust your next click coords by that vector and try again. Pixel estimation from screenshots is imperfect (~10–50px error is normal); use this feedback loop to converge.',
+    '5. Every click/double_click/drag result embeds a native-resolution verification crop centered on the target, captured right after the action with the cursor rendered (Spectacle -p), plus a `verify` rect giving the crop\'s virtual-desktop origin. Check it: the cursor should sit on the target and the UI should show the expected reaction. The pointer lands exactly where you ask — if the cursor is on the wrong element, your coordinate estimate was off; convert the correct spot from crop pixels via the `verify` rect and click again. Only take a full screenshot when the consequence extends beyond the crop.',
   ];
 }
 
@@ -183,9 +184,9 @@ function buildSystemPrompt(): string {
     '- get_cursor_position(): return the cursor position {x, y} in virtual-desktop pixels.',
     '- move(x, y): move the cursor to the given monitor-relative position.',
     '- scroll(dx, dy, x?, y?): scroll by (dx, dy); optional (x, y) moves cursor first.',
-    '- click(x, y, button?, delay_ms?): left/right/middle click at the position.',
-    '- double_click(x, y, button?): double-click at the position.',
-    '- drag(x1, y1, x2, y2, button?): drag from start to end.',
+    '- click(x, y, button?, delay_ms?): left/right/middle click at the position. Result embeds a zoomed verification crop (see GUI workflow).',
+    '- double_click(x, y, button?): double-click at the position. Result embeds a verification crop.',
+    '- drag(x1, y1, x2, y2, button?): drag from start to end. Result embeds a verification crop of the endpoint.',
     '- type(text, delay_ms?): type literal text into the focused window.',
     '- key(combo, delay_ms?): send a key combo (e.g. "Control+S", "F5", "Return").',
     '- WebSearch(query): search the web; returns titles, urls, and snippets you can cite.',
@@ -326,6 +327,24 @@ function toInputAction(name: string, args: unknown): InputAction {
   }
 }
 
+/**
+ * Pointer actions that commit something get a post-action verification crop
+ * centered on their endpoint. Moves/scrolls/keys don't — they're either
+ * non-committal or have no meaningful screen anchor, and skipping them keeps
+ * mid-workflow aiming fast.
+ */
+function verifyTargetFor(action: InputAction): { x: number; y: number } | null {
+  switch (action.kind) {
+    case 'click':
+    case 'doubleClick':
+      return { x: action.x, y: action.y };
+    case 'drag':
+      return { x: action.x2, y: action.y2 };
+    default:
+      return null;
+  }
+}
+
 function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
   const { createSdkMcpServer, tool } = sdk;
   const allTools: OttoTool[] = [
@@ -391,6 +410,53 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
           const action = toInputAction(t.name, args);
           const delayMs = (args as { delay_ms?: number }).delay_ms ?? 100;
           const result = await execInput(action, getPlatformAdapter(), delayMs);
+          // Pointer actions that commit something get a native-res crop of
+          // where they landed (pointer rendered) attached to the SAME tool
+          // result, so the model verifies the hit without a full screenshot
+          // round-trip. Best-effort: a failed capture degrades to plain text.
+          const verifyTarget = verifyTargetFor(action);
+          if (verifyTarget) {
+            try {
+              const crop = await withSelfHidden(() =>
+                captureVerifyCrop(getPlatformAdapter(), verifyTarget)
+              );
+              const savedPath = await save(crop.png, ctx.sessionId, ctx.getConfigDir());
+              const baseId = savedPath.split('/').pop()!.replace(/\.png$/, '');
+              screenshotRefsByCall.set(callId, {
+                refs: [{
+                  type: 'image-ref' as const,
+                  id: baseId,
+                  sessionId: ctx.sessionId,
+                  path: savedPath,
+                  width: crop.rect.w,
+                  height: crop.rect.h,
+                  mimeType: 'image/png' as const,
+                  source: 'screenshot' as const,
+                }],
+              });
+              return {
+                content: [
+                  {
+                    type: 'image' as const,
+                    data: crop.jpeg.toString('base64'),
+                    mimeType: 'image/jpeg' as const,
+                  },
+                  {
+                    type: 'text' as const,
+                    text: JSON.stringify({
+                      ok: true,
+                      verify: crop.rect,
+                      note: 'native-res crop centered on the action endpoint, captured after the action; the rendered cursor shows exactly where it landed',
+                    }),
+                  },
+                ],
+              };
+            } catch (err) {
+              logger.warn(
+                `input verify capture failed (action still executed): ${err instanceof Error ? err.message : String(err)}`
+              );
+            }
+          }
           return {
             content: [
               {

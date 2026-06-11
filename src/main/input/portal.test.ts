@@ -107,6 +107,53 @@ function scriptHandshakeOK(restoreToken = 'tok-abc'): void {
   bus.iface.script('NotifyPointerAxis', async () => undefined);
 }
 
+interface StubStream {
+  node: number;
+  pos?: [number, number];
+  size?: [number, number];
+}
+
+/**
+ * Handshake where ScreenCast.SelectSources succeeds and Start returns
+ * PipeWire streams — the absolute-motion path. Stream props mirror the real
+ * portal shape: position/size are variant-wrapped (ii) tuples.
+ */
+function scriptHandshakeWithStreams(streams: StubStream[]): void {
+  scriptHandshakeOK();
+  bus.iface.script('SelectSources', async (args) => {
+    const opts = args[1] as { handle_token: { value: string } };
+    const handleToken = opts.handle_token.value;
+    queueMicrotask(() => bus.emitResponse(handleToken, 0, {}));
+    return `/org/freedesktop/portal/desktop/request/_/${handleToken}`;
+  });
+  bus.iface.script('Start', async (args) => {
+    const opts = args[2] as { handle_token: { value: string } };
+    const handleToken = opts.handle_token.value;
+    queueMicrotask(() =>
+      bus.emitResponse(handleToken, 0, {
+        restore_token: { signature: 's', value: 'tok-abc' },
+        streams: {
+          signature: 'a(ua{sv})',
+          value: streams.map((s) => [
+            s.node,
+            {
+              ...(s.pos ? { position: { signature: '(ii)', value: s.pos } } : {}),
+              ...(s.size ? { size: { signature: '(ii)', value: s.size } } : {}),
+            },
+          ]),
+        },
+      })
+    );
+    return `/org/freedesktop/portal/desktop/request/_/${handleToken}`;
+  });
+  bus.iface.script('NotifyPointerMotionAbsolute', async () => undefined);
+}
+
+const DUAL_MONITOR_STREAMS: StubStream[] = [
+  { node: 42, pos: [0, 0], size: [2560, 1440] },
+  { node: 43, pos: [2560, 0], size: [1920, 1080] },
+];
+
 // ---- Tests -----------------------------------------------------------------
 
 describe('createPortalInput', () => {
@@ -270,6 +317,129 @@ describe('createPortalInput', () => {
       'NotifyPointerMotion', // move: travel chunk 3
       'NotifyPointerMotion', // move: travel chunk 4
     ]);
+    cleanup();
+  });
+
+  it('clicks with ONE absolute motion in stream-local coords when ScreenCast streams exist', async () => {
+    scriptHandshakeWithStreams(DUAL_MONITOR_STREAMS);
+    const input = build();
+    await input.click(150, 250, 'left');
+    const rel = bus.log.filter((c) => c.member === 'NotifyPointerMotion');
+    expect(rel).toHaveLength(0); // no corner-home, no chunked travel
+    const abs = bus.log.filter((c) => c.member === 'NotifyPointerMotionAbsolute');
+    expect(abs).toHaveLength(1);
+    const [, , node, x, y] = abs[0]!.args as [unknown, unknown, number, number, number];
+    expect(node).toBe(42);
+    expect(x).toBe(150);
+    expect(y).toBe(250);
+    const buttons = bus.log.filter((c) => c.member === 'NotifyPointerButton');
+    expect(buttons).toHaveLength(2);
+    cleanup();
+  });
+
+  it('selects ScreenCast monitor sources on the same session during the handshake', async () => {
+    scriptHandshakeWithStreams(DUAL_MONITOR_STREAMS);
+    const input = build();
+    await input.move(10, 10);
+    const sel = bus.log.find((c) => c.member === 'SelectSources')!;
+    expect(sel).toBeDefined();
+    expect(sel.args[0]).toBe('/org/freedesktop/portal/desktop/session/_/s1');
+    const opts = sel.args[1] as { types?: { value: number }; multiple?: { value: boolean } };
+    expect(opts.types?.value).toBe(1); // MONITOR
+    expect(opts.multiple?.value).toBe(true);
+    cleanup();
+  });
+
+  it('maps a target on a secondary monitor to that monitor\'s stream', async () => {
+    scriptHandshakeWithStreams(DUAL_MONITOR_STREAMS);
+    const input = build();
+    await input.click(3000, 500, 'left');
+    const abs = bus.log.filter((c) => c.member === 'NotifyPointerMotionAbsolute');
+    expect(abs).toHaveLength(1);
+    const [, , node, x, y] = abs[0]!.args as [unknown, unknown, number, number, number];
+    expect(node).toBe(43);
+    expect(x).toBe(3000 - 2560);
+    expect(y).toBe(500);
+    cleanup();
+  });
+
+  it('clamps an out-of-bounds target into the nearest stream', async () => {
+    scriptHandshakeWithStreams(DUAL_MONITOR_STREAMS);
+    const input = build();
+    await input.move(9999, 9999);
+    const abs = bus.log.filter((c) => c.member === 'NotifyPointerMotionAbsolute');
+    expect(abs).toHaveLength(1);
+    const [, , node, x, y] = abs[0]!.args as [unknown, unknown, number, number, number];
+    // Nearest clamped point is on the second monitor's bottom-right corner.
+    expect(node).toBe(43);
+    expect(x).toBe(1919);
+    expect(y).toBe(1079);
+    cleanup();
+  });
+
+  it('drag with absolute motion interpolates along the path and lands exactly on the endpoint', async () => {
+    scriptHandshakeWithStreams(DUAL_MONITOR_STREAMS);
+    const input = build();
+    await input.drag(100, 100, 400, 100, 'left');
+    const events = bus.log.filter((c) => c.member.startsWith('NotifyPointer'));
+    const firstButtonIdx = events.findIndex((c) => c.member === 'NotifyPointerButton');
+    const pre = events.slice(0, firstButtonIdx);
+    expect(pre).toHaveLength(1); // one absolute move to the press point
+    const legs = events
+      .slice(firstButtonIdx + 1)
+      .filter((c) => c.member === 'NotifyPointerMotionAbsolute')
+      .map((c) => c.args as [unknown, unknown, number, number, number]);
+    // Held-button travel emits intermediate motions (DnD/sliders need them)…
+    expect(legs.length).toBeGreaterThan(1);
+    // …monotonically toward the target…
+    for (let i = 1; i < legs.length; i += 1) {
+      expect(legs[i]![3]).toBeGreaterThan(legs[i - 1]![3]);
+    }
+    // …and the last lands exactly on the endpoint.
+    expect(legs[legs.length - 1]![3]).toBe(400);
+    expect(legs[legs.length - 1]![4]).toBe(100);
+    // Release comes after all travel.
+    expect(events[events.length - 1]!.member).toBe('NotifyPointerButton');
+    cleanup();
+  });
+
+  it('falls back to corner-homing permanently after an absolute call fails', async () => {
+    scriptHandshakeWithStreams(DUAL_MONITOR_STREAMS);
+    let absCalls = 0;
+    bus.iface.script('NotifyPointerMotionAbsolute', async () => {
+      absCalls += 1;
+      throw new Error('GDBus.Error: absolute motion rejected');
+    });
+    const input = build();
+    await input.click(150, 250, 'left');
+    expect(absCalls).toBe(1); // tried once, never again
+    const motions = bus.log
+      .filter((c) => c.member === 'NotifyPointerMotion')
+      .map((c) => c.args as [unknown, unknown, number, number]);
+    // Relative fallback: corner-home slam, then travel summing to the target.
+    expect(motions[0]![2]).toBeLessThan(-1000);
+    const travel = motions.slice(1);
+    expect(travel.reduce((s, m) => s + m[2], 0)).toBe(150);
+    expect(travel.reduce((s, m) => s + m[3], 0)).toBe(250);
+    // A second gesture goes straight to relative.
+    await input.move(300, 300);
+    expect(absCalls).toBe(1);
+    cleanup();
+  });
+
+  it('falls back to corner-homing when SelectSources fails (no ScreenCast on this portal)', async () => {
+    // scriptHandshakeOK does NOT script SelectSources — the stub throws,
+    // mimicking an older portal without ScreenCast. The handshake must
+    // survive and gestures must use the relative path.
+    scriptHandshakeOK();
+    const input = build();
+    await input.click(150, 250, 'left');
+    const abs = bus.log.filter((c) => c.member === 'NotifyPointerMotionAbsolute');
+    expect(abs).toHaveLength(0);
+    const motions = bus.log
+      .filter((c) => c.member === 'NotifyPointerMotion')
+      .map((c) => c.args as [unknown, unknown, number, number]);
+    expect(motions[0]![2]).toBeLessThan(-1000); // corner-home
     cleanup();
   });
 

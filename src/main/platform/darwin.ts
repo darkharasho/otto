@@ -345,9 +345,11 @@ export class DarwinAdapter implements PlatformAdapter {
       if (region) {
         // screencapture -R x,y,w,h captures a specific rectangle.
         // -x suppresses the camera shutter sound.
+        // -C includes the cursor so the model can see where its last
+        // click landed and self-correct (parity with Spectacle -p on Linux).
         const r = region;
         await run('screencapture', [
-          '-x', '-R', `${r.x},${r.y},${r.w},${r.h}`, tmp,
+          '-x', '-C', '-R', `${r.x},${r.y},${r.w},${r.h}`, tmp,
         ]);
         try {
           const bytes = await fsp.readFile(tmp);
@@ -361,8 +363,8 @@ export class DarwinAdapter implements PlatformAdapter {
       }
 
       // Full screen capture (all displays).
-      // -x = silent, no shutter sound
-      await run('screencapture', ['-x', tmp]);
+      // -x = silent, no shutter sound; -C = include the cursor
+      await run('screencapture', ['-x', '-C', tmp]);
       try {
         const bytes = await fsp.readFile(tmp);
         const { width, height } = this.readPngDims(bytes);

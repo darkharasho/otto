@@ -26,6 +26,7 @@ export interface PortalDeps {
 const PORTAL_SERVICE = 'org.freedesktop.portal.Desktop';
 const PORTAL_OBJECT = '/org/freedesktop/portal/desktop';
 const REMOTE_DESKTOP_IFACE = 'org.freedesktop.portal.RemoteDesktop';
+const SCREEN_CAST_IFACE = 'org.freedesktop.portal.ScreenCast';
 const REQUEST_IFACE = 'org.freedesktop.portal.Request';
 
 const BTN_CODE: Record<MouseButton, number> = {
@@ -47,6 +48,26 @@ const MAX_DELTA_PX = 150;
 // the pointer leaves an Electron surface — e.g. while over a Wine/XWayland
 // window — so any read-based origin is a phantom that makes clicks miss).
 const HOME_DELTA_PX = 100_000;
+// Held-button travel (drags) emits intermediate absolute motions every this
+// many px so DnD targets, sliders, and games see continuous movement instead
+// of a teleport from press point to release point.
+const DRAG_STEP_PX = 30;
+// ScreenCast source type bitmask: MONITOR.
+const SOURCE_TYPE_MONITOR = 1;
+
+// One PipeWire stream per captured monitor, as returned by Start on a
+// combined RemoteDesktop+ScreenCast session. position/size are the monitor's
+// rect in virtual-desktop logical coordinates — the same space Otto's tool
+// coordinates live in — which is what makes NotifyPointerMotionAbsolute
+// deterministic: (x - stream.x, y - stream.y) lands on the exact pixel,
+// immune to pointer-acceleration settings (unlike relative deltas).
+interface StreamRect {
+  node: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 function clampStep(remaining: number): number {
   if (remaining > MAX_DELTA_PX) return MAX_DELTA_PX;
@@ -153,6 +174,11 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
   // approval dialog, Otto's own window) can move the cursor without our
   // knowledge — and we cannot read its real position on Wayland.
   let lastSentCursor: { x: number; y: number } | null = null;
+  // Streams from the combined RemoteDesktop+ScreenCast handshake. Non-empty
+  // means absolute positioning is available. Empty (ScreenCast unsupported,
+  // user denied, or a runtime absolute call failed) means fall back to the
+  // corner-home + chunked relative scheme.
+  let streams: StreamRect[] = [];
 
   async function getBus(): Promise<MessageBus> {
     if (busRef) return busRef;
@@ -164,6 +190,12 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
     const bus = await getBus();
     const proxy = await bus.getProxyObject(PORTAL_SERVICE, PORTAL_OBJECT);
     return proxy.getInterface(REMOTE_DESKTOP_IFACE) as unknown as AnyIface;
+  }
+
+  async function getScreenCast(): Promise<AnyIface> {
+    const bus = await getBus();
+    const proxy = await bus.getProxyObject(PORTAL_SERVICE, PORTAL_OBJECT);
+    return proxy.getInterface(SCREEN_CAST_IFACE) as unknown as AnyIface;
   }
 
   function senderToken(busName: string | null | undefined): string {
@@ -276,6 +308,35 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
     return typeof inner === 'string' ? inner : undefined;
   }
 
+  function variantPair(value: unknown): [number, number] | undefined {
+    if (!value || typeof value !== 'object') return undefined;
+    const inner = (value as VariantLike).value;
+    if (!Array.isArray(inner) || inner.length !== 2) return undefined;
+    const [a, b] = inner as unknown[];
+    if (typeof a !== 'number' || typeof b !== 'number') return undefined;
+    return [a, b];
+  }
+
+  // Start's `streams` is a(ua{sv}): [pipewire node, props]. Props include the
+  // stream's `position` and `size` in virtual-desktop logical coords. Streams
+  // missing either are unusable for coordinate mapping and are dropped.
+  function parseStreams(value: unknown): StreamRect[] {
+    if (!value || typeof value !== 'object') return [];
+    const inner = (value as VariantLike).value;
+    if (!Array.isArray(inner)) return [];
+    const out: StreamRect[] = [];
+    for (const entry of inner) {
+      if (!Array.isArray(entry) || entry.length < 2) continue;
+      const [node, props] = entry as [unknown, Record<string, unknown>];
+      if (typeof node !== 'number' || !props || typeof props !== 'object') continue;
+      const pos = variantPair(props.position);
+      const size = variantPair(props.size);
+      if (!pos || !size || size[0] <= 0 || size[1] <= 0) continue;
+      out.push({ node, x: pos[0], y: pos[1], w: size[0], h: size[1] });
+    }
+    return out;
+  }
+
   async function handshake(): Promise<void> {
     const rd = await getRemoteDesktop();
     const sessionToken = randomToken();
@@ -304,6 +365,29 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
       await callMember(rd, 'SelectDevices', sessionPath!, opts);
       await pending;
     }
+    // Also select ScreenCast monitor sources on the SAME session. With a
+    // stream attached, NotifyPointerMotionAbsolute positions the cursor
+    // deterministically (without one, KWin misreads the coords as
+    // primary-display local). Best-effort: portals without ScreenCast, or a
+    // user denying the cast, just leave `streams` empty and gestures use the
+    // corner-home relative fallback.
+    let castSelected = false;
+    try {
+      const sc = await getScreenCast();
+      const handleToken = randomToken();
+      const { pending } = await subscribeResponse(handleToken);
+      await callMember(sc, 'SelectSources', sessionPath!, {
+        handle_token: v('s', handleToken),
+        types: v('u', SOURCE_TYPE_MONITOR),
+        multiple: v('b', true),
+      });
+      await pending;
+      castSelected = true;
+    } catch (err) {
+      logger.warn(
+        `portal: ScreenCast.SelectSources unavailable, using relative pointer motion: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
     {
       const handleToken = randomToken();
       const { pending } = await subscribeResponse(handleToken);
@@ -311,6 +395,12 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
         handle_token: v('s', handleToken),
       });
       const results = await pending;
+      if (castSelected) {
+        streams = parseStreams(results.streams);
+        logger.info(
+          `portal: absolute pointer motion ${streams.length > 0 ? `enabled (${streams.length} stream(s))` : 'unavailable (no usable streams)'}`
+        );
+      }
       const newToken = variantString(results.restore_token);
       if (newToken) {
         try {
@@ -330,6 +420,7 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
       handshakePromise = handshake().catch((err) => {
         handshakePromise = null;
         sessionPath = null;
+        streams = [];
         throw err;
       });
     }
@@ -355,19 +446,69 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
     lastSentCursor = { x: 0, y: 0 };
   }
 
-  // Move the cursor to absolute (x, y). The portal only speaks relative
-  // motion, so we need a trusted origin to subtract from. Standalone gestures
-  // (home defaults true) re-home to (0,0) first; a multi-leg gesture's later
-  // legs pass home=false to travel from where the previous leg just landed.
+  // Pick the stream whose rect contains (x, y); when the target is outside
+  // every monitor, clamp into each and take the nearest clamped point.
+  function streamTarget(x: number, y: number): { s: StreamRect; cx: number; cy: number } | null {
+    let best: { s: StreamRect; cx: number; cy: number } | null = null;
+    let bestDist = Infinity;
+    for (const s of streams) {
+      const cx = Math.min(Math.max(x, s.x), s.x + s.w - 1);
+      const cy = Math.min(Math.max(y, s.y), s.y + s.h - 1);
+      const dist = (x - cx) ** 2 + (y - cy) ** 2;
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = { s, cx, cy };
+      }
+    }
+    return best;
+  }
+
+  // ONE event, exact landing, immune to pointer-acceleration settings.
+  // Returns false when no stream covers the coordinate space (absolute
+  // unavailable) so the caller can take the relative path.
+  async function rawMoveAbsolute(rd: AnyIface, x: number, y: number): Promise<boolean> {
+    const target = streamTarget(x, y);
+    if (!target) return false;
+    try {
+      await callMember(
+        rd,
+        'NotifyPointerMotionAbsolute',
+        sessionPath!,
+        {},
+        target.s.node,
+        target.cx - target.s.x,
+        target.cy - target.s.y
+      );
+    } catch (err) {
+      // Compositor rejected absolute motion despite advertising streams.
+      // Disable it for the rest of the session rather than failing every
+      // gesture — the relative fallback still works.
+      streams = [];
+      logger.warn(
+        `portal: NotifyPointerMotionAbsolute failed, falling back to relative motion: ${err instanceof Error ? err.message : String(err)}`
+      );
+      return false;
+    }
+    lastSentCursor = { x: target.cx, y: target.cy };
+    return true;
+  }
+
+  // Move the cursor to absolute (x, y). Preferred path is one
+  // NotifyPointerMotionAbsolute against the ScreenCast stream covering the
+  // target. Without streams the portal only speaks relative motion, so we
+  // need a trusted origin to subtract from. Standalone gestures (home
+  // defaults true) re-home to (0,0) first; a multi-leg gesture's later legs
+  // pass home=false to travel from where the previous leg just landed.
   //
-  // Travel is chunked under MAX_DELTA_PX: KWin scales large per-event deltas
-  // nonlinearly (past ~200px they shoot off-screen and clamp), so sub-knee
-  // chunks stay in the linear region and land where we ask. Absolute motion
-  // via NotifyPointerMotionAbsolute(stream=0,…) misbehaves on multi-monitor
-  // (KWin treats the coords as primary-display local without a ScreenCast
-  // stream), so corner-homing is how we anchor absolute positioning.
+  // Relative travel is chunked under MAX_DELTA_PX: KWin scales large
+  // per-event deltas nonlinearly (past ~200px they shoot off-screen and
+  // clamp), so sub-knee chunks stay in the linear region and land where we
+  // ask. Absolute motion needs the ScreenCast stream — without one KWin
+  // treats the coords as primary-display local — so when streams are absent,
+  // corner-homing is how we anchor absolute positioning.
   async function rawMove(x: number, y: number, home = true): Promise<void> {
     const rd = await getRemoteDesktop();
+    if (streams.length > 0 && (await rawMoveAbsolute(rd, x, y))) return;
     if (home) await homeToOrigin(rd);
     const start = lastSentCursor ?? { x: 0, y: 0 };
     let remainingDx = Math.round(x - start.x);
@@ -476,8 +617,22 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
         await rawMove(x1, y1);
         await rawButton(button, 1);
         // Travel from the press point, not via the corner — re-homing here
-        // would drag through (0,0) and ruin the gesture path.
-        await rawMove(x2, y2, false);
+        // would drag through (0,0) and ruin the gesture path. On the absolute
+        // path, interpolate intermediate motions so drop targets, sliders,
+        // and games see continuous movement rather than a teleport.
+        if (streams.length > 0) {
+          const dist = Math.hypot(x2 - x1, y2 - y1);
+          const steps = Math.max(1, Math.ceil(dist / DRAG_STEP_PX));
+          for (let i = 1; i <= steps; i += 1) {
+            await rawMove(
+              Math.round(x1 + ((x2 - x1) * i) / steps),
+              Math.round(y1 + ((y2 - y1) * i) / steps),
+              false
+            );
+          }
+        } else {
+          await rawMove(x2, y2, false);
+        }
         await rawButton(button, 0);
       });
     },
