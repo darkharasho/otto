@@ -199,3 +199,94 @@ describe('FactRepo embedding integration', () => {
     expect(row).toBeUndefined();
   });
 });
+
+describe('FactRepo semantic dedup', () => {
+  it('treats a high-cosine paraphrase as the same fact and counts the re-learn session', async () => {
+    const v = new Float32Array(384);
+    v[0] = 1;
+    const embedder = createStubEmbedder({
+      'Browser is Firefox': v,
+      'Firefox is the default browser': v,
+    });
+    const r = new FactRepo(db, () => NOW, embedder);
+    const a = await r.upsert({ body: 'Browser is Firefox', sourceSessionId: 's1' });
+    const b = await r.upsert({ body: 'Firefox is the default browser', sourceSessionId: 's2' });
+    expect(b.id).toBe(a.id);
+    expect(b.inserted).toBe(false);
+    const fact = r.get(a.id)!;
+    expect(fact.body).toBe('Browser is Firefox'); // existing wording kept
+    expect(fact.distinctSessions).toBe(1); // re-learn in a new session counts
+    expect(fact.lastUsedAt).toBe(NOW);
+    const n = (db.prepare("SELECT COUNT(*) AS n FROM fact").get() as { n: number }).n;
+    expect(n).toBe(1);
+  });
+
+  it('keeps unrelated facts separate (below the cosine threshold)', async () => {
+    const r = new FactRepo(db, () => NOW, createStubEmbedder());
+    const a = await r.upsert({ body: 'Browser is Firefox' });
+    const b = await r.upsert({ body: 'GPU is a Radeon 9070 XT' });
+    expect(b.id).not.toBe(a.id);
+    expect(b.inserted).toBe(true);
+  });
+
+  it('re-learning un-archives a fact', async () => {
+    const r = new FactRepo(db, () => NOW, createStubEmbedder());
+    const { id } = await r.upsert({ body: 'wifi dock needs replug after suspend' });
+    db.prepare('UPDATE fact SET archived = 1 WHERE id = ?').run(id);
+    const again = await r.upsert({ body: 'wifi dock needs replug after suspend', sourceSessionId: 's3' });
+    expect(again.id).toBe(id);
+    expect(r.get(id)!.archived).toBe(false);
+  });
+});
+
+describe('FactRepo.bumpRecall', () => {
+  it('bumps use_count and last_used_at but never distinct_sessions', async () => {
+    const { id } = await repo.upsert({ body: 'recallable fact' });
+    repo.bumpRecall([id]);
+    repo.bumpRecall([id]);
+    const f = repo.get(id)!;
+    expect(f.useCount).toBe(2);
+    expect(f.lastUsedAt).toBe(NOW);
+    expect(f.distinctSessions).toBe(0);
+    const sessions = (db.prepare('SELECT COUNT(*) AS n FROM fact_session WHERE fact_id = ?').get(id) as { n: number }).n;
+    expect(sessions).toBe(0);
+  });
+});
+
+describe('FactRepo archival lifecycle', () => {
+  it('rerank archives unpinned facts untouched for 180+ days; archived facts hide from search and pinning', async () => {
+    let now = NOW;
+    const r = new FactRepo(db, () => now, createStubEmbedder());
+    const stale = await r.upsert({ body: 'stale dusty leftover note' });
+    // 200 days later, 40 fresh facts fill the pinned budget.
+    now = NOW + 200 * 86_400_000;
+    for (let i = 0; i < 40; i += 1) {
+      await r.upsert({ body: `fresh fact number ${i}` });
+    }
+    const result = r.rerank();
+    expect(result.archived).toContain(stale.id);
+    const f = r.get(stale.id)!;
+    expect(f.archived).toBe(true);
+    expect(f.pinned).toBe(false);
+    expect(r.search({ query: 'stale dusty leftover', limit: 5 })).toEqual([]);
+    // Stays archived on subsequent reranks, still excluded from the budget.
+    const again = r.rerank();
+    expect(again.archived).toHaveLength(0);
+    expect(r.get(stale.id)!.archived).toBe(true);
+  });
+
+  it('does not archive recently used facts even when unpinned', async () => {
+    let now = NOW;
+    const r = new FactRepo(db, () => now, createStubEmbedder());
+    const unpinnedButFresh = await r.upsert({ body: 'unpinned but recently touched' });
+    now = NOW + 10 * 86_400_000;
+    for (let i = 0; i < 41; i += 1) {
+      const { id } = await r.upsert({ body: `crowding fact ${i}` });
+      db.prepare('UPDATE fact SET distinct_sessions = 5, last_used_at = ? WHERE id = ?').run(now, id);
+    }
+    const result = r.rerank();
+    expect(r.get(unpinnedButFresh.id)!.pinned).toBe(false);
+    expect(result.archived).not.toContain(unpinnedButFresh.id);
+    expect(r.get(unpinnedButFresh.id)!.archived).toBe(false);
+  });
+});

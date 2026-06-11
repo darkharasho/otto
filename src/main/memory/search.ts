@@ -8,6 +8,12 @@ import { logger } from '../logger';
 const K_FTS = 30;
 const K_VEC = 30;
 const RRF_K = 60;
+// Value boost weights: text relevance (RRF) stays dominant; proven memories
+// (high distinct-session score / use count) float above cold ones that match
+// the same words. Multiplicative-with-log so value breaks ties rather than
+// overriding relevance. Exported for tests.
+export const FACT_VALUE_WEIGHT = 0.25;
+export const ARTIFACT_VALUE_WEIGHT = 0.15;
 
 export type MemoryKind = 'fact' | ArtifactKind;
 
@@ -62,31 +68,47 @@ export class MemorySearch {
       artifactIdsByKind.set(k, this.fuseForKind(k, query, queryVec));
     }
 
-    const facts: Fact[] = factIds
-      .slice(0, args.limit)
-      .map((id) => this.deps.factRepo.get(id))
-      .filter((f): f is Fact => f !== null);
+    // Value-boosted final order: RRF (text relevance) × log-damped value.
+    // Archived facts are dropped — outdated knowledge stays out of recall
+    // until re-learning un-archives it.
+    const factCandidates = factIds
+      .map((id, rank) => ({ fact: this.deps.factRepo.get(id), rank }))
+      .filter((c): c is { fact: Fact; rank: number } => c.fact !== null && !c.fact.archived)
+      .map((c) => ({
+        fact: c.fact,
+        final: this.rrfAt(c.rank) * (1 + FACT_VALUE_WEIGHT * Math.log1p(c.fact.score)),
+      }))
+      .sort((a, b) => b.final - a.final);
+    const facts: Fact[] = factCandidates.slice(0, args.limit).map((c) => c.fact);
     if (facts.length > 0) {
-      this.deps.factRepo.bumpUse(
-        facts.map((f) => f.id),
-        'recall'
-      );
+      // Recency-only bump: appearing in results must not feed the pinning
+      // signal (distinct_sessions), or recall becomes self-reinforcing.
+      this.deps.factRepo.bumpRecall(facts.map((f) => f.id));
     }
 
-    const artifacts: Artifact[] = [];
+    const artifactCandidates: Array<{ artifact: Artifact; final: number }> = [];
     for (const k of artifactKinds) {
       const ids = artifactIdsByKind.get(k) ?? [];
-      for (const id of ids) {
+      ids.forEach((id, rank) => {
         const a = this.deps.artifactRepo.get(id);
         if (a && !a.archived) {
-          artifacts.push(a);
-          this.deps.artifactRepo.bumpUse(id);
+          artifactCandidates.push({
+            artifact: a,
+            final: this.rrfAt(rank) * (1 + ARTIFACT_VALUE_WEIGHT * Math.log1p(a.useCount)),
+          });
         }
-      }
+      });
     }
-    artifacts.splice(args.limit);
+    artifactCandidates.sort((a, b) => b.final - a.final);
+    const artifacts = artifactCandidates.slice(0, args.limit).map((c) => c.artifact);
+    for (const a of artifacts) this.deps.artifactRepo.bumpUse(a.id);
 
     return { facts, artifacts };
+  }
+
+  /** RRF score a fused list position carries into the value-boost stage. */
+  private rrfAt(rank: number): number {
+    return 1 / (RRF_K + rank + 1);
   }
 
   private fuseForKind(kind: MemoryKind, query: string, queryVec: Float32Array | null): string[] {
@@ -111,7 +133,7 @@ export class MemorySearch {
           .prepare(
             `SELECT fact.id AS id FROM fact_fts
                     JOIN fact ON fact.rowid = fact_fts.rowid
-                   WHERE fact_fts MATCH ?
+                   WHERE fact_fts MATCH ? AND fact.archived = 0
                    ORDER BY rank LIMIT ?`
           )
           .all(q, K_FTS) as Array<{ id: string }>

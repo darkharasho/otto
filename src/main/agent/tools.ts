@@ -213,7 +213,7 @@ export function buildInputTools(): OttoTool[] {
   return [
     {
       name: 'get_cursor_position',
-      description: 'Return the current cursor position in virtual-desktop pixels (origin at the top-left of the leftmost display): { x, y }.',
+      description: 'Return the current cursor position in virtual-desktop pixels (origin at the top-left of the leftmost display): { x, y }. On Wayland this is where Otto last placed the pointer (the OS does not expose reads); it does not reflect the user physically moving the mouse.',
       actionClass: 'read',
       schema: cursorPositionSchema,
       async run(_input) { throw new Error(`get_cursor_position ${INPUT_HANDLER_THROW}`); },
@@ -275,7 +275,7 @@ export function buildRecallTool(): OttoTool {
   return {
     name: 'recall',
     description:
-      "Search Otto's durable memory from prior sessions on this machine. Returns matching facts (short standalone notes about the machine or user) and structured artifacts (playbooks, anti-patterns, heuristics). Call this at the START of any task that resembles past work — fixing a recurring problem, automating a familiar app, dealing with a known quirk of this machine — before deciding on an approach. Returns empty arrays when nothing matches; that is fine, proceed normally.",
+      "Search Otto's durable memory from prior sessions on this machine. Returns matching facts (short standalone notes about the machine or user) and structured artifacts (playbooks, anti-patterns, heuristics). Call this at the START of any task that resembles past work — fixing a recurring problem, automating a familiar app, dealing with a known quirk of this machine — before deciding on an approach. Each hit carries provenance (`learned_at`, `last_used_at`, `times_used`, `sessions_seen`): trust memories reused across many recent sessions; treat old-and-never-reused ones as possibly stale and verify before relying on them. Returns empty arrays when nothing matches; that is fine, proceed normally.",
     actionClass: 'read',
     schema: z.object({
       query: z.string().min(1),

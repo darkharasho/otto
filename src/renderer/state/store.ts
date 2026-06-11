@@ -18,6 +18,31 @@ export function isSessionBusy(s: ActiveSessionState | null): boolean {
   return !!s && (s.currentTurnActive || s.queueDepth > 0);
 }
 
+/**
+ * Last line of defense for renderer RAM: the main process normalizes inline
+ * image blocks to disk-backed image-refs before emitting, but anything that
+ * slips through would sit in the store for the whole session (~4MB base64
+ * per screenshot — the documented compounder). Strip payloads, keep shape.
+ */
+export function stripInlineImageData(result: unknown): unknown {
+  if (typeof result !== 'object' || result === null) return result;
+  const r = result as { content?: unknown[] };
+  if (!Array.isArray(r.content)) return result;
+  let touched = false;
+  const content = r.content.map((block) => {
+    if (
+      typeof block === 'object' && block !== null &&
+      (block as { type?: unknown }).type === 'image' &&
+      typeof (block as { data?: unknown }).data === 'string'
+    ) {
+      touched = true;
+      return { ...block, data: '' };
+    }
+    return block;
+  });
+  return touched ? { ...r, content } : result;
+}
+
 interface OttoState {
   windowMode: WindowMode;
   activeSession: ActiveSessionState | null;
@@ -107,7 +132,15 @@ export const useOttoStore = create<OttoState>((set, get) => ({
     const prev = get().activeSession?.id;
     if (prev && prev !== id) abandonedSessions.add(prev);
     attachInFlight.clear();
-    set({ activeSession: { id, messages, currentTurnActive: false, queueDepth: 0, error: null } });
+    // Legacy sessions persisted before the image-ref architecture can carry
+    // inline base64 in tool results — don't let them re-enter the store.
+    const sanitized = messages.map((m) => ({
+      ...m,
+      content: m.content.map((b) =>
+        b.type === 'tool_result' ? { ...b, result: stripInlineImageData(b.result) } : b
+      ),
+    })) as Message[];
+    set({ activeSession: { id, messages: sanitized, currentTurnActive: false, queueDepth: 0, error: null } });
   },
 
   abandonActiveSession() {
@@ -261,7 +294,7 @@ export const useOttoStore = create<OttoState>((set, get) => ({
             {
               type: 'tool_result' as const,
               callId: event.callId,
-              result: event.result,
+              result: stripInlineImageData(event.result),
               isError: event.isError,
             },
           ],

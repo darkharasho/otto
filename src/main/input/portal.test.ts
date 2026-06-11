@@ -443,6 +443,17 @@ describe('createPortalInput', () => {
     cleanup();
   });
 
+  it('position() reports where the last gesture landed; null before any gesture', async () => {
+    scriptHandshakeWithStreams(DUAL_MONITOR_STREAMS);
+    const input = build();
+    expect(input.position()).toBeNull();
+    await input.click(150, 250, 'left');
+    expect(input.position()).toEqual({ x: 150, y: 250 });
+    await input.move(3000, 500);
+    expect(input.position()).toEqual({ x: 3000, y: 500 });
+    cleanup();
+  });
+
   it('rejects when Start responds with non-zero code; no token written', async () => {
     bus.iface.script('CreateSession', async (args) => {
       const opts = args[0] as { handle_token: { value: string } };

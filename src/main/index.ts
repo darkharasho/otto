@@ -348,8 +348,17 @@ async function startElectron(): Promise<void> {
     recall: async (args) => {
       const limit = Math.min(args.limit ?? 5, 20);
       const out = await memorySearch.search({ query: args.query, kinds: args.kinds, limit });
+      const iso = (t: number | null): string | null => (t === null ? null : new Date(t).toISOString().slice(0, 10));
       return {
-        facts: out.facts.map((f) => f.body),
+        // Provenance lets the model weigh trust: a fact reused across many
+        // sessions yesterday beats one learned months ago and never touched.
+        facts: out.facts.map((f) => ({
+          body: f.body,
+          learned_at: iso(f.createdAt)!,
+          last_used_at: iso(f.lastUsedAt),
+          times_used: f.useCount,
+          sessions_seen: f.distinctSessions,
+        })),
         artifacts: out.artifacts.map((r) => ({
           id: r.id,
           kind: r.kind,
@@ -357,6 +366,8 @@ async function startElectron(): Promise<void> {
           body: r.body,
           tags: r.tags,
           updated_at: r.updatedAt,
+          times_used: r.useCount,
+          last_used_at: iso(r.lastUsedAt),
         })),
       };
     },

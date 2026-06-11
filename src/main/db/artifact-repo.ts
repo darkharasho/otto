@@ -2,9 +2,17 @@ import type { Database } from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import type { Embedder } from '../embeddings/embedder';
 import { getEmbedder } from '../embeddings/embedder';
+import { hasEmbeddingSignal } from '../embeddings/vec-utils';
 import { sanitizeFtsQuery } from './fts-utils';
 
 export type ArtifactKind = 'playbook' | 'anti_pattern' | 'heuristic';
+
+// Embedding cosine similarity at/above which a new artifact is a paraphrase
+// of an existing one ("Fix audio stuttering" vs "Audio stuttering resolution")
+// and should update it instead of accumulating a near-duplicate. Looser than
+// the fact threshold: title+body embeddings of same-topic artifacts diverge
+// more in wording than one-line facts do.
+export const SEMANTIC_DUP_COSINE = 0.85;
 
 export interface ArtifactInput {
   kind: ArtifactKind;
@@ -80,7 +88,7 @@ export class ArtifactRepo {
   ) {}
 
   async upsert(input: ArtifactInput): Promise<string> {
-    const existing = this.db
+    const titleMatch = this.db
       .prepare(
         `SELECT id FROM artifact
           WHERE kind = ? AND LOWER(title) = LOWER(?) AND archived = 0
@@ -97,6 +105,13 @@ export class ArtifactRepo {
         vec = null;
       }
     }
+
+    // Title match first (cheap, exact); otherwise a semantic match means the
+    // new artifact is a paraphrase — update it in place with the fresher
+    // content instead of inserting a near-duplicate.
+    const existing =
+      titleMatch ??
+      (vec && hasEmbeddingSignal(vec) ? this.findSemanticDuplicate(input.kind, vec) : null);
 
     const t = this.now();
     if (existing) {
@@ -134,6 +149,35 @@ export class ArtifactRepo {
     });
     txn();
     return id;
+  }
+
+  /**
+   * Nearest unarchived artifact of this kind at/above SEMANTIC_DUP_COSINE,
+   * or null. sqlite-vec KNN can't filter by the auxiliary `kind` column, so
+   * fetch a wider window and filter in app code (same pattern as
+   * MemorySearch). Vectors are normalized, so cosine = 1 − L2²/2.
+   */
+  private findSemanticDuplicate(kind: ArtifactKind, vec: Float32Array): { id: string } | null {
+    try {
+      const buf = Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength);
+      const rows = this.db
+        .prepare(
+          `SELECT ref_id, kind, distance FROM memory_vec
+            WHERE embedding MATCH ? AND k = ?
+            ORDER BY distance`
+        )
+        .all(buf, 40) as Array<{ ref_id: string; kind: string; distance: number }>;
+      const best = rows.find((r) => r.kind === kind);
+      if (!best) return null;
+      const cosine = 1 - (best.distance * best.distance) / 2;
+      if (cosine < SEMANTIC_DUP_COSINE) return null;
+      const row = this.db
+        .prepare('SELECT id FROM artifact WHERE id = ? AND archived = 0')
+        .get(best.ref_id) as { id: string } | undefined;
+      return row ?? null;
+    } catch {
+      return null;
+    }
   }
 
   get(id: string): Artifact | null {

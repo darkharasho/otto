@@ -141,6 +141,11 @@ CREATE TABLE IF NOT EXISTS paired_devices (
 CREATE INDEX IF NOT EXISTS paired_devices_revoked_idx ON paired_devices(revoked_at);
 `;
 
+const MIGRATION_007_FACT_ARCHIVED = `
+ALTER TABLE fact ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX IF NOT EXISTS fact_archived_idx ON fact(archived);
+`;
+
 const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 1, sql: MIGRATION_001_INIT },
   { version: 2, sql: MIGRATION_002_SDK_SESSION_ID },
@@ -148,6 +153,7 @@ const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 4, sql: MIGRATION_004_FACTS },
   { version: 5, sql: MIGRATION_005_VEC },
   { version: 6, sql: MIGRATION_006_PAIRED_DEVICES },
+  { version: 7, sql: MIGRATION_007_FACT_ARCHIVED },
 ];
 
 export function openDatabase(dbPath: string): DB {

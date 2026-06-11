@@ -94,3 +94,45 @@ describe('MemorySearch', () => {
     expect(out.artifacts).toEqual([]);
   });
 });
+
+describe('MemorySearch value-aware ranking', () => {
+  it('floats a proven fact above an equally matching cold one', async () => {
+    const embedder = createStubEmbedder();
+    const NOW = 1_700_000_000_000;
+    factRepo = new FactRepo(db, () => NOW, embedder);
+    artifactRepo = new ArtifactRepo(db, () => NOW, embedder);
+    const cold = await factRepo.upsert({ body: 'wifi flaky on dock alpha' });
+    const proven = await factRepo.upsert({ body: 'wifi flaky on dock bravo' });
+    factRepo.bumpUse([proven.id], 's1');
+    factRepo.bumpUse([proven.id], 's2');
+    factRepo.bumpUse([proven.id], 's3');
+    factRepo.rerank(); // persists score = distinct_sessions × decay
+    const search = new MemorySearch({ factRepo, artifactRepo, embedder, db });
+    const out = await search.search({ query: 'wifi flaky dock', limit: 5 });
+    const bodies = out.facts.map((f) => f.id);
+    expect(bodies.indexOf(proven.id)).toBeLessThan(bodies.indexOf(cold.id));
+  });
+
+  it('excludes archived facts from results', async () => {
+    const embedder = createStubEmbedder();
+    factRepo = new FactRepo(db, () => 1000, embedder);
+    artifactRepo = new ArtifactRepo(db, () => 1000, embedder);
+    const { id } = await factRepo.upsert({ body: 'obsolete dusty knowledge' });
+    db.prepare('UPDATE fact SET archived = 1 WHERE id = ?').run(id);
+    const search = new MemorySearch({ factRepo, artifactRepo, embedder, db });
+    const out = await search.search({ query: 'obsolete dusty knowledge', limit: 5 });
+    expect(out.facts).toHaveLength(0);
+  });
+
+  it('recall results bump recency only, not the pinning signal', async () => {
+    const embedder = createStubEmbedder();
+    factRepo = new FactRepo(db, () => 1000, embedder);
+    artifactRepo = new ArtifactRepo(db, () => 1000, embedder);
+    const { id } = await factRepo.upsert({ body: 'recallable wifi fact' });
+    const search = new MemorySearch({ factRepo, artifactRepo, embedder, db });
+    await search.search({ query: 'recallable wifi', limit: 5 });
+    const f = factRepo.get(id)!;
+    expect(f.useCount).toBe(1);
+    expect(f.distinctSessions).toBe(0);
+  });
+});

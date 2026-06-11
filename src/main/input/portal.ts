@@ -14,6 +14,15 @@ export interface InputHandle {
   scroll(dx: number, dy: number, x?: number, y?: number): Promise<void>;
   type(text: string): Promise<void>;
   key(combo: string): Promise<void>;
+  /**
+   * Where this handle last placed the cursor (virtual-desktop pixels), or
+   * null before the first gesture. On Wayland this is the only trustworthy
+   * answer to "where is the pointer" — Electron's getCursorScreenPoint
+   * freezes once the pointer leaves an Electron surface. The user physically
+   * moving the mouse is not reflected; for the agent's purpose (verifying
+   * its own actions) the commanded position is the honest value.
+   */
+  position(): { x: number; y: number } | null;
 }
 
 export interface PortalDeps {
@@ -654,6 +663,9 @@ export function createPortalInput(deps: PortalDeps): InputHandle {
         await ensureSession();
         await pressCombo(combo);
       });
+    },
+    position() {
+      return lastSentCursor ? { ...lastSentCursor } : null;
     },
   };
 }

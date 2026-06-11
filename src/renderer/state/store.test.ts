@@ -86,6 +86,54 @@ describe('useOttoStore', () => {
     ]);
   });
 
+  it('strips inline base64 image data from tool results before storing', () => {
+    useOttoStore.getState().beginSession('s1');
+    useOttoStore.getState().applyEvent({ type: 'message-start', sessionId: 's1', messageId: 'm1' });
+    useOttoStore.getState().applyEvent({
+      type: 'tool-call-result',
+      sessionId: 's1',
+      messageId: 'm1',
+      callId: 'c1',
+      result: {
+        content: [
+          { type: 'image', data: 'A'.repeat(4096), mimeType: 'image/jpeg' },
+          { type: 'text', text: 'meta' },
+        ],
+      },
+      isError: false,
+    });
+    const block = useOttoStore.getState().activeSession!.messages[0]!.content[0] as {
+      result: { content: Array<{ type: string; data?: string; text?: string }> };
+    };
+    expect(block.result.content[0]!.data).toBe('');
+    expect(block.result.content[1]!.text).toBe('meta');
+  });
+
+  it('strips inline base64 from tool results when loading a legacy session', () => {
+    useOttoStore.getState().loadSession('s9', [
+      {
+        id: 'm1',
+        sessionId: 's9',
+        seq: 0,
+        createdAt: 1,
+        role: 'assistant',
+        status: 'complete',
+        content: [
+          {
+            type: 'tool_result',
+            callId: 'c1',
+            result: { content: [{ type: 'image', data: 'B'.repeat(4096), mimeType: 'image/jpeg' }] },
+            isError: false,
+          },
+        ],
+      } as never,
+    ]);
+    const block = useOttoStore.getState().activeSession!.messages[0]!.content[0] as {
+      result: { content: Array<{ data?: string }> };
+    };
+    expect(block.result.content[0]!.data).toBe('');
+  });
+
   it('records errors and clears them on next send', () => {
     useOttoStore.getState().beginSession('s1');
     useOttoStore.getState().applyEvent({

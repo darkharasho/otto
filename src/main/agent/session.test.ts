@@ -291,6 +291,35 @@ describe('SessionManager', () => {
     expect((content[0] as { id: string }).id).toBe('img1');
     expect(JSON.stringify(content)).not.toContain('BASE64DATA');
   });
+
+  it('strips inline image blocks that have no matching refs (never retains base64)', async () => {
+    const { openStream } = makeFakeOpenStream(async function* () {
+      yield { type: 'tool-call-start', callId: 'cs-2', name: 'screenshot', input: {} };
+      yield {
+        type: 'tool-call-result',
+        callId: 'cs-2',
+        isError: false,
+        result: {
+          content: [
+            { type: 'image', data: 'ORPHANBASE64', mimeType: 'image/jpeg' },
+            { type: 'text', text: '{}' },
+          ],
+        },
+      };
+      yield { type: 'message-end' };
+      yield { type: 'done' };
+    });
+    fakeSdk.openStream = openStream;
+    // Deliberately no __setScreenshotRefsForTest: simulates a missed ref.
+    const { sessionId } = await manager.start({});
+    await manager.send({ sessionId, text: 'go' });
+
+    const result = events.find((e) => e.type === 'tool-call-result') as Extract<SessionEvent, { type: 'tool-call-result' }>;
+    const content = (result.result as { content: unknown[] }).content;
+    expect(JSON.stringify(content)).not.toContain('ORPHANBASE64');
+    expect((content[0] as { type: string }).type).toBe('text');
+    expect((content[1] as { text: string }).text).toBe('{}');
+  });
 });
 
 describe('SessionManager listeners', () => {

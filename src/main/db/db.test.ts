@@ -21,7 +21,7 @@ describe('openDatabase', () => {
     const dir = freshDir();
     const db = openDatabase(path.join(dir, 'otto.db'));
     const row = db.prepare('SELECT MAX(version) AS v FROM schema_version').get() as { v: number };
-    expect(row.v).toBe(6);
+    expect(row.v).toBe(7);
     db.close();
   });
 
@@ -34,7 +34,7 @@ describe('openDatabase', () => {
       .prepare('SELECT version FROM schema_version ORDER BY version')
       .all() as { version: number }[];
     // Each migration should have been applied exactly once.
-    expect(rows.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(rows.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
     db.close();
   });
 

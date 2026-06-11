@@ -171,6 +171,13 @@ export class LinuxAdapter implements PlatformAdapter {
 
   input: PlatformInput = {
     cursorPosition: async (): Promise<CursorPosition> => {
+      // Prefer the portal's tracked position: Electron's read freezes on
+      // Wayland once the pointer leaves an Electron surface (e.g., over a
+      // Wine/XWayland window) and returns a stale phantom. The tracked value
+      // is where Otto last placed the pointer — exactly what the agent is
+      // asking. Fall back to Electron before the first gesture.
+      const tracked = this.getPortalInput().position();
+      if (tracked) return tracked;
       const point = screen.getCursorScreenPoint();
       return { x: point.x, y: point.y };
     },

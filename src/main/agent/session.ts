@@ -13,20 +13,26 @@ function normalizeImageBlocks(callId: string, result: unknown): unknown {
   if (typeof result !== 'object' || result === null) return result;
   const r = result as { content?: unknown[] };
   if (!Array.isArray(r.content)) return result;
-  const refs = consumeScreenshotRefs(callId);
-  if (!refs) return result;
-  // Replace image blocks in positional order with the recorded refs.
+  const refs = consumeScreenshotRefs(callId) ?? [];
+  // Replace image blocks in positional order with the recorded refs. Inline
+  // base64 must NEVER survive past this point: anything that lands in the
+  // message structures lives for the whole session in the assistants map,
+  // the renderer store, and the sqlite content column (~4MB per screenshot,
+  // the documented RAM compounder). An image block with no matching ref is
+  // a bug upstream — strip it rather than retain it.
   let refIdx = 0;
+  let stripped = 0;
   const nextContent = r.content.map((block) => {
-    if (
-      typeof block === 'object' && block !== null &&
-      (block as { type?: unknown }).type === 'image' &&
-      refIdx < refs.length
-    ) {
-      return refs[refIdx++];
+    if (typeof block === 'object' && block !== null && (block as { type?: unknown }).type === 'image') {
+      if (refIdx < refs.length) return refs[refIdx++];
+      stripped += 1;
+      return { type: 'text', text: '[inline image omitted from history]' };
     }
     return block;
   });
+  if (stripped > 0) {
+    logger.warn(`normalizeImageBlocks: stripped ${stripped} unref'd inline image block(s) from tool result ${callId}`);
+  }
   return { ...r, content: nextContent };
 }
 

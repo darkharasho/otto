@@ -178,3 +178,54 @@ describe('ArtifactRepo embedding integration', () => {
     expect(Buffer.compare(before!.embedding, after!.embedding)).toBe(0);
   });
 });
+
+describe('ArtifactRepo semantic dedup', () => {
+  it('merges a paraphrased artifact into the existing one instead of inserting', async () => {
+    const v = new Float32Array(384);
+    v[0] = 1;
+    const embedder = createStubEmbedder({
+      'Fix audio stuttering\nrestart pipewire': v,
+      'Audio stuttering resolution\nrestart pipewire, then wireplumber': v,
+    });
+    const r = new ArtifactRepo(db, () => 1000, embedder);
+    const a = await r.upsert({
+      kind: 'playbook',
+      title: 'Fix audio stuttering',
+      body: 'restart pipewire',
+      tags: ['audio'],
+    });
+    const b = await r.upsert({
+      kind: 'playbook',
+      title: 'Audio stuttering resolution',
+      body: 'restart pipewire, then wireplumber',
+      tags: ['audio', 'pipewire'],
+    });
+    expect(b).toBe(a);
+    const all = r.list({ kind: 'playbook' });
+    expect(all).toHaveLength(1);
+    // Fresher content wins on merge.
+    expect(all[0]!.title).toBe('Audio stuttering resolution');
+    expect(all[0]!.body).toBe('restart pipewire, then wireplumber');
+  });
+
+  it('does not merge across kinds even with identical embeddings', async () => {
+    const v = new Float32Array(384);
+    v[5] = 1;
+    const embedder = createStubEmbedder({
+      'Same topic\nbody a': v,
+      'Same topic again\nbody b': v,
+    });
+    const r = new ArtifactRepo(db, () => 1000, embedder);
+    const a = await r.upsert({ kind: 'playbook', title: 'Same topic', body: 'body a', tags: [] });
+    const b = await r.upsert({ kind: 'anti_pattern', title: 'Same topic again', body: 'body b', tags: [] });
+    expect(b).not.toBe(a);
+  });
+
+  it('keeps semantically distinct artifacts separate', async () => {
+    const r = new ArtifactRepo(db, () => 1000, createStubEmbedder());
+    const a = await r.upsert({ kind: 'playbook', title: 'Fix audio stutter', body: 'restart pipewire', tags: [] });
+    const b = await r.upsert({ kind: 'playbook', title: 'Calibrate monitor colors', body: 'use colord profiles', tags: [] });
+    expect(b).not.toBe(a);
+    expect(r.list({ kind: 'playbook' })).toHaveLength(2);
+  });
+});

@@ -33,8 +33,20 @@ import { tmpdir } from 'node:os';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
-interface CallRefs { refs: import('@shared/messages').ContentBlock[]; }
+interface CallRefs { refs: import('@shared/messages').ContentBlock[]; t: number; }
 const screenshotRefsByCall = new Map<string, CallRefs>();
+// Entries are consumed (and deleted) when session.ts normalizes the matching
+// tool result, normally within seconds. If that event never arrives (stream
+// error, interrupted turn), the entry would leak forever — sweep stale ones.
+const REFS_TTL_MS = 5 * 60_000;
+
+function setScreenshotRefs(callId: string, refs: import('@shared/messages').ContentBlock[]): void {
+  const now = Date.now();
+  for (const [k, v] of screenshotRefsByCall) {
+    if (now - v.t > REFS_TTL_MS) screenshotRefsByCall.delete(k);
+  }
+  screenshotRefsByCall.set(callId, { refs, t: now });
+}
 
 export function consumeScreenshotRefs(callId: string): import('@shared/messages').ContentBlock[] | null {
   const entry = screenshotRefsByCall.get(callId);
@@ -45,7 +57,7 @@ export function consumeScreenshotRefs(callId: string): import('@shared/messages'
 
 // Test seam: lets session.test.ts seed refs without running the full screenshot path.
 export function __setScreenshotRefsForTest(callId: string, refs: import('@shared/messages').ContentBlock[]): void {
-  screenshotRefsByCall.set(callId, { refs });
+  setScreenshotRefs(callId, refs);
 }
 
 /**
@@ -192,7 +204,7 @@ function buildSystemPrompt(): string {
     '- WebSearch(query): search the web; returns titles, urls, and snippets you can cite.',
     '- WebFetch(url, prompt): fetch a URL and extract readable content based on the prompt.',
     '- knowledge_append(note): save a durable fact or preference to Otto\'s memory. Stable preferences are prioritized for inclusion in future prompts. Use sparingly.',
-    '- recall(query, kinds?, limit?): search Otto\'s durable memory from prior sessions on this machine. Returns matching facts and structured artifacts (playbooks, anti-patterns, heuristics). Call this at the START of any task that resembles past work before deciding on an approach.',
+    '- recall(query, kinds?, limit?): search Otto\'s durable memory from prior sessions on this machine. Returns matching facts and structured artifacts (playbooks, anti-patterns, heuristics) with provenance (learned_at, last_used_at, times_used, sessions_seen) — weigh trust accordingly. Call this at the START of any task that resembles past work before deciding on an approach.',
     '- mark_task_complete(summary): call ONCE when you believe the user\'s request is fully addressed. Triggers a background reflection pass that surfaces a memory-update card in the chat. Do not call between sub-steps.',
     '- echo(msg), fake-mutate(target), fake-wipe(target): test stubs; ignore unless explicitly asked.',
     '',
@@ -222,7 +234,13 @@ export interface RealSdkClientDeps {
     kinds?: Array<'fact' | 'playbook' | 'anti_pattern' | 'heuristic'>;
     limit?: number;
   }): Promise<{
-    facts: string[];
+    facts: Array<{
+      body: string;
+      learned_at: string;
+      last_used_at: string | null;
+      times_used: number;
+      sessions_seen: number;
+    }>;
     artifacts: Array<{
       id: string;
       kind: 'playbook' | 'anti_pattern' | 'heuristic';
@@ -230,6 +248,8 @@ export interface RealSdkClientDeps {
       body: string;
       tags: string[];
       updated_at: number;
+      times_used: number;
+      last_used_at: string | null;
     }>;
   }>;
   memoryCounts(): { playbook: number; anti_pattern: number; heuristic: number; factsPinned: number; factsTotal: number };
@@ -422,18 +442,16 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
               );
               const savedPath = await save(crop.png, ctx.sessionId, ctx.getConfigDir());
               const baseId = savedPath.split('/').pop()!.replace(/\.png$/, '');
-              screenshotRefsByCall.set(callId, {
-                refs: [{
-                  type: 'image-ref' as const,
-                  id: baseId,
-                  sessionId: ctx.sessionId,
-                  path: savedPath,
-                  width: crop.rect.w,
-                  height: crop.rect.h,
-                  mimeType: 'image/png' as const,
-                  source: 'screenshot' as const,
-                }],
-              });
+              setScreenshotRefs(callId, [{
+                type: 'image-ref' as const,
+                id: baseId,
+                sessionId: ctx.sessionId,
+                path: savedPath,
+                width: crop.rect.w,
+                height: crop.rect.h,
+                mimeType: 'image/png' as const,
+                source: 'screenshot' as const,
+              }]);
               return {
                 content: [
                   {
@@ -503,7 +521,7 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
             mimeType: 'image/png' as const,
             source: 'screenshot' as const,
           }));
-          screenshotRefsByCall.set(callId, { refs });
+          setScreenshotRefs(callId, refs);
           // Bytes for the current turn's API call. Re-encode as JPEG to keep the
           // payload small enough that history doesn't blow Anthropic's request cap
           // after a handful of screenshots.
