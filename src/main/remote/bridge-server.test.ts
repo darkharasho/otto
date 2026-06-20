@@ -419,6 +419,38 @@ describe('BridgeServer approval bridging', () => {
     ws.close();
     expect(resolved).toEqual([{ decisionId: 'd1', choice: 'approve' }]);
   });
+
+  it('inbound sudo message resolves the SudoBroker via injected resolver', async () => {
+    const pairing = makeStore();
+    const bus = new SessionBus();
+    const resolved: Array<{ promptId: string; password: string | null }> = [];
+    server = new BridgeServer({
+      tailnetIp: '127.0.0.1', pairing, bus, pwaDir: null,
+      screenshotSecret: 'x', loadScreenshot: async () => null,
+      activeSessionId: () => 's1',
+      resolveSudo: (promptId, password) => { resolved.push({ promptId, password }); return true; },
+      plainHttp: true,
+    });
+    const { port } = await server.start();
+    const { token } = await pairing.issue('iPhone');
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    await new Promise<void>((resolve) => {
+      ws.on('open', () => ws.send(JSON.stringify({ v: 1, type: 'auth', token })));
+      ws.on('message', (data) => {
+        const m = JSON.parse(data.toString());
+        if (m.type === 'auth_ok') {
+          ws.send(JSON.stringify({ v: 1, type: 'sudo', promptId: 'p1', password: 'hunter2' }));
+          ws.send(JSON.stringify({ v: 1, type: 'sudo', promptId: 'p2', password: null }));
+          setTimeout(resolve, 50);
+        }
+      });
+    });
+    ws.close();
+    expect(resolved).toEqual([
+      { promptId: 'p1', password: 'hunter2' },
+      { promptId: 'p2', password: null },
+    ]);
+  });
 });
 
 describe('BridgeServer /sessions', () => {

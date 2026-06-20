@@ -82,6 +82,7 @@ export interface BridgeServerOpts {
   /** Optional image cache for inline-image markdown. When unset, /image returns 404. */
   imageCache?: { get(url: string): Promise<{ path: string; contentType: string }> };
   resolveApproval?: (decisionId: string, choice: 'approve' | 'deny') => boolean;
+  resolveSudo?: (promptId: string, password: string | null) => boolean;
   sendPrompt?: (text: string, origin: 'desktop' | 'remote', attachments: ImageRef[]) => Promise<void>;
   interruptTurn?: (sessionId?: string) => void;
   listSessions?: (limit: number) => Promise<SessionMeta[]>;
@@ -289,6 +290,10 @@ export class BridgeServer {
       if (msg.type === 'ping') { ws.send(JSON.stringify({ v: 1, type: 'pong' })); return; }
       if (msg.type === 'approval' && typeof msg.decisionId === 'string' && (msg.decision === 'approve' || msg.decision === 'deny')) {
         this.opts.resolveApproval?.(msg.decisionId, msg.decision);
+        return;
+      }
+      if (msg.type === 'sudo' && typeof msg.promptId === 'string' && (typeof msg.password === 'string' || msg.password === null)) {
+        this.opts.resolveSudo?.(msg.promptId, msg.password);
         return;
       }
       if (msg.type === 'switch_session' && typeof msg.sessionId === 'string') {

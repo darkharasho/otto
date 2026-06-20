@@ -108,6 +108,7 @@ export type IpcRequest =
       args: { decisionId: string; decision: 'approve' | 'approve-session' | 'deny' };
       result: void;
     }
+  | { channel: 'autonomy.sudoPassword'; args: { promptId: string; password: string | null }; result: void }
   | { channel: 'autonomy.getMode'; args: void; result: AutonomyMode }
   | { channel: 'autonomy.setMode'; args: { mode: AutonomyMode }; result: void }
   | { channel: 'settings.get'; args: void; result: SettingsView }
@@ -279,6 +280,22 @@ export type SessionEvent =
       name: string;
       input: unknown;
       reason: string;
+    }
+  | {
+      type: 'sudo-prompt';
+      sessionId: string;
+      messageId: string;
+      callId: string;
+      promptId: string;
+      command: string;
+      error?: string;
+    }
+  | {
+      type: 'sudo-resolved';
+      sessionId: string;
+      messageId: string;
+      callId: string;
+      status: 'unlocked' | 'cancelled' | 'failed';
     }
   | { type: 'process-spawned'; sessionId: string; messageId: string; handle: string; pid: number; command: string; cwd: string }
   | { type: 'process-stdout'; sessionId: string; messageId: string; handle: string; data: string }

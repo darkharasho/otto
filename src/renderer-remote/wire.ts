@@ -11,6 +11,7 @@ export type WsOutboundFrame =
   | { v: 1; type: 'prompt'; sessionId: string; text: string; attachmentIds?: string[] }
   | { v: 1; type: 'attach'; sessionId: string; mimeType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'; bytesBase64: string; clientCorrelationId: string }
   | { v: 1; type: 'approval'; decisionId: string; decision: 'approve' | 'deny' }
+  | { v: 1; type: 'sudo'; promptId: string; password: string | null }
   | { v: 1; type: 'interrupt'; sessionId?: string }
   | { v: 1; type: 'ping' }
   | { v: 1; type: 'switch_session'; sessionId: string }

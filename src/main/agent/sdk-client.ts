@@ -8,9 +8,11 @@ import {
 } from './tools';
 import { exec as execInput, type InputAction } from '../input/executor';
 import type { DecisionBroker } from '../autonomy/decision-broker';
+import type { SudoBroker } from '../autonomy/sudo-broker';
 import type { ProcessRegistry } from '../shell/process-registry';
 import { logger } from '../logger';
 import { classify, denyReason } from '../shell/command-class';
+import { commandRequiresSudo } from '../shell/sudo-session';
 import { exec } from '../shell/executor';
 import { getPlatformAdapter } from '../platform';
 import { capture } from '../screenshot/executor';
@@ -226,6 +228,7 @@ function buildSystemPrompt(): string {
 
 export interface RealSdkClientDeps {
   broker: DecisionBroker;
+  sudo: SudoBroker;
   /** Returns the messageId of the assistant message being authored for the current turn. */
   currentMessageId: () => string;
   getRegistry: () => ProcessRegistry;
@@ -262,6 +265,7 @@ export interface RealSdkClientDeps {
 
 interface ToolCtx {
   broker: DecisionBroker;
+  sudo: SudoBroker;
   sessionId: string;
   // Lazy so the MCP tool callback reads the *current* assistant messageId at
   // invocation time. Capturing it at MCP-server build time was racy: the SDK
@@ -409,6 +413,32 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
             isError: true,
             content: [{ type: 'text' as const, text: `Denied by Otto autonomy policy` }],
           };
+        }
+
+        // Elevated shell commands need a password once per session. Capture it
+        // here (after autonomy approval) so the spawned `sudo` hits a primed
+        // timestamp instead of hanging on a per-command prompt.
+        if (t.name === 'shell_exec' || t.name === 'shell_spawn') {
+          const command = (args as { command?: string }).command ?? '';
+          if (commandRequiresSudo(command) && !ctx.sudo.isUnlocked(ctx.sessionId)) {
+            const unlocked = await ctx.sudo.ensureUnlocked({
+              sessionId: ctx.sessionId,
+              messageId,
+              callId,
+              command,
+            });
+            if (!unlocked) {
+              return {
+                isError: true,
+                content: [
+                  {
+                    type: 'text' as const,
+                    text: 'Sudo elevation was not granted (cancelled, timed out, or wrong password). The command was not run.',
+                  },
+                ],
+              };
+            }
+          }
         }
 
         if (t.name === 'shell_spawn') {
@@ -830,6 +860,7 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
           sdkModule = await loadAgentSdk();
           const initialMcp = buildOttoMcpServer(sdkModule, {
             broker: deps.broker,
+            sudo: deps.sudo,
             sessionId,
             getMessageId: deps.currentMessageId,
             getRegistry: deps.getRegistry,

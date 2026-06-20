@@ -1,3 +1,9 @@
+Version v0.10.14
+
+Features:
+- **Sudo authenticates once per session.** Previously every elevated command triggered its own password popup. Now when Otto needs to run a `sudo` command it asks for your administrator password a single time, validates it, and keeps sudo's credential warm for the rest of the session so subsequent elevated commands run without re-prompting. The password is held only in memory and is wiped on session close, idle-timeout rollover, or app quit — nothing is written to disk. A wrong password re-prompts (up to three tries); cancelling cleanly aborts the command instead of hanging.
+- **Remote sudo prompts.** The password prompt is mirrored to paired remote clients (the phone PWA), so you can elevate a command from your phone the same way you approve tool calls — over the existing authenticated bridge.
+
 Version v0.8.6
 
 Fixes:

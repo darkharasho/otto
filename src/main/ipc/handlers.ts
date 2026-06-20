@@ -6,6 +6,8 @@ import { overImageBudget, clearImageBudget } from '../agent/image-budget';
 import type { TopicShiftDetector } from '../agent/topic-shift-detector';
 import type { WindowManager } from '../window';
 import type { DecisionBroker } from '../autonomy/decision-broker';
+import type { SudoBroker } from '../autonomy/sudo-broker';
+import type { SudoSession } from '../shell/sudo-session';
 import type { Settings } from '../autonomy/settings';
 import type { ProcessRegistry } from '../shell/process-registry';
 import type { ArtifactRepo } from '../db/artifact-repo';
@@ -48,6 +50,8 @@ export function registerIpcHandlers(deps: {
   sessions: SessionManager;
   window: WindowManager;
   broker: DecisionBroker;
+  sudoBroker: SudoBroker;
+  sudoSession: SudoSession;
   settings: Settings;
   registry: ProcessRegistry;
   conversationPolicy: ConversationPolicy;
@@ -69,7 +73,7 @@ export function registerIpcHandlers(deps: {
     applyRemoteCeiling?: (c: RemoteCeilingChoice) => void;
   };
 }): void {
-  const { repo, sessions, window, broker, settings, registry, conversationPolicy, topicShiftDetector } = deps;
+  const { repo, sessions, window, broker, sudoBroker, sudoSession, settings, registry, conversationPolicy, topicShiftDetector } = deps;
 
   ipcMain.handle('session.start', async (_e, args: SessionStartArgs): Promise<SessionStartResult> => {
     const result = await sessions.start(args);
@@ -106,6 +110,8 @@ export function registerIpcHandlers(deps: {
     await sessions.close(args);
     repo.dropPrivate(args.sessionId);
     clearImageBudget(args.sessionId);
+    // Drop any elevated credential held for this session.
+    if (sudoSession.isUnlocked(args.sessionId)) sudoSession.clear();
   });
 
   ipcMain.handle(
@@ -126,6 +132,8 @@ export function registerIpcHandlers(deps: {
       if (conversationPolicy.shouldStartFresh()) {
         const { sessionId } = await sessions.start({ model: args.model, private: args.private });
         conversationPolicy.recordActivity();
+        // A fresh session re-requires elevation; drop the prior credential.
+        if (sudoSession.isUnlocked(current)) sudoSession.clear();
         return { sessionId, isNew: true, reason: 'idle-timeout' };
       }
       // The SDK resends the full history (screenshots included) every turn,
@@ -198,6 +206,13 @@ export function registerIpcHandlers(deps: {
       args: { decisionId: string; decision: 'approve' | 'approve-session' | 'deny' }
     ): Promise<void> => {
       broker.resolve(args.decisionId, args.decision);
+    }
+  );
+
+  ipcMain.handle(
+    'autonomy.sudoPassword',
+    async (_e, args: { promptId: string; password: string | null }): Promise<void> => {
+      sudoBroker.resolveSudo(args.promptId, args.password);
     }
   );
 

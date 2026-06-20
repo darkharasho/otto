@@ -61,6 +61,8 @@ async function startElectron(): Promise<void> {
   const { Notifier } = await import('./notifier');
   const { Settings } = await import('./autonomy/settings');
   const { DecisionBroker } = await import('./autonomy/decision-broker');
+  const { SudoBroker } = await import('./autonomy/sudo-broker');
+  const { SudoSession } = await import('./shell/sudo-session');
   const { ProcessRegistry } = await import('./shell/process-registry');
   const { applyLinuxAutostart } = await import('./autostart-linux');
   const { OverlayManager } = await import('./overlay-window');
@@ -227,6 +229,8 @@ async function startElectron(): Promise<void> {
   };
 
   const broker = new DecisionBroker(settings.getMode(), emitWithNotify);
+  const sudoSession = new SudoSession({ logger });
+  const sudoBroker = new SudoBroker(sudoSession, emitWithNotify);
 
   const registry = new ProcessRegistry(
     emitWithNotify,
@@ -342,6 +346,7 @@ async function startElectron(): Promise<void> {
 
   const sdk = createRealSdkClient({
     broker,
+    sudo: sudoBroker,
     currentMessageId: () => currentMessageId ?? '',
     getRegistry: () => registry,
     getConfigDir: () => ottoConfigDir,
@@ -454,6 +459,7 @@ async function startElectron(): Promise<void> {
       imageCache,
       activeSessionId: () => sessions.getActiveSessionId(),
       resolveApproval: (id, choice) => { broker.resolve(id, choice); return true; },
+      resolveSudo: (promptId, password) => { sudoBroker.resolveSudo(promptId, password); return true; },
       configDir: ottoConfigDir,
       sendPrompt: async (text, _origin, attachments) => {
         // Errors here used to be swallowed by the bridge's fire-and-forget
@@ -544,6 +550,8 @@ async function startElectron(): Promise<void> {
     sessions,
     window,
     broker,
+    sudoBroker,
+    sudoSession,
     settings,
     registry,
     conversationPolicy,

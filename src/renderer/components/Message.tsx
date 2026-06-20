@@ -4,6 +4,7 @@ import type { Message as MessageType, ContentBlock } from '@shared/messages';
 import { extFromMime } from '@shared/messages';
 import { ToolCallCard } from './ToolCallCard';
 import { ApprovalCard } from './ApprovalCard';
+import { SudoPromptCard } from './SudoPromptCard';
 import { ProcessCard } from './ProcessCard';
 import { rehypeEmojiIcons } from './rehype-emoji-icons';
 import { EMOJI_TO_ICON, fluentEmojiUrl } from './emoji-icons';
@@ -228,6 +229,8 @@ function renderBlocks(content: ContentBlock[], streamingTarget: boolean) {
       );
     } else if (b.type === 'pending_tool_use') {
       elements.push(<ApprovalCard key={b.callId} block={b} />);
+    } else if (b.type === 'sudo_prompt') {
+      elements.push(<SudoPromptCard key={b.callId} block={b} />);
     } else if (b.type === 'process_output') {
       elements.push(<ProcessCard key={b.handle} block={b} />);
     } else if (b.type === 'tool_denied') {

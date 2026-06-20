@@ -370,6 +370,53 @@ export const useOttoStore = create<OttoState>((set, get) => ({
         set({ activeSession: next });
         return;
       }
+      case 'sudo-prompt': {
+        // A retry (wrong password) re-emits with a new promptId for the same
+        // callId — update the existing card in place rather than stacking.
+        const next = updateAssistant(session, event.messageId, (m) => {
+          const existing = m.content.find(
+            (b) => b.type === 'sudo_prompt' && b.callId === event.callId
+          );
+          if (existing) {
+            return {
+              ...m,
+              content: m.content.map((b) =>
+                b.type === 'sudo_prompt' && b.callId === event.callId
+                  ? { ...b, promptId: event.promptId, error: event.error, status: 'pending' as const }
+                  : b
+              ),
+            };
+          }
+          return {
+            ...m,
+            content: [
+              ...m.content,
+              {
+                type: 'sudo_prompt' as const,
+                callId: event.callId,
+                promptId: event.promptId,
+                command: event.command,
+                error: event.error,
+                status: 'pending' as const,
+              },
+            ],
+          };
+        });
+        set({ activeSession: next });
+        return;
+      }
+      case 'sudo-resolved': {
+        const next = updateAssistant(session, event.messageId, (m) => ({
+          ...m,
+          content: m.content.map((b) =>
+            b.type === 'sudo_prompt' && b.callId === event.callId
+              ? { ...b, status: event.status }
+              : b
+          ),
+        }));
+        set({ activeSession: next });
+        return;
+      }
       case 'process-spawned': {
         const next = updateAssistant(session, event.messageId, (m) => ({
           ...m,

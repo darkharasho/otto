@@ -17,6 +17,14 @@ export type ContentBlock =
     }
   | { type: 'tool_denied'; callId: string; name: string; input: unknown; reason: string }
   | {
+      type: 'sudo_prompt';
+      callId: string;
+      promptId: string;
+      command: string;
+      error?: string;
+      status: 'pending' | 'unlocked' | 'cancelled' | 'failed';
+    }
+  | {
       type: 'process_output';
       handle: string;
       command: string;

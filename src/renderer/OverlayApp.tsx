@@ -83,6 +83,8 @@ function toStep(ev: SessionEvent, idSeed: number): Step | null {
         detail: desc.group ? `${desc.group} · ${desc.label}` : desc.label,
       };
     }
+    case 'sudo-prompt':
+      return { id: `su${idSeed}`, kind: 'pending', label: 'awaiting sudo password', detail: truncate(ev.command, 60) };
     case 'process-spawned':
       return { id: `s${idSeed}`, kind: 'process', label: `pid ${ev.pid}`, detail: truncate(ev.command, 60) };
     case 'process-exited':

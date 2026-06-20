@@ -9,6 +9,7 @@ export type RemoteInbound =
   | { type: 'prompt'; sessionId: string; text: string; origin: 'desktop' | 'remote'; attachmentIds?: string[] }
   | { type: 'attach'; sessionId: string; mimeType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'; bytesBase64: string; clientCorrelationId: string }
   | { type: 'approval'; decisionId: string; decision: 'approve' | 'deny' }
+  | { type: 'sudo'; promptId: string; password: string | null }
   | { type: 'interrupt'; sessionId: string };
 
 type Subscriber = (e: RemoteOutbound) => void;

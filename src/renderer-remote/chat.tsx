@@ -7,6 +7,7 @@ import { EMOJI_TO_ICON, fluentEmojiUrl } from '../renderer/components/emoji-icon
 import { useRemoteStore } from './store';
 import { openWs, getHistory, loadMessages, type WsHandle, type ImageRef } from './wire';
 import { ApprovalCard } from './approval-card';
+import { SudoPromptCard } from './sudo-prompt-card';
 import { Screenshot } from './screenshot';
 import { SessionDrawer } from './SessionDrawer';
 import { describeTool, summarizeInput, classifyResult } from '../shared/tool-presenters';
@@ -28,6 +29,7 @@ interface UserItem { kind: 'user'; id: string; text: string; content?: Array<{ t
 type TranscriptItem = TextItem | ToolItem | ScreenshotItem | UserItem;
 
 interface PendingApproval { decisionId: string; tool: string; actionClass: string; summary: string }
+interface PendingSudo { callId: string; promptId: string; command: string; error?: string }
 
 function UnreachableBanner(): JSX.Element {
   const host = typeof window !== 'undefined' ? window.location.host : '';
@@ -260,6 +262,7 @@ export function Chat(): JSX.Element {
 
   const [items, setItems] = useState<TranscriptItem[]>([]);
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
+  const [sudos, setSudos] = useState<PendingSudo[]>([]);
   const [streaming, setStreaming] = useState(false);
   const [queueDepth, setQueueDepth] = useState(0);
   const busy = streaming || queueDepth > 0;
@@ -340,6 +343,7 @@ export function Chat(): JSX.Element {
   const resetForSession = (newSid: string): void => {
     setItems([]);
     setApprovals([]);
+    setSudos([]);
     lastSeqRef.current = 0;
     sessionIdRef.current = newSid;
     setSessionId(newSid);
@@ -547,6 +551,24 @@ export function Chat(): JSX.Element {
         setApprovals((prev) => prev.filter((p) => p.decisionId !== decisionId));
         return;
       }
+      case 'sudo-prompt': {
+        const callId = String(msg.callId ?? '');
+        const promptId = String(msg.promptId ?? '');
+        if (!callId || !promptId) return;
+        const command = String(msg.command ?? '');
+        const error = typeof msg.error === 'string' ? msg.error : undefined;
+        // A retry re-emits with a new promptId for the same callId — replace in place.
+        setSudos((prev) => {
+          const rest = prev.filter((s) => s.callId !== callId);
+          return [...rest, { callId, promptId, command, error }];
+        });
+        return;
+      }
+      case 'sudo-resolved': {
+        const callId = String(msg.callId ?? '');
+        setSudos((prev) => prev.filter((s) => s.callId !== callId));
+        return;
+      }
       case 'screenshot-captured': {
         const id = String(msg.id ?? '');
         const signedUrl = typeof msg.signedUrl === 'string' ? msg.signedUrl : '';
@@ -662,6 +684,12 @@ export function Chat(): JSX.Element {
     setApprovals((prev) => prev.filter((p) => p.decisionId !== decisionId));
   };
 
+  const resolveSudo = (promptId: string, password: string | null): void => {
+    wsRef.current?.send({ v: 1, type: 'sudo', promptId, password });
+    // Drop the card optimistically; a retry will re-add it via sudo-prompt.
+    setSudos((prev) => prev.filter((s) => s.promptId !== promptId));
+  };
+
   const onUnpair = (): void => {
     wsRef.current?.close();
     setToken(null);
@@ -709,8 +737,16 @@ export function Chat(): JSX.Element {
         />
       )}
 
-      {approvals.length > 0 && (
+      {(approvals.length > 0 || sudos.length > 0) && (
         <div className="sticky top-[57px] z-10 px-3 py-2 space-y-2 bg-bg/95 backdrop-blur border-b border-border">
+          {sudos.map((s) => (
+            <SudoPromptCard
+              key={s.callId}
+              command={s.command}
+              error={s.error}
+              onResolve={(pw) => resolveSudo(s.promptId, pw)}
+            />
+          ))}
           {approvals.map((a) => (
             <ApprovalCard
               key={a.decisionId}
