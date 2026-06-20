@@ -1,0 +1,64 @@
+name: iOS EAS Build
+
+# Cloud build via EAS. The GitHub runner only orchestrates — the actual
+# compile + signing happens on Expo's servers, which manage the iOS
+# distribution certificate and provisioning profile (set up once via
+# `eas credentials`). This replaces the old native xcodebuild workflow,
+# which required a pile of signing secrets to be base64'd into the repo.
+#
+# Prerequisites (one-time):
+#   - Repo secret EXPO_TOKEN  (Expo access token: https://expo.dev/settings/access-tokens)
+#   - iOS credentials registered with EAS:  cd otto-mobile && eas credentials
+#   - For auto-submit: an App Store Connect API key configured for EAS
+#     (eas.json > submit.production, or `eas submit` once interactively).
+#
+# Manual-trigger only for now so it never auto-fails before EXPO_TOKEN
+# exists; add a `push` trigger on otto-mobile/** once it's green.
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'EAS build profile'
+        type: choice
+        options: [production, preview]
+        default: production
+      submit:
+        description: 'Submit to TestFlight after build (production only)'
+        type: boolean
+        default: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: otto-mobile
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: otto-mobile/package-lock.json
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: EAS build (and optional submit)
+        run: |
+          ARGS="--platform ios --profile ${{ inputs.profile }} --non-interactive"
+          if [ "${{ inputs.profile }}" = "production" ] && [ "${{ inputs.submit }}" = "true" ]; then
+            ARGS="$ARGS --auto-submit"
+          fi
+          echo "eas build $ARGS"
+          eas build $ARGS
