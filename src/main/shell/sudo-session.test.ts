@@ -1,10 +1,31 @@
+import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { describe, it, expect, vi } from 'vitest';
 import {
   commandRequiresSudo,
+  createRealAskpass,
   parseSudoError,
   SudoSession,
+  type AskpassController,
   type SudoRunner,
 } from './sudo-session';
+
+function fakeAskpass(): AskpassController & { installed: string[]; uninstalls: number } {
+  const installed: string[] = [];
+  let uninstalls = 0;
+  return {
+    installed,
+    get uninstalls() {
+      return uninstalls;
+    },
+    install(password: string) {
+      installed.push(password);
+    },
+    uninstall() {
+      uninstalls += 1;
+    },
+  };
+}
 
 describe('commandRequiresSudo', () => {
   it('detects a leading sudo', () => {
@@ -104,7 +125,31 @@ describe('SudoSession', () => {
     expect(s.isUnlocked('sess-1')).toBe(false);
   });
 
-  it('keep-alive re-primes the timestamp and clears on failure', async () => {
+  it('installs the askpass helper on unlock and uninstalls on clear', async () => {
+    const askpass = fakeAskpass();
+    const s = new SudoSession({
+      runner: fakeRunner([{ ok: true, stderr: '' }]),
+      setIntervalFn: (() => 0) as never,
+      askpass,
+    });
+    await s.unlock('sess', 'hunter2');
+    expect(askpass.installed).toEqual(['hunter2']);
+    s.clear();
+    // unlock() clears any prior creds first, then clear() runs again.
+    expect(askpass.uninstalls).toBeGreaterThanOrEqual(1);
+  });
+
+  it('does not install the askpass helper when the password is wrong', async () => {
+    const askpass = fakeAskpass();
+    const s = new SudoSession({
+      runner: fakeRunner([{ ok: false, stderr: 'Sorry, try again.' }]),
+      askpass,
+    });
+    await s.unlock('sess', 'bad');
+    expect(askpass.installed).toEqual([]);
+  });
+
+  it('keep-alive re-validates the credential and clears on failure', async () => {
     let tick: (() => void) | null = null;
     const runner = fakeRunner([
       { ok: true, stderr: '' }, // initial unlock
@@ -125,5 +170,29 @@ describe('SudoSession', () => {
     await Promise.resolve();
     expect(s.isUnlocked('sess')).toBe(false);
     expect(runner.calls).toEqual(['pw', 'pw']);
+  });
+});
+
+describe('createRealAskpass', () => {
+  it('exposes a SUDO_ASKPASS helper that prints the password, then tears it down', () => {
+    const prior = process.env.SUDO_ASKPASS;
+    const askpass = createRealAskpass({ warn: () => {} });
+    try {
+      askpass.install('s3cr3t-pw');
+      const helper = process.env.SUDO_ASKPASS;
+      expect(helper).toBeTruthy();
+      expect(existsSync(helper!)).toBe(true);
+      // sudo (no tty) runs this helper to obtain the password on stdout.
+      const out = execFileSync(helper!, { encoding: 'utf8' });
+      expect(out.replace(/\n$/, '')).toBe('s3cr3t-pw');
+
+      askpass.uninstall();
+      expect(process.env.SUDO_ASKPASS).toBe(prior);
+      expect(existsSync(helper!)).toBe(false);
+    } finally {
+      askpass.uninstall();
+      if (prior === undefined) delete process.env.SUDO_ASKPASS;
+      else process.env.SUDO_ASKPASS = prior;
+    }
   });
 });
