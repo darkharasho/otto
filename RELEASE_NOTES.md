@@ -1,3 +1,8 @@
+Version v0.10.18
+
+Fixes:
+- **Long messages no longer escape the chat bubble.** A long unbroken token (such as a URL with no spaces) in a user message overflowed the bubble's width and added a horizontal scrollbar to the window. User messages now wrap long input within the bubble and preserve the line breaks you typed.
+
 Version v0.10.17
 
 Fixes:
