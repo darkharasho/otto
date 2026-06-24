@@ -143,4 +143,38 @@ describe('CommandBar', () => {
       });
     });
   });
+
+  describe('type-to-focus', () => {
+    it('focuses the input when a plain printable key is pressed while focus is elsewhere', () => {
+      render(<CommandBar onSubmit={() => {}} ensureSession={noopEnsure} autoFocus={false} />);
+      const input = screen.getByRole('textbox') as HTMLInputElement;
+      (document.activeElement as HTMLElement | null)?.blur?.();
+      expect(document.activeElement).not.toBe(input);
+
+      fireEvent.keyDown(window, { key: 'a' });
+
+      expect(document.activeElement).toBe(input);
+    });
+
+    it('ignores modifier-key chords so shortcuts are not hijacked', () => {
+      render(<CommandBar onSubmit={() => {}} ensureSession={noopEnsure} autoFocus={false} />);
+      const input = screen.getByRole('textbox') as HTMLInputElement;
+      (document.activeElement as HTMLElement | null)?.blur?.();
+
+      fireEvent.keyDown(window, { key: 'k', metaKey: true });
+      expect(document.activeElement).not.toBe(input);
+
+      fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
+      expect(document.activeElement).not.toBe(input);
+    });
+
+    it('ignores non-printable keys', () => {
+      render(<CommandBar onSubmit={() => {}} ensureSession={noopEnsure} autoFocus={false} />);
+      const input = screen.getByRole('textbox') as HTMLInputElement;
+      (document.activeElement as HTMLElement | null)?.blur?.();
+
+      fireEvent.keyDown(window, { key: 'ArrowDown' });
+      expect(document.activeElement).not.toBe(input);
+    });
+  });
 });

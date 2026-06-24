@@ -62,6 +62,33 @@ export function CommandBar({
     if (autoFocus) inputRef.current?.focus();
   }, [autoFocus, busy]);
 
+  // Type-to-focus: pull focus into the composer when the user starts typing a
+  // plain printable character (no Ctrl/Meta/Alt, so shortcuts are excluded)
+  // while no other editable element is focused. The keystroke falls through into
+  // the input, so the first character isn't lost.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key.length !== 1) return;
+      const el = inputRef.current;
+      if (!el || el === document.activeElement) return;
+      const act = document.activeElement as HTMLElement | null;
+      if (act && act !== document.body) {
+        const tag = act.tagName;
+        const editable = act.isContentEditable
+          || tag === 'INPUT'
+          || tag === 'TEXTAREA'
+          || tag === 'SELECT';
+        if (editable) return;
+      }
+      el.focus();
+      const len = el.value.length;
+      try { el.setSelectionRange(len, len); } catch { /* ignore */ }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   // Replay the send-bounce animation by toggling the class on each submit.
   useEffect(() => {
     if (sendTick === 0 || !formRef.current) return;
