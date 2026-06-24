@@ -129,7 +129,7 @@ export function MessageView({ message, isStreamingTarget = false }: Props) {
   if (message.role === 'user') {
     return (
       <div data-testid="message-user" className="otto-msg-enter flex justify-end my-3">
-        <div className="max-w-[80%] rounded-2xl rounded-br-md px-4 py-2 text-sm text-text bg-gradient-to-b from-accent/[0.18] to-accent/[0.12] border border-accent/30 shadow-[0_2px_10px_-4px_rgba(110,111,255,0.35)]">
+        <div className="max-w-[80%] rounded-2xl rounded-br-md px-4 py-2 text-sm text-text break-words whitespace-pre-wrap bg-gradient-to-b from-accent/[0.18] to-accent/[0.12] border border-accent/30 shadow-[0_2px_10px_-4px_rgba(110,111,255,0.35)]">
           {message.content.map((b, i) => {
             if (b.type === 'text') return <span key={i}>{b.text}</span>;
             if (b.type === 'image-ref') {
