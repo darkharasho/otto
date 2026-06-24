@@ -274,6 +274,7 @@ export function Chat(): JSX.Element {
   const [pendingUploads, setPendingUploads] = useState<Array<{ correlationId: string; mimeType: string; previewUrl: string }>>([]);
   const [confirmedAttachments, setConfirmedAttachments] = useState<ImageRef[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const failedReconnectsRef = useRef(0);
   const streamWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -339,6 +340,34 @@ export function Chat(): JSX.Element {
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [items, approvals]);
+
+  // Type-to-focus: pull focus into the composer when the user starts typing a
+  // plain printable character (no Ctrl/Meta/Alt, so shortcuts are excluded)
+  // while no other editable element is focused. The keystroke falls through into
+  // the textarea, so the first character isn't lost.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (!connected) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key.length !== 1) return;
+      const ta = composerRef.current;
+      if (!ta || ta === document.activeElement) return;
+      const act = document.activeElement as HTMLElement | null;
+      if (act && act !== document.body) {
+        const tag = act.tagName;
+        const editable = act.isContentEditable
+          || tag === 'INPUT'
+          || tag === 'TEXTAREA'
+          || tag === 'SELECT';
+        if (editable) return;
+      }
+      ta.focus();
+      const len = ta.value.length;
+      try { ta.setSelectionRange(len, len); } catch { /* ignore */ }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [connected]);
 
   const resetForSession = (newSid: string): void => {
     setItems([]);
@@ -885,6 +914,7 @@ export function Chat(): JSX.Element {
             <Paperclip size={18} />
           </button>
           <textarea
+            ref={composerRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
