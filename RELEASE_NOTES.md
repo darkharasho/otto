@@ -1,3 +1,8 @@
+Version v0.10.17
+
+Fixes:
+- **Type-to-focus now works in the desktop window.** The type-to-focus behavior shipped in v0.10.16 was only wired into the remote companion UI, so starting to type in the main Otto window did nothing. The handler now lives in the desktop composer too — a plain printable key pulls focus into the message box and the character isn't lost, while keyboard shortcuts (Ctrl/Cmd/Alt) and typing in other text fields are left alone.
+
 Version v0.10.16
 
 Features:
