@@ -1,3 +1,8 @@
+Version v0.10.16
+
+Features:
+- **Type-to-focus the composer.** Just start typing anywhere in the Otto window and your keystrokes now land in the message box automatically — no click required. A plain printable key (letters, numbers, space) pulls focus into the composer and the character isn't lost. Keyboard shortcuts (anything held with Ctrl/Cmd/Alt) and typing while you're already in another text field are left alone.
+
 Version v0.10.14
 
 Features:
