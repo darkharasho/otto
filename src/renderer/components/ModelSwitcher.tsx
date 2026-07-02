@@ -3,16 +3,22 @@ import { useEffect, useRef, useState } from 'react';
 export interface ModelOption {
   id: string;
   label: string;
-  family: 'opus' | 'sonnet' | 'haiku';
+  family: 'fable' | 'opus' | 'sonnet' | 'haiku';
   tagline: string;
 }
 
 const MODELS: ModelOption[] = [
   {
-    id: 'claude-opus-4-7',
-    label: 'Opus 4.7',
+    id: 'claude-fable-5',
+    label: 'Fable 5',
+    family: 'fable',
+    tagline: 'Most capable, slowest',
+  },
+  {
+    id: 'claude-opus-4-8',
+    label: 'Opus 4.8',
     family: 'opus',
-    tagline: 'Highest reasoning, slowest',
+    tagline: 'Highest reasoning',
   },
   {
     id: 'claude-sonnet-4-6',
@@ -21,7 +27,7 @@ const MODELS: ModelOption[] = [
     tagline: 'Balanced — good default',
   },
   {
-    id: 'claude-haiku-4-5-20251001',
+    id: 'claude-haiku-4-5',
     label: 'Haiku 4.5',
     family: 'haiku',
     tagline: 'Fastest, smallest',
@@ -36,11 +42,13 @@ interface Props {
 
 function FamilyPill({ family }: { family: ModelOption['family'] }) {
   const cls =
-    family === 'opus'
-      ? 'bg-accent/20 text-accent'
-      : family === 'sonnet'
-        ? 'bg-text/10 text-text'
-        : 'bg-bg/80 text-muted';
+    family === 'fable'
+      ? 'bg-accent/30 text-accent'
+      : family === 'opus'
+        ? 'bg-accent/20 text-accent'
+        : family === 'sonnet'
+          ? 'bg-text/10 text-text'
+          : 'bg-bg/80 text-muted';
   return (
     <span className={`text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded ${cls}`}>
       {family}
@@ -49,13 +57,13 @@ function FamilyPill({ family }: { family: ModelOption['family'] }) {
 }
 
 function ModelGlyph({ family }: { family: ModelOption['family'] }) {
-  // Three concentric dots: one (haiku), two (sonnet), three (opus) — visual
-  // weight maps to capability.
-  const filled = family === 'opus' ? 3 : family === 'sonnet' ? 2 : 1;
+  // Filled dots map to capability: one (haiku), two (sonnet), three (opus),
+  // four (fable).
+  const filled = family === 'fable' ? 4 : family === 'opus' ? 3 : family === 'sonnet' ? 2 : 1;
   return (
     <span className="flex items-center justify-center w-9 h-9 rounded-lg bg-accent/10 text-accent">
       <span className="flex gap-[3px]" aria-hidden>
-        {[0, 1, 2].map((i) => (
+        {[0, 1, 2, 3].map((i) => (
           <span
             key={i}
             className={[

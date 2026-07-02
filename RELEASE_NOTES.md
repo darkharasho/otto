@@ -1,3 +1,10 @@
+Version v0.10.19
+
+Changes:
+- **Model picker refreshed.** The model switcher now offers Fable 5 and Opus 4.8, alongside Sonnet 4.6 and Haiku 4.5, with up-to-date model IDs.
+- **Pinned the Claude Agent SDK** to an exact version so it can't drift on install and silently change tool behavior between builds.
+- **Added MCP connection diagnostics.** Otto now logs whether its in-process `otto-tools` server connected at session start, to pin down intermittent "No such tool available" tool-call failures.
+
 Version v0.10.18
 
 Fixes:

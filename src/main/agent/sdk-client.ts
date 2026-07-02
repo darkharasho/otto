@@ -976,6 +976,21 @@ function mapSdkMessage(msg: unknown): SdkStreamEvent[] {
   const m = msg as { type?: string; subtype?: string; session_id?: unknown };
 
   if (m.type === 'system' && m.subtype === 'init' && typeof m.session_id === 'string') {
+    // Surface MCP server connection status from the SDK init message. If
+    // `otto-tools` isn't `connected` here, every mcp__otto-tools__* tool call
+    // will fail with "No such tool available" — this log tells us whether the
+    // in-process server failed to register vs. was merely late for the first turn.
+    const init = msg as { mcp_servers?: Array<{ name?: string; status?: string }> };
+    const servers = init.mcp_servers ?? [];
+    const otto = servers.find((s) => s.name === 'otto-tools');
+    if (!otto || otto.status !== 'connected') {
+      logger.warn(
+        `SDK init: otto-tools MCP server not connected (status=${otto?.status ?? 'absent'}); ` +
+          `all servers=${JSON.stringify(servers)}`
+      );
+    } else {
+      logger.info(`SDK init: otto-tools MCP server connected (${servers.length} server(s))`);
+    }
     return [{ type: 'session-id', id: m.session_id }];
   }
 

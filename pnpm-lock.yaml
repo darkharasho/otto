@@ -9,7 +9,7 @@ importers:
   .:
     dependencies:
       '@anthropic-ai/claude-agent-sdk':
-        specifier: ^0.1.0
+        specifier: 0.1.77
         version: 0.1.77(zod@3.25.76)
       '@fontsource/plus-jakarta-sans':
         specifier: ^5.2.8

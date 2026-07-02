@@ -1,6 +1,6 @@
 {
   "name": "otto",
-  "version": "0.10.18",
+  "version": "0.10.19",
   "description": "General-purpose computer coworking agent",
   "main": "out/main/index.js",
   "private": true,
@@ -31,7 +31,7 @@
     "postinstall": "node scripts/postinstall.mjs"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.1.0",
+    "@anthropic-ai/claude-agent-sdk": "0.1.77",
     "@fontsource/plus-jakarta-sans": "^5.2.8",
     "@xenova/transformers": "^2.17.2",
     "argon2": "^0.44.0",
