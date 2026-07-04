@@ -31,6 +31,7 @@ export interface SettingsSnapshot {
   displayTarget: DisplayTarget;
   autoDeleteDays: number;
   hideOnBlur: boolean;
+  showReasoning: boolean;
   newConversation: NewConversationPrefs;
   chatBounds: ChatBounds | null;
   lastVisibleMode: WindowMode;
@@ -68,6 +69,7 @@ const DEFAULTS: SettingsSnapshot = {
   displayTarget: 'cursor',
   autoDeleteDays: 0,
   hideOnBlur: false,
+  showReasoning: true,
   newConversation: { idleTimeoutMinutes: 60 },
   chatBounds: null,
   lastVisibleMode: 'bar',
@@ -127,6 +129,9 @@ export class Settings {
   getHideOnBlur(): boolean {
     return this.state.hideOnBlur;
   }
+  getShowReasoning(): boolean {
+    return this.state.showReasoning;
+  }
   getNewConversationIdleTimeoutMinutes(): number {
     return this.state.newConversation.idleTimeoutMinutes;
   }
@@ -139,6 +144,7 @@ export class Settings {
       displayTarget: this.state.displayTarget,
       autoDeleteDays: this.state.autoDeleteDays,
       hideOnBlur: this.state.hideOnBlur,
+      showReasoning: this.state.showReasoning,
       newConversation: { ...this.state.newConversation },
       chatBounds: this.state.chatBounds ? { ...this.state.chatBounds } : null,
       lastVisibleMode: this.state.lastVisibleMode,
@@ -182,6 +188,11 @@ export class Settings {
 
   async setHideOnBlur(enabled: boolean): Promise<void> {
     this.state.hideOnBlur = !!enabled;
+    await this.persist();
+  }
+
+  async setShowReasoning(enabled: boolean): Promise<void> {
+    this.state.showReasoning = !!enabled;
     await this.persist();
   }
 
@@ -291,6 +302,8 @@ export class Settings {
             ? Math.floor(o.autoDeleteDays)
             : DEFAULTS.autoDeleteDays,
         hideOnBlur: typeof o.hideOnBlur === 'boolean' ? o.hideOnBlur : DEFAULTS.hideOnBlur,
+        showReasoning:
+          typeof o.showReasoning === 'boolean' ? o.showReasoning : DEFAULTS.showReasoning,
         newConversation: {
           idleTimeoutMinutes:
             Number.isFinite(idle) && (idle as number) >= 0

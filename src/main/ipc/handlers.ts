@@ -291,6 +291,13 @@ export function registerIpcHandlers(deps: {
   );
 
   ipcMain.handle(
+    'settings.setShowReasoning',
+    async (_e, args: { enabled: boolean }): Promise<void> => {
+      await settings.setShowReasoning(args.enabled);
+    }
+  );
+
+  ipcMain.handle(
     'settings.setNewConversationIdleTimeoutMinutes',
     async (_e, args: { minutes: number }): Promise<void> => {
       await settings.setNewConversationIdleTimeoutMinutes(args.minutes);

@@ -397,6 +397,7 @@ async function startElectron(): Promise<void> {
     onMarkTaskComplete: (sessionId, _summary) => {
       detector.onMarkComplete(sessionId);
     },
+    showReasoning: () => settings.getShowReasoning(),
   });
   const sessions = new SessionManager(
     repo,

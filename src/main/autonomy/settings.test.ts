@@ -33,6 +33,8 @@ describe('Settings.load', () => {
     expect(written.windowPosition).toBe('bottom-center');
     expect(written.displayTarget).toBe('cursor');
     expect(written.autoDeleteDays).toBe(0);
+    expect(written.showReasoning).toBe(true);
+    expect(s.getShowReasoning()).toBe(true);
     expect(written.chatBounds).toBeNull();
     expect(written.lastVisibleMode).toBe('bar');
     expect(written.pinnedSessionIds).toEqual([]);

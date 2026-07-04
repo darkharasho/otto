@@ -11,6 +11,7 @@ import { RemoteDesktopSection } from './components/settings/RemoteDesktopSection
 import { MobileRemoteSection } from './components/settings/MobileRemoteSection';
 import { StartupSection } from './components/settings/StartupSection';
 import { AutonomySection } from './components/settings/AutonomySection';
+import { ReasoningSection } from './components/settings/ReasoningSection';
 import { NotificationsSection } from './components/settings/NotificationsSection';
 import { SessionHistorySection } from './components/settings/SessionHistorySection';
 import { NewConversationSection } from './components/settings/NewConversationSection';
@@ -166,6 +167,16 @@ function renderSubsection(args: RenderArgs) {
           onChange={(mode) => {
             patch('autonomy', { mode });
             void ipc.invoke('autonomy.setMode', { mode });
+          }}
+        />
+      );
+    if (activeSub === 'reasoning')
+      return (
+        <ReasoningSection
+          showReasoning={s.showReasoning}
+          onChange={(v) => {
+            patch('showReasoning', v);
+            void ipc.invoke('settings.setShowReasoning', { enabled: v });
           }}
         />
       );

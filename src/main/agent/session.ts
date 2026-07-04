@@ -39,6 +39,7 @@ function normalizeImageBlocks(callId: string, result: unknown): unknown {
 export type SdkStreamEvent =
   | { type: 'message-start' }
   | { type: 'text-delta'; text: string }
+  | { type: 'reasoning'; text: string }
   | { type: 'tool-call-start'; callId: string; name: string; input: unknown }
   | { type: 'tool-call-result'; callId: string; result: unknown; isError: boolean }
   | { type: 'message-end' }
@@ -214,6 +215,15 @@ export class SessionManager {
             this.ensureStarted(sessionId, row);
             appendText(row.message.content, ev.text);
             this.emit({ type: 'text-delta', sessionId, messageId, text: ev.text });
+            this.notifyActivity();
+            break;
+          }
+          case 'reasoning': {
+            const row = this.getOrCreateAssistant(sessionId, messageId);
+            if (!row) break;
+            this.ensureStarted(sessionId, row);
+            appendThinking(row.message.content, ev.text);
+            this.emit({ type: 'reasoning', sessionId, messageId, text: ev.text });
             this.notifyActivity();
             break;
           }
@@ -478,6 +488,18 @@ function appendText(content: ContentBlock[], text: string): void {
     return;
   }
   content.push({ type: 'text', text });
+}
+
+// Merge consecutive reasoning fragments into one thinking block; a new run
+// (interrupted by text/tool blocks) starts a fresh card so the transcript
+// mirrors the model's think→act→think rhythm.
+function appendThinking(content: ContentBlock[], text: string): void {
+  const last = content[content.length - 1];
+  if (last && last.type === 'thinking') {
+    last.text += text;
+    return;
+  }
+  content.push({ type: 'thinking', text });
 }
 
 function toStructuredError(err: unknown): StructuredError {

@@ -1,5 +1,7 @@
+import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { Brain, ChevronDown, ChevronRight } from 'lucide-react';
 import type { Message as MessageType, ContentBlock } from '@shared/messages';
 import { extFromMime } from '@shared/messages';
 import { ToolCallCard } from './ToolCallCard';
@@ -97,6 +99,39 @@ function MarkdownBlock({ text, caret }: { text: string; caret?: boolean }) {
           <span />
           <span />
         </span>
+      )}
+    </div>
+  );
+}
+
+// Collapsible summarized reasoning ("Show reasoning" setting). Auto-expands
+// while the model is actively reasoning and collapses once the answer arrives;
+// manual toggles in between are respected. The reasoning text is dimmed and
+// rendered as markdown when open.
+function ReasoningBlock({ text, streaming }: { text: string; streaming?: boolean }) {
+  const [open, setOpen] = useState(!!streaming);
+  const prevStreaming = useRef(!!streaming);
+  useEffect(() => {
+    if (streaming !== prevStreaming.current) {
+      setOpen(!!streaming);
+      prevStreaming.current = !!streaming;
+    }
+  }, [streaming]);
+  return (
+    <div className="my-2 rounded-lg border border-border/60 bg-bg/30">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 w-full px-2.5 py-1.5 text-xs text-muted hover:text-text transition-colors"
+      >
+        {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+        <Brain className="w-3.5 h-3.5 text-accent" />
+        <span className={streaming ? 'otto-shimmer font-medium' : 'font-medium'}>Reasoning</span>
+      </button>
+      {open && (
+        <div className="px-3 pb-2 pt-0.5 text-[13px] leading-[1.55] text-muted italic md md-reasoning">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+        </div>
       )}
     </div>
   );
@@ -216,7 +251,12 @@ function renderBlocks(content: ContentBlock[], streamingTarget: boolean) {
       textBuffer = '';
       textBufferStartIdx = -1;
     }
-    if (b.type === 'tool_use') {
+    if (b.type === 'thinking') {
+      // "Streaming" while this is the trailing block of the active message —
+      // that's when new reasoning tokens are still landing here.
+      const streaming = streamingTarget && i === content.length - 1;
+      elements.push(<ReasoningBlock key={`think-${i}`} text={b.text} streaming={streaming} />);
+    } else if (b.type === 'tool_use') {
       const res = toolResults.get(b.callId);
       elements.push(
         <ToolCallCard

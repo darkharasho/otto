@@ -128,6 +128,28 @@ describe('SessionManager', () => {
     ]);
   });
 
+  it('records reasoning as a thinking block ahead of the answer text and emits reasoning events', async () => {
+    const { openStream } = makeFakeOpenStream(async function* () {
+      yield { type: 'reasoning', text: 'let me ' };
+      yield { type: 'reasoning', text: 'think' };
+      yield { type: 'text-delta', text: 'answer' };
+      yield { type: 'message-end' };
+      yield { type: 'done' };
+    });
+    fakeSdk.openStream = openStream;
+    const { sessionId } = await manager.start({});
+    await manager.send({ sessionId, text: 'ponder' });
+
+    const reasoningEvents = events.filter((e) => e.type === 'reasoning');
+    expect(reasoningEvents).toHaveLength(2);
+
+    const assistant = repo.loadMessages(sessionId).find((m) => m.role === 'assistant')!;
+    expect(assistant.content).toEqual([
+      { type: 'thinking', text: 'let me think' },
+      { type: 'text', text: 'answer' },
+    ]);
+  });
+
   it('emits an error event when the SDK throws and persists the message as errored', async () => {
     const { openStream } = makeFakeOpenStream(async function* () {
       yield { type: 'text-delta', text: 'partial' };

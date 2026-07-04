@@ -286,6 +286,20 @@ export const useOttoStore = create<OttoState>((set, get) => ({
         set({ activeSession: next });
         return;
       }
+      case 'reasoning': {
+        const next = updateAssistant(session, event.messageId, (m) => {
+          const content = m.content.slice();
+          const last = content[content.length - 1];
+          if (last && last.type === 'thinking') {
+            content[content.length - 1] = { type: 'thinking', text: last.text + event.text };
+          } else {
+            content.push({ type: 'thinking', text: event.text });
+          }
+          return { ...m, content };
+        });
+        set({ activeSession: next });
+        return;
+      }
       case 'tool-call-start': {
         const next = updateAssistant(session, event.messageId, (m) => ({
           ...m,

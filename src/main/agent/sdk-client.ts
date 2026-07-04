@@ -261,6 +261,8 @@ export interface RealSdkClientDeps {
   bumpFactUse(ids: string[], sessionId: string): void;
   appendKnowledge(note: string, sessionId: string): Promise<void>;
   onMarkTaskComplete(sessionId: string, summary: string): void;
+  /** Whether to request summarized reasoning ("Show reasoning" setting). */
+  showReasoning?: () => boolean;
 }
 
 interface ToolCtx {
@@ -880,6 +882,14 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
               allowedTools,
               mcpServers: { 'otto-tools': initialMcp },
               abortController,
+              // Summarized reasoning ("Show reasoning" setting). Adaptive lets
+              // the model decide when/how much to reason; display:'summarized'
+              // streams the reasoning summary back as thinking blocks. Opus
+              // 4.7+/Fable default to display:'omitted' (reasoning still
+              // happens, just hidden), so this is what surfaces the text.
+              ...(deps.showReasoning?.()
+                ? { thinking: { type: 'adaptive', display: 'summarized' } }
+                : {}),
               ...(resumeId ? { resume: resumeId } : {}),
               ...(spawnOverrides ?? {}),
             },
@@ -1002,7 +1012,13 @@ function mapSdkMessage(msg: unknown): SdkStreamEvent[] {
     const out: SdkStreamEvent[] = [];
     for (const block of blocks) {
       const bType = block.type;
-      if (bType === 'text' && typeof block.text === 'string' && block.text.length > 0) {
+      if (bType === 'thinking' && typeof block.thinking === 'string' && block.thinking.length > 0) {
+        // Summarized reasoning ("Show reasoning" setting). Thinking blocks lead
+        // the assistant message, so emitting here keeps reasoning ordered ahead
+        // of the answer text. When display:'omitted' they carry no text and are
+        // skipped. redacted_thinking blocks (no .thinking) are likewise skipped.
+        out.push({ type: 'reasoning', text: block.thinking as string });
+      } else if (bType === 'text' && typeof block.text === 'string' && block.text.length > 0) {
         out.push({ type: 'text-delta', text: block.text as string });
       } else if (bType === 'tool_use') {
         out.push({

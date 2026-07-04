@@ -130,6 +130,7 @@ export type IpcRequest =
     }
   | { channel: 'settings.setAutoDeleteDays'; args: { days: number }; result: void }
   | { channel: 'settings.setHideOnBlur'; args: { enabled: boolean }; result: void }
+  | { channel: 'settings.setShowReasoning'; args: { enabled: boolean }; result: void }
   | { channel: 'settings.setNewConversationIdleTimeoutMinutes'; args: { minutes: number }; result: void }
   | { channel: 'settings.openLogsDir'; args: void; result: void }
   | { channel: 'settings.resetAllSessions'; args: void; result: { deleted: number } }
@@ -233,6 +234,7 @@ export interface SettingsView {
   displayTarget: 'cursor' | 'primary';
   autoDeleteDays: number;
   hideOnBlur: boolean;
+  showReasoning: boolean;
   newConversation: { idleTimeoutMinutes: number };
   version: string;
   chatBounds: ChatBounds | null;
@@ -247,6 +249,7 @@ export type SessionEvent =
   | { type: 'user-message'; sessionId: string; messageId: string; text: string; content?: ContentBlock[] }
   | { type: 'system-message'; sessionId: string; message: Message }
   | { type: 'text-delta'; sessionId: string; messageId: string; text: string }
+  | { type: 'reasoning'; sessionId: string; messageId: string; text: string }
   | { type: 'tool-call-start'; sessionId: string; messageId: string; callId: string; name: string; input: unknown }
   | { type: 'tool-call-result'; sessionId: string; messageId: string; callId: string; result: unknown; isError: boolean }
   | { type: 'message-end'; sessionId: string; messageId: string }

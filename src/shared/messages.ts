@@ -3,6 +3,7 @@ export type ActionClass = 'read' | 'reversible' | 'destructive' | 'irreversible'
 
 export type ContentBlock =
   | { type: 'text'; text: string }
+  | { type: 'thinking'; text: string }
   | { type: 'tool_use'; callId: string; name: string; input: unknown }
   | { type: 'tool_result'; callId: string; result: unknown; isError?: boolean }
   | {

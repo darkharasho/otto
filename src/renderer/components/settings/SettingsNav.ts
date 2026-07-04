@@ -30,6 +30,7 @@ export const TABS: TabEntry[] = [
     label: 'Behavior',
     subs: [
       { id: 'autonomy', label: 'Autonomy' },
+      { id: 'reasoning', label: 'Reasoning' },
       { id: 'notifications', label: 'Notifications' },
       { id: 'sessionHistory', label: 'Session history' },
       { id: 'newConversation', label: 'New conversations' },
