@@ -23,4 +23,8 @@ export function registerVoiceIpc(voice: VoiceManager): void {
   ipcMain.handle('voice.logError', (_e, args: { message: string }) => {
     logger.error(`[voice] ${args.message}`);
   });
+  ipcMain.handle('voice.log', (_e, args: { level: 'info' | 'error'; message: string }) => {
+    if (args.level === 'error') logger.error(`[voice] ${args.message}`);
+    else logger.info(`[voice] ${args.message}`);
+  });
 }

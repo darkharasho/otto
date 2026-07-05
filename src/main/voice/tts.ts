@@ -2,6 +2,7 @@
 // CPU-bound); cancellation uses a generation counter so an in-flight
 // result that resolves after cancel() is silently dropped.
 import type { VoiceEvent } from '@shared/voice';
+import { logger } from '../logger';
 
 export type SynthFn = (text: string) => Promise<{ pcm: Float32Array; sampleRate: number }>;
 
@@ -9,6 +10,8 @@ export class TtsService {
   private queue: string[] = [];
   private running = false;
   private generation = 0;
+  /** Timestamp of the first speak() call in the current batch (for first-chunk latency). */
+  private batchT0: number | null = null;
 
   constructor(
     private readonly synth: SynthFn,
@@ -21,12 +24,16 @@ export class TtsService {
 
   speak(sentence: string): void {
     this.queue.push(sentence);
-    if (!this.running) void this.drain();
+    if (!this.running) {
+      this.batchT0 = Date.now();
+      void this.drain();
+    }
   }
 
   cancel(): void {
     this.generation++;
     this.queue = [];
+    this.batchT0 = null;
   }
 
   private async drain(): Promise<void> {
@@ -39,10 +46,16 @@ export class TtsService {
         const gen = this.generation;
         const sentence = this.queue.shift()!;
         try {
+          const synthT0 = Date.now();
           const { pcm, sampleRate } = await this.synth(sentence);
+          logger.info(`[voice:perf] synth wall=${Date.now() - synthT0}ms chars=${sentence.length}`);
           if (gen !== this.generation) break; // cancelled mid-synthesis; re-check outer
           // Copy into a plain ArrayBuffer for structured-clone over IPC.
           const buf = pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength) as ArrayBuffer;
+          if (this.batchT0 !== null) {
+            logger.info(`[voice:perf] first-chunk latency=${Date.now() - this.batchT0}ms`);
+            this.batchT0 = null;
+          }
           this.emit({ type: 'tts-chunk', pcm: buf, sampleRate });
         } catch {
           if (gen !== this.generation) break;
@@ -55,6 +68,30 @@ export class TtsService {
     this.running = false;
     this.emit({ type: 'tts-end' });
   }
+}
+
+/**
+ * Trim leading and trailing silence from a PCM buffer.
+ * Finds the first and last sample whose absolute value exceeds `threshold`,
+ * then pads `padMs` ms on each side before returning a copy of the subarray.
+ * Returns a short (near-empty) buffer safely if all samples are below threshold.
+ */
+export function trimSilence(
+  pcm: Float32Array,
+  sampleRate: number,
+  threshold = 0.01,
+  padMs = 60,
+): Float32Array {
+  const padSamples = Math.round((padMs / 1000) * sampleRate);
+  let start = 0;
+  let end = pcm.length - 1;
+  while (start < pcm.length && Math.abs(pcm[start]!) <= threshold) start++;
+  while (end > start && Math.abs(pcm[end]!) <= threshold) end--;
+  // All silence — return a zero-length (or 1-sample) buffer safely.
+  if (start > end) return new Float32Array(0);
+  const s = Math.max(0, start - padSamples);
+  const e = Math.min(pcm.length, end + 1 + padSamples);
+  return pcm.slice(s, e);
 }
 
 /**
@@ -78,7 +115,8 @@ export async function createKokoroSynth(cacheDir: string): Promise<SynthFn> {
     device: 'cpu',
   });
   return async (text: string) => {
-    const audio = await tts.generate(text, { voice: 'af_heart' });
-    return { pcm: audio.audio as Float32Array, sampleRate: audio.sampling_rate as number };
+    const audio = await tts.generate(text, { voice: 'af_heart', speed: 1.05 });
+    const pcm = trimSilence(audio.audio as Float32Array, audio.sampling_rate as number);
+    return { pcm, sampleRate: audio.sampling_rate as number };
   };
 }

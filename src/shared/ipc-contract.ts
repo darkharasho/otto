@@ -173,7 +173,8 @@ export type IpcRequest =
   | { channel: 'voice.setMode'; args: { enabled: boolean; sessionId: string | null }; result: void }
   | { channel: 'voice.transcribe'; args: { pcm: ArrayBuffer; sampleRate: number }; result: { text: string } }
   | { channel: 'voice.cancelSpeech'; args: void; result: void }
-  | { channel: 'voice.logError'; args: { message: string }; result: void };
+  | { channel: 'voice.logError'; args: { message: string }; result: void }
+  | { channel: 'voice.log'; args: { level: 'info' | 'error'; message: string }; result: void };
 
 export type RemoteCeilingChoice = 'match' | 'strict' | 'balanced' | 'full-allow';
 

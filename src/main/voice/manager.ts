@@ -1,4 +1,5 @@
 import path from 'node:path';
+import os from 'node:os';
 import type { SessionEvent } from '@shared/ipc-contract';
 import type { VoiceEvent } from '@shared/voice';
 import { WhisperService } from './whisper';
@@ -59,7 +60,7 @@ export class VoiceManager {
       const model = path.join(this.opts.assetsDir, 'models', 'ggml-small.en.bin');
       this.whisper = new WhisperService({
         command: binary,
-        args: (port) => ['-m', model, '--host', '127.0.0.1', '--port', String(port), '--threads', '4'],
+        args: (port) => ['-m', model, '--host', '127.0.0.1', '--port', String(port), '--threads', String(Math.max(4, Math.floor(os.cpus().length / 2)))],
         onExit: (code) => void this.handleWhisperExit(code),
       });
     }
@@ -91,7 +92,10 @@ export class VoiceManager {
 
   async transcribe(pcm: Float32Array, sampleRate: number): Promise<string> {
     if (!this.whisper?.isRunning()) throw new Error('voice mode is not active');
-    return this.whisper.transcribe(pcm, sampleRate);
+    const t0 = Date.now();
+    const text = await this.whisper.transcribe(pcm, sampleRate);
+    logger.info(`[voice:perf] transcribe wall=${Date.now() - t0}ms samples=${pcm.length} text="${text.slice(0, 60)}"`);
+    return text;
   }
 
   cancelSpeech(): void {

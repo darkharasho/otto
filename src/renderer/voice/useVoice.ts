@@ -14,6 +14,10 @@ function logErrorToMain(message: string): void {
   ipc.invoke('voice.logError', { message }).catch(() => {});
 }
 
+function logToMain(level: 'info' | 'error', message: string): void {
+  ipc.invoke('voice.log', { level, message }).catch(() => {});
+}
+
 function surfaceVoiceError(cause: unknown): void {
   const msg = cause instanceof Error ? cause.message : String(cause);
   const session = useOttoStore.getState().activeSession;
@@ -114,6 +118,11 @@ export function useVoice(opts: {
         const vad = await MicVAD.new({
           baseAssetPath: assetBase,
           onnxWASMBasePath: assetBase,
+          // Raise the positive threshold and require ~128ms of sustained speech
+          // before declaring speech, reducing false barge-ins from background noise.
+          positiveSpeechThreshold: 0.6,
+          negativeSpeechThreshold: 0.45, // 0.15 below positiveSpeechThreshold per VAD docs
+          minSpeechMs: 128, // ~4 frames at 32ms/frame — onSpeechRealStart fires after this
           onFrameProcessed: (probabilities, _frame) => {
             // Drive a CSS custom property on the mic button so the animation
             // reflects actual speech energy without pushing through Zustand.
@@ -128,9 +137,15 @@ export function useVoice(opts: {
               el.style.setProperty('--mic-level', String(level));
             });
           },
+          // onSpeechStart fires as soon as any speech-like frame is detected.
+          // We do NOT barge-in here to avoid triggering on brief noise.
           onSpeechStart: () => {
-            // Barge-in: always cancel speech synthesis when voice mode is active;
-            // additionally stop local playback if audio is currently playing.
+            // Intentionally empty: barge-in is now handled in onSpeechRealStart,
+            // which fires only after minSpeechFrames of sustained speech.
+          },
+          // onSpeechRealStart fires after minSpeechFrames consecutive speech frames
+          // (~128ms at 4 frames), ensuring barge-in only triggers on real speech.
+          onSpeechRealStart: () => {
             if (useOttoStore.getState().voiceMode) {
               if (playerRef.current?.playing) {
                 playerRef.current.stop();
@@ -140,6 +155,7 @@ export function useVoice(opts: {
           },
           onSpeechEnd: (audio: Float32Array) => {
             void (async () => {
+              const speechEndT = Date.now();
               setVoiceState('transcribing');
               try {
                 const buf = audio.buffer.slice(
@@ -150,7 +166,13 @@ export function useVoice(opts: {
                   pcm: buf,
                   sampleRate: 16000,
                 });
-                if (text) await optsRef.current.submitText(text);
+                const transcribeMs = Date.now() - speechEndT;
+                if (text) {
+                  const submitT = Date.now();
+                  logToMain('info', `[perf] speechEnd→transcript=${transcribeMs}ms text="${text.slice(0, 60)}"`);
+                  await optsRef.current.submitText(text);
+                  logToMain('info', `[perf] transcript→submit=${Date.now() - submitT}ms`);
+                }
               } catch (err) {
                 console.error('transcription failed', err);
               } finally {
