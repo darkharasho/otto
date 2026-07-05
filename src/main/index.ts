@@ -208,7 +208,6 @@ async function startElectron(): Promise<void> {
   const { VoiceManager } = await import('./voice/manager');
   const { registerVoiceIpc, emitVoiceEvent } = await import('./ipc/voice');
   const voice = new VoiceManager({
-    assetsDir: path.join(app.getAppPath(), 'resources', 'voice'),
     cacheDir: path.join(app.getPath('userData'), 'voice-models'),
     emit: emitVoiceEvent,
     getVoicePrefs: () => settings.getVoicePrefs(),

@@ -1,11 +1,10 @@
-import path from 'node:path';
-import fs from 'node:fs';
 import os from 'node:os';
 import type { SessionEvent } from '@shared/ipc-contract';
 import type { VoiceEvent } from '@shared/voice';
 import { WhisperService } from './whisper';
 import { TtsService, createKokoroSynth, type SynthFn } from './tts';
 import { SpeechPipeline } from './pipeline';
+import { resolveWhisperBinary, whisperModelPath } from './paths';
 import { logger } from '../logger';
 
 const MAX_RESPAWNS = 3;
@@ -24,8 +23,7 @@ export class VoiceManager {
 
   constructor(
     private readonly opts: {
-      assetsDir: string; // resources/voice
-      cacheDir: string; // <userData>/voice-models
+      cacheDir: string; // <userData>/voice-models (Kokoro)
       emit(e: VoiceEvent): void;
       getVoicePrefs(): { ttsVoice: string; speed: number; whisperModel: 'base.en' | 'small.en' };
     }
@@ -66,19 +64,22 @@ export class VoiceManager {
     }
     if (!this.pipeline) this.pipeline = new SpeechPipeline(this.tts);
 
-    // Resolve model path from prefs, with fallback to the other model if preferred is missing.
+    // Resolve model path from prefs using packaged-aware helpers.
     const prefs = this.opts.getVoicePrefs();
-    const modelsDir = path.join(this.opts.assetsDir, 'models');
-    const preferredModelFile = `ggml-${prefs.whisperModel}.bin`;
-    const fallbackModelFile = prefs.whisperModel === 'base.en' ? 'ggml-small.en.bin' : 'ggml-base.en.bin';
-    let resolvedModel = path.join(modelsDir, preferredModelFile);
-    if (!fs.existsSync(resolvedModel)) {
-      const fallback = path.join(modelsDir, fallbackModelFile);
-      if (fs.existsSync(fallback)) {
-        logger.warn(`[voice] preferred model ${preferredModelFile} not found on disk — falling back to ${fallbackModelFile}`);
-        resolvedModel = fallback;
+    const preferredResolution = whisperModelPath(prefs.whisperModel);
+    let resolvedModel = preferredResolution.resolvedPath;
+    if (!resolvedModel) {
+      // Preferred model absent — try the other model as a fallback.
+      const fallbackModel = prefs.whisperModel === 'base.en' ? 'small.en' as const : 'base.en' as const;
+      const fallbackResolution = whisperModelPath(fallbackModel);
+      if (fallbackResolution.resolvedPath) {
+        logger.warn(`[voice] preferred model ggml-${prefs.whisperModel}.bin not found — falling back to ggml-${fallbackModel}.bin`);
+        resolvedModel = fallbackResolution.resolvedPath;
       } else {
-        throw new Error(`No whisper model found in ${modelsDir} (tried ${preferredModelFile} and ${fallbackModelFile}). Run scripts/setup-voice-dev.sh to download models.`);
+        throw new Error(
+          `No whisper model found for ggml-${prefs.whisperModel}.bin or ggml-${fallbackModel}.bin. ` +
+          `Download a model to ${preferredResolution.preferredPath} or run scripts/setup-voice-dev.sh in dev.`
+        );
       }
     }
 
@@ -91,7 +92,7 @@ export class VoiceManager {
     }
 
     if (!this.whisper) {
-      const binary = path.join(this.opts.assetsDir, 'whisper-server');
+      const binary = resolveWhisperBinary();
       const model = resolvedModel;
       this.whisper = new WhisperService({
         command: binary,
