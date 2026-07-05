@@ -9,6 +9,7 @@
 
 import path from 'node:path';
 import fs from 'node:fs';
+import { app } from 'electron';
 
 export type WhisperModel = 'base.en' | 'small.en';
 
@@ -91,8 +92,6 @@ export function resolveWhisperModelPure(opts: {
  * Safe to call only after `app.ready`.
  */
 export function resolveWhisperBinary(): string {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { app } = require('electron') as typeof import('electron');
   return resolveWhisperBinaryPure({
     isPackaged: app.isPackaged,
     resourcesPath: process.resourcesPath,
@@ -105,8 +104,6 @@ export function resolveWhisperBinary(): string {
  * Safe to call only after `app.ready`.
  */
 export function whisperModelPath(model: WhisperModel): WhisperModelResolution {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { app } = require('electron') as typeof import('electron');
   return resolveWhisperModelPure({
     model,
     isPackaged: app.isPackaged,

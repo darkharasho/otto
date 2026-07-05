@@ -85,7 +85,7 @@ describe('TtsService', () => {
   it('a synthesis error skips the sentence and continues the queue', async () => {
     const events: VoiceEvent[] = [];
     let first = true;
-    const synth: SynthFn = async (t) => {
+    const synth: SynthFn = async (_t) => {
       if (first) {
         first = false;
         throw new Error('boom');

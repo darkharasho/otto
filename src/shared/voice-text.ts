@@ -12,7 +12,7 @@ function sanitize(text: string): string {
   // The Extended_Pictographic property covers the full emoji set; additional ranges handle
   // variation selector U+FE0F, ZWJ U+200D, and skin-tone modifiers U+1F3FB–U+1F3FF.
   // We also catch the standalone heart U+2764 and related dingbats.
-  t = t.replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{1F3FB}-\u{1F3FF}\u{2764}]/gu, '');
+  t = t.replace(/\p{Extended_Pictographic}|\u{FE0F}|\u{200D}|[\u{1F3FB}-\u{1F3FF}]|\u{2764}/gu, '');
   // Inline code: keep short spans (reads naturally, e.g. command names),
   // drop long ones.
   t = t.replace(/`([^`]*)`/g, (_m, code: string) => {
@@ -116,7 +116,7 @@ export class SpeechTextStream {
       const sentenceMatch = pending.match(/([.!?])(\s+|$)|\n+/);
 
       // Eager first-clause: when we haven't emitted yet, also test clause boundaries.
-      let m = sentenceMatch;
+      const m = sentenceMatch;
       if (this.eagerFirstClause && this.firstPending && !final) {
         const clauseMatch = pending.match(CLAUSE_BOUNDARY_RE);
         const clausePunct = clauseMatch?.[1]; // the matched punctuation char (, ; : or —)
