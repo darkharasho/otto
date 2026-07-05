@@ -205,9 +205,17 @@ async function startElectron(): Promise<void> {
     () => window.isVisible()
   );
   const sessionBus = new SessionBus();
+  const { VoiceManager } = await import('./voice/manager');
+  const { registerVoiceIpc, emitVoiceEvent } = await import('./ipc/voice');
+  const voice = new VoiceManager({
+    assetsDir: path.join(app.getAppPath(), 'resources', 'voice'),
+    cacheDir: path.join(app.getPath('userData'), 'voice-models'),
+    emit: emitVoiceEvent,
+  });
   const baseEmit: typeof emitSessionEvent = (event) => {
     notifier.handle(event);
     overlay.handleSessionEvent(event);
+    voice.handleSessionEvent(event);
     emitSessionEvent(event);
     // Badge the tray when a turn finishes while Otto is hidden — gives the
     // user an at-a-glance indicator that something's waiting without opening
@@ -577,6 +585,7 @@ async function startElectron(): Promise<void> {
     },
   });
 
+  registerVoiceIpc(voice);
   setupUpdaterIpc(() => BrowserWindow.getAllWindows(), notifier);
 
   let hotkeyState = hotkey.getState();
@@ -631,6 +640,7 @@ async function startElectron(): Promise<void> {
     void toggleServer.stop();
     void registry.killAll();
     void remoteModule.stop();
+    void voice.dispose();
     tray.destroy();
     settingsWindow.destroy();
     overlay.destroy();

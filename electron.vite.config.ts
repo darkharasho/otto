@@ -6,7 +6,13 @@ export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
     resolve: { alias: { '@shared': resolve('src/shared') } },
-    build: { outDir: 'out/main', rollupOptions: { input: 'src/main/index.ts' } },
+    build: {
+      outDir: 'out/main',
+      rollupOptions: {
+        input: 'src/main/index.ts',
+        external: ['@huggingface/transformers'],
+      },
+    },
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
