@@ -28,6 +28,7 @@ export class WhisperService {
   private child: ChildProcess | null = null;
   private port = 0;
   private stopping = false;
+  private startPromise: Promise<void> | null = null;
 
   constructor(private readonly opts: WhisperServiceOpts) {}
 
@@ -37,6 +38,14 @@ export class WhisperService {
 
   async start(): Promise<void> {
     if (this.isRunning()) return;
+    if (this.startPromise) return this.startPromise;
+    this.startPromise = this.doStart().finally(() => {
+      this.startPromise = null;
+    });
+    return this.startPromise;
+  }
+
+  private async doStart(): Promise<void> {
     this.stopping = false;
     this.port = await freePort();
     const child = spawn(this.opts.command, this.opts.args(this.port), {

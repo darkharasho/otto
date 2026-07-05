@@ -63,4 +63,19 @@ describe('WhisperService', () => {
     svc = stub();
     await expect(svc.transcribe(new Float32Array(16), 16000)).rejects.toThrow(/not running/i);
   });
+
+  it('concurrent start() calls spawn exactly one child process', async () => {
+    let argsCalls = 0;
+    svc = new WhisperService({
+      command: process.execPath,
+      args: (port) => {
+        argsCalls++;
+        return [FIXTURE, '--port', String(port)];
+      },
+      startupTimeoutMs: 10_000,
+    });
+    await Promise.all([svc.start(), svc.start()]);
+    expect(svc.isRunning()).toBe(true);
+    expect(argsCalls).toBe(1);
+  });
 });
