@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useState, useRef } from 'react';
 import { ipc } from './ipc';
 import { useOttoStore, isSessionBusy, canProactivelyReset } from './state/store';
+import { useVoice } from './voice/useVoice';
 import type { ContentBlock } from '@shared/messages';
 import { IDLE_GATE_MS, TOPIC_SHIFT_EVALUATE_TIMEOUT_MS } from '@shared/topic-shift-constants';
 import { CommandBar } from './components/CommandBar';
@@ -123,6 +124,9 @@ export function App() {
             setArmedPrivate(false);
           }
         }
+        if (isNew && useOttoStore.getState().voiceMode) {
+          void ipc.invoke('voice.setMode', { enabled: true, sessionId });
+        }
         inFlightSessionStart.current = null;
         return sessionId;
       });
@@ -131,7 +135,7 @@ export function App() {
   }, [activeSession, beginSession, model]);
 
   const submitToActiveSession = useCallback(
-    async ({ text, attachments }: { text: string; attachments: ImageRef[] }) => {
+    async ({ text, attachments, voice }: { text: string; attachments: ImageRef[]; voice?: boolean }) => {
       try {
         if (useOttoStore.getState().windowMode === 'bar') {
           setWindowMode('panel');
@@ -140,8 +144,8 @@ export function App() {
         const sessionId = await ensureSession();
         appendUserMessage(crypto.randomUUID(), text, attachments);
         // eslint-disable-next-line no-console
-        console.debug('[otto] session.send', { sessionId, len: text.length, attachments: attachments.length });
-        await ipc.invoke('session.send', { sessionId, text, attachments });
+        console.debug('[otto] session.send', { sessionId, len: text.length, attachments: attachments.length, voice });
+        await ipc.invoke('session.send', { sessionId, text, attachments, voice });
         lastUserSubmitAt.current = Date.now();
         void ipc.invoke('session.list', undefined).then(setSessions);
       } catch (err) {
@@ -191,6 +195,10 @@ export function App() {
         setWindowMode('panel');
         void ipc.invoke('window.setMode', { mode: 'panel' });
       }
+      // Re-sync the voice pipeline to follow the newly active session.
+      if (useOttoStore.getState().voiceMode) {
+        void ipc.invoke('voice.setMode', { enabled: true, sessionId: id });
+      }
     },
     [loadSession, setWindowMode]
   );
@@ -204,6 +212,10 @@ export function App() {
     if (useOttoStore.getState().windowMode === 'bar') {
       setWindowMode('panel');
       void ipc.invoke('window.setMode', { mode: 'panel' });
+    }
+    // Re-sync the voice pipeline to follow the newly created session.
+    if (useOttoStore.getState().voiceMode) {
+      void ipc.invoke('voice.setMode', { enabled: true, sessionId });
     }
   }, [beginSession, setWindowMode, model]);
 
@@ -238,6 +250,10 @@ export function App() {
         setWindowMode('panel');
         void ipc.invoke('window.setMode', { mode: 'panel' });
       }
+      // Re-sync the voice pipeline to follow the newly created session.
+      if (useOttoStore.getState().voiceMode) {
+        void ipc.invoke('voice.setMode', { enabled: true, sessionId });
+      }
       appendUserMessage(crypto.randomUUID(), text, attachments);
       await ipc.invoke('session.send', { sessionId, text, attachments });
       void ipc.invoke('session.list', undefined).then(setSessions);
@@ -269,6 +285,10 @@ export function App() {
       if (useOttoStore.getState().windowMode === 'bar') {
         setWindowMode('panel');
         void ipc.invoke('window.setMode', { mode: 'panel' });
+      }
+      // Re-sync the voice pipeline to follow the newly created session.
+      if (useOttoStore.getState().voiceMode) {
+        void ipc.invoke('voice.setMode', { enabled: true, sessionId });
       }
       appendUserMessage(crypto.randomUUID(), text, attachments);
       await ipc.invoke('session.send', { sessionId, text, attachments });
@@ -305,6 +325,26 @@ export function App() {
     },
     [activeSession?.id, appendUserMessage, setSessions]
   );
+
+  const [voiceAvailable, setVoiceAvailable] = useState<boolean | null>(null);
+  useEffect(() => {
+    void ipc.invoke('app.info', undefined).then((info) => setVoiceAvailable(info.voiceAvailable)).catch(() => setVoiceAvailable(false));
+  }, []);
+
+  const micButtonRef = useRef<HTMLButtonElement>(null);
+  const { toggle: toggleVoice, downloadPct } = useVoice({
+    submitText: (text) => submitToActiveSession({ text, attachments: [], voice: true }),
+    ensureSession,
+    micButtonRef,
+  });
+  const voiceMode = useOttoStore((s) => s.voiceMode);
+  const voiceState = useOttoStore((s) => s.voiceState);
+
+  // Only pass the voice prop when the whisper binary is present. When null
+  // (still loading), treat as unavailable to avoid a flash of the mic button.
+  const voiceProp = voiceAvailable
+    ? { mode: voiceMode, state: voiceState, onToggle: () => void toggleVoice(), micButtonRef, downloadPct }
+    : undefined;
 
   // One Esc handler with a priority order: cancel a streaming response, else
   // collapse panel→bar, else hide. Splitting into two listeners caused a
@@ -411,6 +451,7 @@ export function App() {
         onPrivateConversation={handlePrivateConversation}
         onSelectSession={handleSelectSession}
         isPrivate={showPrivate}
+        voice={voiceProp}
       />
     );
   }
@@ -429,6 +470,7 @@ export function App() {
           busy={streaming}
           queueDepth={activeSession?.queueDepth ?? 0}
           welcome={isFreshSession}
+          voice={voiceProp}
         />
       </div>
     );
@@ -473,6 +515,7 @@ export function App() {
               busy={streaming}
               queueDepth={activeSession?.queueDepth ?? 0}
               welcome={isFreshSession}
+              voice={voiceProp}
             />
             <StatusFooter
               model={model}

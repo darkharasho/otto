@@ -13,7 +13,7 @@ import type { ProcessRegistry } from '../shell/process-registry';
 import type { ArtifactRepo } from '../db/artifact-repo';
 import type { FactRepo } from '../db/fact-repo';
 import type { MemorySearch } from '../memory/search';
-import { promises as fsp } from 'node:fs';
+import fs, { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import type {
   SessionStartArgs,
@@ -39,6 +39,7 @@ import { emitAutonomyEvent } from './events';
 import { logger } from '../logger';
 import { gatherShortcutInfo, openKeyboardSettings } from '../shortcut';
 import { instanceDisplayName, isDevInstance } from '../instance';
+import { resolveWhisperBinary } from '../voice/paths';
 import type { HotkeyManager } from '../hotkey';
 import type { RemoteModule } from '../remote';
 import type { PairingStore } from '../remote/pairing-store';
@@ -74,6 +75,15 @@ export function registerIpcHandlers(deps: {
   };
 }): void {
   const { repo, sessions, window, broker, sudoBroker, sudoSession, settings, registry, conversationPolicy, topicShiftDetector } = deps;
+
+  // Cached once per process — the binary path is stable after app.ready.
+  let _voiceAvailable: boolean | null = null;
+  function voiceAvailable(): boolean {
+    if (_voiceAvailable === null) {
+      _voiceAvailable = fs.existsSync(resolveWhisperBinary());
+    }
+    return _voiceAvailable;
+  }
 
   ipcMain.handle('session.start', async (_e, args: SessionStartArgs): Promise<SessionStartResult> => {
     const result = await sessions.start(args);
@@ -316,6 +326,31 @@ export function registerIpcHandlers(deps: {
     deps.openSettingsWindow();
   });
 
+  ipcMain.handle(
+    'settings.setVoicePrefs',
+    async (
+      _e,
+      args: Partial<{ ttsVoice: string; speed: number; whisperModel: 'base.en' | 'small.en'; endpointMs: number }>
+    ): Promise<void> => {
+      const VALID_VOICES = ['af_heart','af_bella','af_nicole','af_sky','am_adam','am_michael','bf_emma','bf_isabella','bm_george','bm_lewis'];
+      const VALID_WHISPER_MODELS: ReadonlyArray<string> = ['base.en', 'small.en'];
+      const sanitized: typeof args = {};
+      if ('ttsVoice' in args && typeof args.ttsVoice === 'string' && VALID_VOICES.includes(args.ttsVoice)) {
+        sanitized.ttsVoice = args.ttsVoice;
+      }
+      if ('speed' in args && typeof args.speed === 'number' && Number.isFinite(args.speed)) {
+        sanitized.speed = Math.min(2, Math.max(0.5, args.speed));
+      }
+      if ('whisperModel' in args && typeof args.whisperModel === 'string' && VALID_WHISPER_MODELS.includes(args.whisperModel)) {
+        sanitized.whisperModel = args.whisperModel as 'base.en' | 'small.en';
+      }
+      if ('endpointMs' in args && typeof args.endpointMs === 'number' && Number.isFinite(args.endpointMs)) {
+        sanitized.endpointMs = Math.min(1500, Math.max(300, args.endpointMs));
+      }
+      await settings.setVoicePrefs(sanitized);
+    }
+  );
+
   ipcMain.handle('settings.resetAllSessions', async (): Promise<{ deleted: number }> => {
     const deleted = repo.deleteAllSessions();
     const { wipeAllSessionFiles } = await import('../screenshot/cleanup');
@@ -347,6 +382,7 @@ export function registerIpcHandlers(deps: {
     isDev: isDevInstance(),
     displayName: instanceDisplayName(),
     version: deps.appVersion,
+    voiceAvailable: voiceAvailable(),
   }));
 
   ipcMain.handle(

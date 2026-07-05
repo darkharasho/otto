@@ -1,0 +1,234 @@
+// Owns the mic + VAD lifecycle and TTS playback for voice conversation mode.
+// Utterance flow: VAD speech-end -> voice.transcribe (main) -> submitText().
+// Barge-in: VAD speech-start while TTS is audible -> stop playback + flush
+// the main-process synthesis queue. The agent turn is never interrupted.
+import { useEffect, useRef, useState, type RefObject, type MutableRefObject } from 'react';
+import type { MicVAD } from '@ricky0123/vad-web';
+import { ipc } from '../ipc';
+import { useOttoStore } from '../state/store';
+import { PcmPlayer } from './player';
+
+function logErrorToMain(message: string): void {
+  // Fire-and-forget: relay voice errors to the main-process logger so they
+  // appear in the terminal during development/support.
+  ipc.invoke('voice.logError', { message }).catch(() => {});
+}
+
+function logToMain(level: 'info' | 'error', message: string): void {
+  ipc.invoke('voice.log', { level, message }).catch(() => {});
+}
+
+function surfaceVoiceError(cause: unknown): void {
+  const msg = cause instanceof Error ? cause.message : String(cause);
+  const session = useOttoStore.getState().activeSession;
+  if (session) {
+    useOttoStore.setState({
+      activeSession: {
+        ...session,
+        error: {
+          kind: 'internal',
+          message: `Voice mode failed to start: ${msg}`,
+          retryable: true,
+        },
+      },
+    });
+  }
+  logErrorToMain(`Voice mode failed to start: ${msg}`);
+}
+
+export function useVoice(opts: {
+  /** Submit a transcript through the same path as typed messages. */
+  submitText(text: string): Promise<void> | void;
+  /** Resolve (possibly creating) the active session id. */
+  ensureSession(): Promise<string>;
+  /** Optional ref to the mic button element for per-frame level animation. */
+  micButtonRef?: RefObject<HTMLButtonElement>;
+}): { toggle(): Promise<void>; downloadPct: number | null } {
+  const vadRef = useRef<MicVAD | null>(null);
+  const playerRef = useRef<PcmPlayer | null>(null);
+  const togglingRef = useRef(false);
+  const optsRef = useRef(opts);
+  optsRef.current = opts;
+  // rAF handle for frame-level mic level animation throttle.
+  const rafRef = useRef<number | null>(null);
+  // Download progress: null = no download in progress, 0–100 = percentage.
+  const [downloadPct, setDownloadPct] = useState<number | null>(null);
+
+  const setVoiceMode = useOttoStore((s) => s.setVoiceMode);
+  const setVoiceState = useOttoStore((s) => s.setVoiceState);
+
+  // TTS playback: subscribe to voice events while mounted.
+  useEffect(() => {
+    const ctx = new AudioContext();
+    const player = new PcmPlayer(ctx);
+    player.onPlayingChange = (playing) => {
+      const { voiceMode: on } = useOttoStore.getState();
+      if (on) setVoiceState(playing ? 'speaking' : 'listening');
+    };
+    playerRef.current = player;
+    const off = ipc.onVoiceEvent((e) => {
+      // Only enqueue TTS audio when voice mode is active. Settings-window
+      // preview chunks also arrive here; gate them out so previews don't
+      // double-play through the main window's player.
+      if (e.type === 'tts-chunk' && useOttoStore.getState().voiceMode) player.enqueue(new Float32Array(e.pcm), e.sampleRate);
+      if (e.type === 'voice-error') {
+        logErrorToMain(e.message);
+        player.stop();
+        setVoiceMode(false);
+        setDownloadPct(null);
+        void teardownVad(vadRef);
+      }
+      if (e.type === 'model-download-progress') {
+        setDownloadPct(e.pct >= 100 ? null : e.pct);
+      }
+    });
+    return () => {
+      off();
+      player.stop();
+      void ctx.close().catch(() => {});
+      // Unmount teardown: if voice was active, clean up VAD and notify main process.
+      if (useOttoStore.getState().voiceMode) {
+        void teardownVad(vadRef);
+        ipc.invoke('voice.setMode', { enabled: false, sessionId: null }).catch(() => {});
+      }
+    };
+  }, [setVoiceMode, setVoiceState]);
+
+  async function toggle(): Promise<void> {
+    // Re-entrancy guard: rapid double-taps no-op on the second call.
+    if (togglingRef.current) return;
+    togglingRef.current = true;
+    try {
+      // Read fresh state rather than the closure-captured value.
+      const on = useOttoStore.getState().voiceMode;
+      if (on) {
+        setVoiceMode(false);
+        playerRef.current?.stop();
+        // Cancel any pending rAF level animation.
+        if (rafRef.current !== null) {
+          cancelAnimationFrame(rafRef.current);
+          rafRef.current = null;
+        }
+        await teardownVad(vadRef);
+        await ipc.invoke('voice.setMode', { enabled: false, sessionId: null });
+        return;
+      }
+
+      // Immediately signal that we are starting so the button reacts.
+      setVoiceMode(true);
+      setVoiceState('starting');
+
+      try {
+        const sessionId = await optsRef.current.ensureSession();
+        await ipc.invoke('voice.setMode', { enabled: true, sessionId });
+
+        const settings = await ipc.invoke('settings.get', undefined);
+        // endpointMs controls how long Otto waits after speech stops before transcribing.
+        // Clamped to [300, 1500]. VAD uses 1536-sample frames @16 kHz → 96 ms/frame;
+        // redemptionMs is rounded down to the nearest frame boundary internally by VAD.
+        const endpointMs = Math.min(1500, Math.max(300, settings.voice.endpointMs));
+
+        const { MicVAD } = await import('@ricky0123/vad-web');
+        const assetBase = new URL('vad/', document.baseURI).href;
+        const vad = await MicVAD.new({
+          baseAssetPath: assetBase,
+          onnxWASMBasePath: assetBase,
+          // Raise the positive threshold and require ~128ms of sustained speech
+          // before declaring speech, reducing false barge-ins from background noise.
+          positiveSpeechThreshold: 0.6,
+          negativeSpeechThreshold: 0.45, // 0.15 below positiveSpeechThreshold per VAD docs
+          minSpeechMs: 128, // ~4 frames at 32ms/frame — onSpeechRealStart fires after this
+          // End-of-speech pause: configurable via voice prefs (default 650ms).
+          // Legacy model uses 1536-sample frames @16 kHz → 96 ms/frame.
+          redemptionMs: endpointMs,
+          onFrameProcessed: (probabilities, _frame) => {
+            // Drive a CSS custom property on the mic button so the animation
+            // reflects actual speech energy without pushing through Zustand.
+            const el = optsRef.current.micButtonRef?.current;
+            if (!el) return;
+            // SpeechProbabilities has a `isSpeech` float probability (0–1).
+            const level = probabilities.isSpeech ?? 0;
+            // Throttle DOM writes to one per animation frame.
+            if (rafRef.current !== null) return;
+            rafRef.current = requestAnimationFrame(() => {
+              rafRef.current = null;
+              el.style.setProperty('--mic-level', String(level));
+            });
+          },
+          // onSpeechStart fires as soon as any speech-like frame is detected.
+          // We do NOT barge-in here to avoid triggering on brief noise.
+          onSpeechStart: () => {
+            // Intentionally empty: barge-in is now handled in onSpeechRealStart,
+            // which fires only after minSpeechFrames of sustained speech.
+          },
+          // onSpeechRealStart fires after minSpeechFrames consecutive speech frames
+          // (~128ms at 4 frames), ensuring barge-in only triggers on real speech.
+          onSpeechRealStart: () => {
+            if (useOttoStore.getState().voiceMode) {
+              if (playerRef.current?.playing) {
+                playerRef.current.stop();
+              }
+              void ipc.invoke('voice.cancelSpeech', undefined);
+            }
+          },
+          onSpeechEnd: (audio: Float32Array) => {
+            void (async () => {
+              const speechEndT = Date.now();
+              setVoiceState('transcribing');
+              try {
+                const buf = audio.buffer.slice(
+                  audio.byteOffset,
+                  audio.byteOffset + audio.byteLength,
+                ) as ArrayBuffer;
+                const { text } = await ipc.invoke('voice.transcribe', {
+                  pcm: buf,
+                  sampleRate: 16000,
+                });
+                const transcribeMs = Date.now() - speechEndT;
+                if (text) {
+                  logToMain('info', `[perf] speechEnd→transcript=${transcribeMs}ms text="${text.slice(0, 60)}"`);
+                  const agentT0 = Date.now();
+                  await optsRef.current.submitText(text);
+                  logToMain('info', `[perf] submit→agentDone=${Date.now() - agentT0}ms`);
+                }
+              } catch (err) {
+                console.error('transcription failed', err);
+              } finally {
+                if (useOttoStore.getState().voiceMode) setVoiceState('listening');
+              }
+            })();
+          },
+        });
+        // Stash the VAD before start() so a start failure still tears it down.
+        vadRef.current = vad;
+        // Set state BEFORE starting VAD so any instant VAD event sees voiceMode true.
+        setVoiceState('listening');
+        vad.start();
+      } catch (err) {
+        // Roll back: sidecar off, partial VAD destroyed, UI shows voice off.
+        console.error('voice enable failed', err);
+        surfaceVoiceError(err);
+        await ipc.invoke('voice.setMode', { enabled: false, sessionId: null }).catch(() => {});
+        await teardownVad(vadRef);
+        setVoiceMode(false);
+        setVoiceState('idle');
+      }
+    } finally {
+      togglingRef.current = false;
+    }
+  }
+
+  return { toggle, downloadPct };
+}
+
+async function teardownVad(
+  ref: MutableRefObject<MicVAD | null>,
+): Promise<void> {
+  const vad = ref.current;
+  ref.current = null;
+  try {
+    await vad?.destroy();
+  } catch {
+    // already destroyed
+  }
+}

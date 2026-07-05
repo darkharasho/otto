@@ -375,8 +375,15 @@ export class SessionManager {
     row.resolveDone();
   }
 
-  async send(args: { sessionId: string; text: string; attachments?: Array<Extract<ContentBlock, { type: 'image-ref' }>> }): Promise<void> {
+  /** Suffix appended to the SDK-bound text for voice-originated messages.
+   *  Never shown in the UI — only the clean transcript text is emitted as
+   *  a user-message SessionEvent. */
+  static readonly VOICE_SUFFIX =
+    '\n\n[This is a spoken voice conversation — your reply will be read aloud by TTS. Respond conversationally and briefly: plain prose, no markdown formatting, no bullet lists, no headings, and no code blocks unless the user explicitly asks for code. Prefer one to three short sentences unless the user asks for depth. Numbers, paths, and commands should be phrased the way a person would say them aloud.]';
+
+  async send(args: { sessionId: string; text: string; attachments?: Array<Extract<ContentBlock, { type: 'image-ref' }>>; voice?: boolean }): Promise<void> {
     const { sessionId, text } = args;
+    const sdkText = args.voice ? text + SessionManager.VOICE_SUFFIX : text;
     const user = this.repo.appendMessage({ ...newUserMessage(text, args.attachments ?? []), sessionId });
     this.emit({ type: 'user-message', sessionId, messageId: user.id, text, content: user.content });
     this.notifyActivity();
@@ -417,7 +424,7 @@ export class SessionManager {
       messageId: assistantId,
       queueDepth: stream.queueDepth() + 1,
     });
-    stream.enqueue({ messageId: assistantId, text, attachments: args.attachments ?? [] });
+    stream.enqueue({ messageId: assistantId, text: sdkText, attachments: args.attachments ?? [] });
     // Emit message-start eagerly so the renderer creates the assistant
     // placeholder and shows the thinking animation during the SDK round-trip.
     // The consumer loop's ensureStarted() will see row.started=true and skip.

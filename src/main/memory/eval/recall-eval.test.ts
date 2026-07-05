@@ -26,18 +26,18 @@ const RUN = process.env.OTTO_MEMORY_EVAL === '1';
 const DIM = 384;
 
 async function loadRealEmbedder(): Promise<Embedder> {
-  const t = (await import('@xenova/transformers')) as unknown as {
+  const t = (await import('@huggingface/transformers')) as unknown as {
     env: { localModelPath: string; allowRemoteModels: boolean; allowLocalModels: boolean };
     pipeline: (
       task: string,
       model: string,
-      opts?: { quantized?: boolean }
+      opts?: { dtype?: string }
     ) => Promise<(text: string | string[], opts?: { pooling: string; normalize: boolean }) => Promise<{ data: Float32Array }>>;
   };
   t.env.localModelPath = path.join(process.cwd(), 'resources', 'embedding');
   t.env.allowRemoteModels = false;
   t.env.allowLocalModels = true;
-  const pipe = await t.pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { quantized: true });
+  const pipe = await t.pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { dtype: 'q8' });
   return {
     dim: DIM,
     isAvailable: true,

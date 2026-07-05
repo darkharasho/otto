@@ -1,5 +1,18 @@
-import { useRef, useState, type FormEvent, useEffect } from 'react';
-import { Paperclip, Lock } from 'lucide-react';
+import { useRef, useState, type FormEvent, useEffect, type RefObject } from 'react';
+import { Paperclip, Lock, Mic, MicOff } from 'lucide-react';
+
+/** 5-bar equalizer rendered via pure CSS + --mic-level custom property. */
+function MicWaveform() {
+  return (
+    <span aria-hidden className="otto-mic-waveform">
+      <span className="otto-mic-bar" style={{ '--bar-i': 0 } as React.CSSProperties} />
+      <span className="otto-mic-bar" style={{ '--bar-i': 1 } as React.CSSProperties} />
+      <span className="otto-mic-bar" style={{ '--bar-i': 2 } as React.CSSProperties} />
+      <span className="otto-mic-bar" style={{ '--bar-i': 3 } as React.CSSProperties} />
+      <span className="otto-mic-bar" style={{ '--bar-i': 4 } as React.CSSProperties} />
+    </span>
+  );
+}
 import { OttoMark } from './OttoMark';
 import { ipc } from '../ipc';
 import { extFromMime } from '@shared/messages';
@@ -27,6 +40,16 @@ interface Props {
   busy?: boolean;
   queueDepth?: number;
   welcome?: boolean;
+  /** Voice conversation mode. Omit to hide the mic button. */
+  voice?: {
+    mode: boolean;
+    state: 'idle' | 'starting' | 'listening' | 'transcribing' | 'speaking' | 'error';
+    onToggle(): void;
+    /** Ref forwarded from the parent for per-frame mic level animation. */
+    micButtonRef?: RefObject<HTMLButtonElement>;
+    /** Download progress 0–99 while the whisper model is downloading; null otherwise. */
+    downloadPct?: number | null;
+  };
 }
 
 export function CommandBar({
@@ -41,6 +64,7 @@ export function CommandBar({
   busy = false,
   queueDepth = 0,
   welcome = false,
+  voice,
 }: Props) {
   const [value, setValue] = useState('');
   const [attachments, setAttachments] = useState<ImageRef[]>([]);
@@ -340,6 +364,57 @@ export function CommandBar({
           className="shrink-0 flex items-center justify-center w-6 h-6 text-muted hover:text-text transition-colors"
         >
           <Paperclip className="h-4 w-4" />
+        </button>
+      )}
+      {/* Mic button */}
+      {voice && (
+        <button
+          ref={voice.micButtonRef}
+          type="button"
+          aria-label={
+            voice.state === 'starting' && voice.downloadPct != null
+              ? `Downloading voice model… ${voice.downloadPct}%` :
+            voice.state === 'starting' ? 'Voice mode starting…' :
+            voice.state === 'error' ? 'Voice unavailable' :
+            voice.mode ? 'Voice active — click to turn off' :
+            'Turn on voice mode'
+          }
+          title={
+            voice.state === 'starting' && voice.downloadPct != null
+              ? `Voice: downloading model… ${voice.downloadPct}%` :
+            voice.state === 'starting' ? 'Voice: starting…' :
+            voice.state === 'error' ? 'Voice unavailable' :
+            voice.mode ? 'Voice: active' :
+            'Voice mode'
+          }
+          onClick={voice.onToggle}
+          className={[
+            'otto-mic-btn shrink-0 flex items-center justify-center transition-colors relative',
+            voice.state === 'starting' && voice.downloadPct != null
+              ? 'gap-1 text-[#7c7dff]/60 otto-mic-starting'
+              : voice.state === 'starting'
+                ? 'w-6 h-6 text-[#7c7dff]/60 otto-mic-starting'
+                : voice.mode
+                  ? 'w-6 h-6 text-[#7c7dff] otto-mic-active'
+                  : 'w-6 h-6 text-muted hover:text-text',
+          ].join(' ')}
+        >
+          {voice.state === 'starting'
+            ? (
+              <>
+                <Mic size={16} className="otto-spin shrink-0" />
+                {voice.downloadPct != null && (
+                  <span className="text-[10px] font-medium tabular-nums leading-none">
+                    {voice.downloadPct}%
+                  </span>
+                )}
+              </>
+            )
+            : voice.state === 'error'
+              ? <MicOff size={16} />
+              : voice.mode
+                ? <MicWaveform />
+                : <Mic size={16} />}
         </button>
       )}
       <div className="flex items-center justify-end h-6 shrink-0">

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type RefObject } from 'react';
 import { Sparkles } from 'lucide-react';
 import { ChatTitlebar } from './ChatTitlebar';
 import { ConversationSidebar } from './ConversationSidebar';
@@ -20,6 +20,7 @@ interface Props {
   onPrivateConversation: (args: { text: string; attachments: ImageRef[] }) => void | Promise<void>;
   onSelectSession: (id: string) => void | Promise<void>;
   isPrivate?: boolean;
+  voice?: { mode: boolean; state: 'idle' | 'starting' | 'listening' | 'transcribing' | 'speaking' | 'error'; onToggle(): void; micButtonRef?: RefObject<HTMLButtonElement>; downloadPct?: number | null };
 }
 
 export function ChatWindow({
@@ -31,6 +32,7 @@ export function ChatWindow({
   onPrivateConversation,
   onSelectSession,
   isPrivate = false,
+  voice,
 }: Props) {
   const sessions = useOttoStore((s) => s.sessions);
   const activeSession = useOttoStore((s) => s.activeSession);
@@ -155,6 +157,7 @@ export function ChatWindow({
               busy={streaming}
               queueDepth={activeSession?.queueDepth ?? 0}
               welcome={isFreshSession}
+              voice={voice}
             />
           </div>
         </main>

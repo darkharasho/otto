@@ -18,6 +18,7 @@ import { NewConversationSection } from './components/settings/NewConversationSec
 import { MemorySection, type MemoryKind } from './components/settings/MemorySection';
 import { AboutSection } from './components/settings/AboutSection';
 import { UpdatesSection } from './components/settings/UpdatesSection';
+import { VoiceSection } from './components/settings/VoiceSection';
 import type { SettingsView } from '@shared/ipc-contract';
 
 export function SettingsApp() {
@@ -27,11 +28,13 @@ export function SettingsApp() {
   const [err, setErr] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>('general');
   const [activeSub, setActiveSub] = useState<string>(defaultSubFor('general'));
+  const [voiceAvailable, setVoiceAvailable] = useState<boolean | null>(null);
 
   useEffect(() => {
     ipc.invoke('settings.get', undefined).then(setS).catch((e) => {
       setErr(e instanceof Error ? `${e.name}: ${e.message}` : String(e));
     });
+    ipc.invoke('app.info', undefined).then((info) => setVoiceAvailable(info.voiceAvailable)).catch(() => setVoiceAvailable(false));
   }, []);
 
   if (err) {
@@ -56,6 +59,9 @@ export function SettingsApp() {
   }
   function patchNotifications(p: Partial<SettingsView['notifications']>) {
     setS((cur) => (cur ? { ...cur, notifications: { ...cur.notifications, ...p } } : cur));
+  }
+  function patchVoice(p: Partial<{ ttsVoice: string; speed: number; whisperModel: 'base.en' | 'small.en'; endpointMs: number }>) {
+    setS((cur) => (cur ? { ...cur, voice: { ...cur.voice, ...p } } : cur));
   }
 
   function handleTabChange(tab: TabId) {
@@ -102,6 +108,8 @@ export function SettingsApp() {
             setModel,
             patch,
             patchNotifications,
+            patchVoice,
+            voiceAvailable,
           })}
         </SettingsShell>
       </div>
@@ -117,10 +125,12 @@ interface RenderArgs {
   setModel: (m: string) => void;
   patch<K extends keyof SettingsView>(key: K, value: SettingsView[K]): void;
   patchNotifications(p: Partial<SettingsView['notifications']>): void;
+  patchVoice(p: Partial<{ ttsVoice: string; speed: number; whisperModel: 'base.en' | 'small.en'; endpointMs: number }>): void;
+  voiceAvailable: boolean | null;
 }
 
 function renderSubsection(args: RenderArgs) {
-  const { activeTab, activeSub, settings: s, model, setModel, patch, patchNotifications } = args;
+  const { activeTab, activeSub, settings: s, model, setModel, patch, patchNotifications, patchVoice, voiceAvailable } = args;
 
   if (activeTab === 'general') {
     if (activeSub === 'model') return <ModelSection value={model} onChange={setModel} />;
@@ -211,6 +221,20 @@ function renderSubsection(args: RenderArgs) {
             patch('newConversation', { idleTimeoutMinutes: minutes });
             void ipc.invoke('settings.setNewConversationIdleTimeoutMinutes', { minutes });
           }}
+        />
+      );
+    if (activeSub === 'voice')
+      return (
+        <VoiceSection
+          ttsVoice={s.voice.ttsVoice}
+          speed={s.voice.speed}
+          whisperModel={s.voice.whisperModel}
+          endpointMs={s.voice.endpointMs}
+          voiceAvailable={voiceAvailable ?? false}
+          onVoiceChange={(ttsVoice) => patchVoice({ ttsVoice })}
+          onSpeedChange={(speed) => patchVoice({ speed })}
+          onWhisperModelChange={(whisperModel) => patchVoice({ whisperModel })}
+          onEndpointMsChange={(endpointMs) => patchVoice({ endpointMs })}
         />
       );
   }

@@ -17,6 +17,8 @@ playwright-report/
 node_modules/.otto-abi-state
 resources/embedding/*
 !resources/embedding/.gitkeep
+resources/voice/*
+!resources/voice/.gitkeep
 src/native/build/
 native/
 graphify-out/

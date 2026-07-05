@@ -1,4 +1,5 @@
 import type { ActionClass, AutonomyMode, ContentBlock, Message, SessionMeta } from './messages';
+import type { VoiceEvent } from './voice';
 
 export type WindowMode = 'bar' | 'panel' | 'chat';
 
@@ -32,6 +33,10 @@ export interface SessionSendArgs {
   sessionId: string;
   text: string;
   attachments?: Array<Extract<ContentBlock, { type: 'image-ref' }>>;
+  /** When true, the message originated from a voice transcript. The assistant's
+   *  reply will be shaped for TTS by appending voice guidance to the SDK-bound
+   *  text. The guidance is NOT included in the chat transcript shown to the user. */
+  voice?: boolean;
 }
 
 export interface UploadsStageArgs {
@@ -168,7 +173,18 @@ export type IpcRequest =
   | { channel: 'remote:listDevices'; args: undefined; result: PairedDeviceSummary[] }
   | { channel: 'remote:revokeDevice'; args: { deviceId: string }; result: void }
   | { channel: 'uploads.stage'; args: UploadsStageArgs; result: UploadsStageResult }
-  | { channel: 'uploads.discard'; args: UploadsDiscardArgs; result: void };
+  | { channel: 'uploads.discard'; args: UploadsDiscardArgs; result: void }
+  | { channel: 'voice.setMode'; args: { enabled: boolean; sessionId: string | null }; result: void }
+  | { channel: 'voice.transcribe'; args: { pcm: ArrayBuffer; sampleRate: number }; result: { text: string } }
+  | { channel: 'voice.cancelSpeech'; args: void; result: void }
+  | { channel: 'voice.logError'; args: { message: string }; result: void }
+  | { channel: 'voice.log'; args: { level: 'info' | 'error'; message: string }; result: void }
+  | {
+      channel: 'settings.setVoicePrefs';
+      args: Partial<{ ttsVoice: string; speed: number; whisperModel: 'base.en' | 'small.en'; endpointMs: number }>;
+      result: void;
+    }
+  | { channel: 'voice.preview'; args: { voiceId: string }; result: void };
 
 export type RemoteCeilingChoice = 'match' | 'strict' | 'balanced' | 'full-allow';
 
@@ -207,6 +223,8 @@ export interface AppInfo {
   isDev: boolean;
   displayName: string;
   version: string;
+  /** True when the whisper-server binary is present (Linux packaged, or dev with setup-voice-dev.sh run). */
+  voiceAvailable: boolean;
 }
 
 export interface ShortcutInfoView {
@@ -240,6 +258,7 @@ export interface SettingsView {
   chatBounds: ChatBounds | null;
   lastVisibleMode: WindowMode;
   pinnedSessionIds: string[];
+  voice: { ttsVoice: string; speed: number; whisperModel: 'base.en' | 'small.en'; endpointMs: number };
 }
 
 export type IpcChannel = IpcRequest['channel'];
@@ -348,6 +367,7 @@ export interface OttoBridge {
   ): Promise<Extract<IpcRequest, { channel: C }>['result']>;
   onSessionEvent(handler: (event: SessionEvent) => void): () => void;
   onAutonomyEvent(handler: (event: AutonomyEvent) => void): () => void;
+  onVoiceEvent(handler: (event: VoiceEvent) => void): () => void;
   updater: UpdaterBridge;
   remote: RemoteBridge;
 }

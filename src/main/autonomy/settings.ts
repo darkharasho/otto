@@ -2,8 +2,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { AutonomyMode } from '@shared/messages';
 import type { ChatBounds, WindowMode } from '@shared/ipc-contract';
+import { DEFAULT_TTS_VOICE, DEFAULT_TTS_SPEED } from '@shared/voice-catalog';
 
-const CURRENT_VERSION = 5;
+const CURRENT_VERSION = 6;
 const DEFAULT_MODE: AutonomyMode = 'balanced';
 const VALID_MODES: AutonomyMode[] = ['strict', 'balanced', 'full-allow'];
 
@@ -23,6 +24,16 @@ export interface NewConversationPrefs {
   idleTimeoutMinutes: number; // 0 disables
 }
 
+export type WhisperModel = 'base.en' | 'small.en';
+
+export interface VoicePrefs {
+  ttsVoice: string;
+  speed: number;
+  whisperModel: WhisperModel;
+  /** How long (ms) Otto waits after speech stops before transcribing. [300, 1500] */
+  endpointMs: number;
+}
+
 export interface SettingsSnapshot {
   autonomy: { mode: AutonomyMode };
   notifications: NotificationPrefs;
@@ -36,6 +47,7 @@ export interface SettingsSnapshot {
   chatBounds: ChatBounds | null;
   lastVisibleMode: WindowMode;
   pinnedSessionIds: string[];
+  voice: VoicePrefs;
 }
 
 interface SettingsFileV1 {
@@ -55,11 +67,15 @@ interface SettingsFileV4 extends Omit<SettingsSnapshot, 'chatBounds' | 'lastVisi
   version: 4;
 }
 
-interface SettingsFileV5 extends SettingsSnapshot {
+interface SettingsFileV5 extends Omit<SettingsSnapshot, 'voice'> {
   version: 5;
 }
 
-type SettingsFile = SettingsFileV1 | SettingsFileV2 | SettingsFileV3 | SettingsFileV4 | SettingsFileV5;
+interface SettingsFileV6 extends SettingsSnapshot {
+  version: 6;
+}
+
+type SettingsFile = SettingsFileV1 | SettingsFileV2 | SettingsFileV3 | SettingsFileV4 | SettingsFileV5 | SettingsFileV6;
 
 const DEFAULTS: SettingsSnapshot = {
   autonomy: { mode: DEFAULT_MODE },
@@ -74,6 +90,7 @@ const DEFAULTS: SettingsSnapshot = {
   chatBounds: null,
   lastVisibleMode: 'bar',
   pinnedSessionIds: [],
+  voice: { ttsVoice: DEFAULT_TTS_VOICE, speed: DEFAULT_TTS_SPEED, whisperModel: 'small.en', endpointMs: 650 },
 };
 
 type Listener = (snapshot: SettingsSnapshot) => void;
@@ -149,6 +166,7 @@ export class Settings {
       chatBounds: this.state.chatBounds ? { ...this.state.chatBounds } : null,
       lastVisibleMode: this.state.lastVisibleMode,
       pinnedSessionIds: [...this.state.pinnedSessionIds],
+      voice: { ...this.state.voice },
     };
   }
 
@@ -237,6 +255,15 @@ export class Settings {
     await this.persist();
   }
 
+  getVoicePrefs(): VoicePrefs {
+    return { ...this.state.voice };
+  }
+
+  async setVoicePrefs(prefs: Partial<VoicePrefs>): Promise<void> {
+    this.state.voice = { ...this.state.voice, ...prefs };
+    await this.persist();
+  }
+
   onChange(fn: Listener): () => void {
     this.listeners.add(fn);
     return () => {
@@ -260,9 +287,9 @@ export class Settings {
       this.state = { ...DEFAULTS, autonomy: { mode: m } };
       return 'migrated';
     }
-    if (version === 2 || version === 3 || version === 4 || version === CURRENT_VERSION) {
+    if (version === 2 || version === 3 || version === 4 || version === 5 || version === CURRENT_VERSION) {
       const o = obj as Omit<SettingsFileV2, 'version'> &
-        Partial<Omit<SettingsFileV5, 'version'>>;
+        Partial<Omit<SettingsFileV6, 'version'>>;
       const m = o.autonomy?.mode;
       if (!m || !VALID_MODES.includes(m)) return false;
       const idle = o.newConversation?.idleTimeoutMinutes;
@@ -283,6 +310,25 @@ export class Settings {
         Array.isArray(psi) && psi.every((id) => typeof id === 'string')
           ? psi
           : DEFAULTS.pinnedSessionIds;
+      const rawVoice = (o as { voice?: unknown }).voice;
+      const rawVoiceObj = rawVoice && typeof rawVoice === 'object' ? (rawVoice as Record<string, unknown>) : null;
+      const whisperModel: WhisperModel =
+        rawVoiceObj?.whisperModel === 'base.en' || rawVoiceObj?.whisperModel === 'small.en'
+          ? (rawVoiceObj.whisperModel as WhisperModel)
+          : DEFAULTS.voice.whisperModel;
+      const endpointMs: number =
+        typeof rawVoiceObj?.endpointMs === 'number' &&
+        Number.isFinite(rawVoiceObj.endpointMs) &&
+        rawVoiceObj.endpointMs >= 300 &&
+        rawVoiceObj.endpointMs <= 1500
+          ? rawVoiceObj.endpointMs
+          : DEFAULTS.voice.endpointMs;
+      const voice: VoicePrefs =
+        rawVoiceObj &&
+        typeof rawVoiceObj.ttsVoice === 'string' &&
+        typeof rawVoiceObj.speed === 'number'
+          ? { ttsVoice: rawVoiceObj.ttsVoice as string, speed: rawVoiceObj.speed as number, whisperModel, endpointMs }
+          : DEFAULTS.voice;
       this.state = {
         autonomy: { mode: m },
         notifications: {
@@ -313,6 +359,7 @@ export class Settings {
         chatBounds,
         lastVisibleMode,
         pinnedSessionIds,
+        voice,
       };
       return version === CURRENT_VERSION ? 'ok' : 'migrated';
     }
@@ -328,7 +375,7 @@ export class Settings {
     const dir = path.dirname(this.filePath);
     await fs.mkdir(dir, { recursive: true });
     const tmp = `${this.filePath}.tmp`;
-    const payload: SettingsFileV5 = { version: CURRENT_VERSION, ...this.snapshot() };
+    const payload: SettingsFileV6 = { version: CURRENT_VERSION, ...this.snapshot() };
     await fs.writeFile(tmp, JSON.stringify(payload, null, 2));
     await fs.rename(tmp, this.filePath);
   }
