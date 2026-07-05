@@ -438,6 +438,7 @@ export function App() {
         onPrivateConversation={handlePrivateConversation}
         onSelectSession={handleSelectSession}
         isPrivate={showPrivate}
+        voice={{ mode: voiceMode, state: voiceState, onToggle: () => void toggleVoice() }}
       />
     );
   }
