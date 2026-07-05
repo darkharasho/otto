@@ -1,4 +1,5 @@
 import type { AutonomyEvent, IpcChannel, OttoBridge, SessionEvent, UpdaterState } from '@shared/ipc-contract';
+import type { VoiceEvent } from '@shared/voice';
 
 export const ipc: OttoBridge = {
   invoke: ((channel: IpcChannel, args: unknown) =>
@@ -11,6 +12,9 @@ export const ipc: OttoBridge = {
   },
   onAutonomyEvent(handler: (e: AutonomyEvent) => void): () => void {
     return window.otto.onAutonomyEvent(handler);
+  },
+  onVoiceEvent(handler: (e: VoiceEvent) => void): () => void {
+    return window.otto.onVoiceEvent(handler);
   },
   updater: {
     status: () => window.otto.updater.status(),

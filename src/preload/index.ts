@@ -14,6 +14,7 @@ import {
   type SessionEvent,
   type UpdaterState,
 } from '@shared/ipc-contract';
+import { VOICE_EVENT_CHANNEL, type VoiceEvent } from '@shared/voice';
 
 const bridge: OttoBridge = {
   invoke: (<C extends IpcChannel>(
@@ -32,6 +33,11 @@ const bridge: OttoBridge = {
     const listener = (_e: Electron.IpcRendererEvent, payload: AutonomyEvent) => handler(payload);
     ipcRenderer.on(AUTONOMY_EVENT_CHANNEL, listener);
     return () => ipcRenderer.removeListener(AUTONOMY_EVENT_CHANNEL, listener);
+  },
+  onVoiceEvent(handler) {
+    const listener = (_e: Electron.IpcRendererEvent, payload: VoiceEvent) => handler(payload);
+    ipcRenderer.on(VOICE_EVENT_CHANNEL, listener);
+    return () => ipcRenderer.removeListener(VOICE_EVENT_CHANNEL, listener);
   },
   updater: {
     status: () => ipcRenderer.invoke('updater:status') as Promise<UpdaterState>,

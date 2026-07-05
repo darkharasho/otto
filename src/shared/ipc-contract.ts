@@ -1,4 +1,5 @@
 import type { ActionClass, AutonomyMode, ContentBlock, Message, SessionMeta } from './messages';
+import type { VoiceEvent } from './voice';
 
 export type WindowMode = 'bar' | 'panel' | 'chat';
 
@@ -168,7 +169,10 @@ export type IpcRequest =
   | { channel: 'remote:listDevices'; args: undefined; result: PairedDeviceSummary[] }
   | { channel: 'remote:revokeDevice'; args: { deviceId: string }; result: void }
   | { channel: 'uploads.stage'; args: UploadsStageArgs; result: UploadsStageResult }
-  | { channel: 'uploads.discard'; args: UploadsDiscardArgs; result: void };
+  | { channel: 'uploads.discard'; args: UploadsDiscardArgs; result: void }
+  | { channel: 'voice.setMode'; args: { enabled: boolean; sessionId: string | null }; result: void }
+  | { channel: 'voice.transcribe'; args: { pcm: ArrayBuffer; sampleRate: number }; result: { text: string } }
+  | { channel: 'voice.cancelSpeech'; args: void; result: void };
 
 export type RemoteCeilingChoice = 'match' | 'strict' | 'balanced' | 'full-allow';
 
@@ -348,6 +352,7 @@ export interface OttoBridge {
   ): Promise<Extract<IpcRequest, { channel: C }>['result']>;
   onSessionEvent(handler: (event: SessionEvent) => void): () => void;
   onAutonomyEvent(handler: (event: AutonomyEvent) => void): () => void;
+  onVoiceEvent(handler: (event: VoiceEvent) => void): () => void;
   updater: UpdaterBridge;
   remote: RemoteBridge;
 }
