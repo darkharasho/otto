@@ -18,6 +18,7 @@ import { NewConversationSection } from './components/settings/NewConversationSec
 import { MemorySection, type MemoryKind } from './components/settings/MemorySection';
 import { AboutSection } from './components/settings/AboutSection';
 import { UpdatesSection } from './components/settings/UpdatesSection';
+import { VoiceSection } from './components/settings/VoiceSection';
 import type { SettingsView } from '@shared/ipc-contract';
 
 export function SettingsApp() {
@@ -56,6 +57,9 @@ export function SettingsApp() {
   }
   function patchNotifications(p: Partial<SettingsView['notifications']>) {
     setS((cur) => (cur ? { ...cur, notifications: { ...cur.notifications, ...p } } : cur));
+  }
+  function patchVoice(p: Partial<{ ttsVoice: string; speed: number }>) {
+    setS((cur) => (cur ? { ...cur, voice: { ...cur.voice, ...p } } : cur));
   }
 
   function handleTabChange(tab: TabId) {
@@ -102,6 +106,7 @@ export function SettingsApp() {
             setModel,
             patch,
             patchNotifications,
+            patchVoice,
           })}
         </SettingsShell>
       </div>
@@ -117,10 +122,11 @@ interface RenderArgs {
   setModel: (m: string) => void;
   patch<K extends keyof SettingsView>(key: K, value: SettingsView[K]): void;
   patchNotifications(p: Partial<SettingsView['notifications']>): void;
+  patchVoice(p: Partial<{ ttsVoice: string; speed: number }>): void;
 }
 
 function renderSubsection(args: RenderArgs) {
-  const { activeTab, activeSub, settings: s, model, setModel, patch, patchNotifications } = args;
+  const { activeTab, activeSub, settings: s, model, setModel, patch, patchNotifications, patchVoice } = args;
 
   if (activeTab === 'general') {
     if (activeSub === 'model') return <ModelSection value={model} onChange={setModel} />;
@@ -211,6 +217,15 @@ function renderSubsection(args: RenderArgs) {
             patch('newConversation', { idleTimeoutMinutes: minutes });
             void ipc.invoke('settings.setNewConversationIdleTimeoutMinutes', { minutes });
           }}
+        />
+      );
+    if (activeSub === 'voice')
+      return (
+        <VoiceSection
+          ttsVoice={s.voice.ttsVoice}
+          speed={s.voice.speed}
+          onVoiceChange={(ttsVoice) => patchVoice({ ttsVoice })}
+          onSpeedChange={(speed) => patchVoice({ speed })}
         />
       );
   }
