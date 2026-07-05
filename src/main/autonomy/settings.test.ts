@@ -26,7 +26,7 @@ describe('Settings.load', () => {
     await s.load();
     expect(s.getMode()).toBe('balanced');
     const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
-    expect(written.version).toBe(5);
+    expect(written.version).toBe(6);
     expect(written.autonomy).toEqual({ mode: 'balanced' });
     expect(written.notifications).toEqual({ turnComplete: true, approval: true, sound: false });
     expect(written.startAtLogin).toBe(false);
@@ -57,7 +57,7 @@ describe('Settings.load', () => {
     await s.load();
     expect(s.getDisplayTarget()).toBe('cursor');
     const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
-    expect(written.version).toBe(5);
+    expect(written.version).toBe(6);
     expect(written.displayTarget).toBe('cursor');
   });
 
@@ -137,7 +137,7 @@ describe('Settings — newConversation', () => {
     await s.load();
     expect(s.getNewConversationIdleTimeoutMinutes()).toBe(60);
     const raw = JSON.parse(await fs.readFile(file, 'utf8'));
-    expect(raw.version).toBe(5);
+    expect(raw.version).toBe(6);
     expect(raw.newConversation).toEqual({ idleTimeoutMinutes: 60 });
   });
 
@@ -156,5 +156,52 @@ describe('Settings — newConversation', () => {
     await s.load();
     await s.setNewConversationIdleTimeoutMinutes(0);
     expect(s.getNewConversationIdleTimeoutMinutes()).toBe(0);
+  });
+});
+
+describe('Settings — voice prefs (v5→v6 migration)', () => {
+  it('defaults ttsVoice=af_heart and speed=1.05 on fresh install', async () => {
+    const s = new Settings(settingsPath());
+    await s.load();
+    expect(s.getVoicePrefs()).toEqual({ ttsVoice: 'af_heart', speed: 1.05 });
+    const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
+    expect(written.version).toBe(6);
+    expect(written.voice).toEqual({ ttsVoice: 'af_heart', speed: 1.05 });
+  });
+
+  it('migrates a v5 file to v6 with default voice prefs', async () => {
+    writeFileSync(
+      settingsPath(),
+      JSON.stringify({
+        version: 5,
+        autonomy: { mode: 'balanced' },
+        notifications: { turnComplete: true, approval: true, sound: false },
+        startAtLogin: false,
+        windowPosition: 'bottom-center',
+        displayTarget: 'cursor',
+        autoDeleteDays: 0,
+        hideOnBlur: false,
+        showReasoning: true,
+        newConversation: { idleTimeoutMinutes: 60 },
+        chatBounds: null,
+        lastVisibleMode: 'bar',
+        pinnedSessionIds: [],
+      })
+    );
+    const s = new Settings(settingsPath());
+    await s.load();
+    expect(s.getVoicePrefs()).toEqual({ ttsVoice: 'af_heart', speed: 1.05 });
+    const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
+    expect(written.version).toBe(6);
+  });
+
+  it('setVoicePrefs persists partial update', async () => {
+    const s = new Settings(settingsPath());
+    await s.load();
+    await s.setVoicePrefs({ ttsVoice: 'bm_george' });
+    expect(s.getVoicePrefs()).toEqual({ ttsVoice: 'bm_george', speed: 1.05 });
+    const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
+    expect(written.voice.ttsVoice).toBe('bm_george');
+    expect(written.voice.speed).toBe(1.05);
   });
 });
