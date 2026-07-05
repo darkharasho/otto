@@ -1,5 +1,18 @@
 import { useRef, useState, type FormEvent, useEffect, type RefObject } from 'react';
 import { Paperclip, Lock, Mic, MicOff } from 'lucide-react';
+
+/** 5-bar equalizer rendered via pure CSS + --mic-level custom property. */
+function MicWaveform() {
+  return (
+    <span aria-hidden className="otto-mic-waveform">
+      <span className="otto-mic-bar" style={{ '--bar-i': 0 } as React.CSSProperties} />
+      <span className="otto-mic-bar" style={{ '--bar-i': 1 } as React.CSSProperties} />
+      <span className="otto-mic-bar" style={{ '--bar-i': 2 } as React.CSSProperties} />
+      <span className="otto-mic-bar" style={{ '--bar-i': 3 } as React.CSSProperties} />
+      <span className="otto-mic-bar" style={{ '--bar-i': 4 } as React.CSSProperties} />
+    </span>
+  );
+}
 import { OttoMark } from './OttoMark';
 import { ipc } from '../ipc';
 import { extFromMime } from '@shared/messages';
@@ -30,7 +43,7 @@ interface Props {
   /** Voice conversation mode. Omit to hide the mic button. */
   voice?: {
     mode: boolean;
-    state: 'idle' | 'starting' | 'listening' | 'transcribing' | 'speaking';
+    state: 'idle' | 'starting' | 'listening' | 'transcribing' | 'speaking' | 'error';
     onToggle(): void;
     /** Ref forwarded from the parent for per-frame mic level animation. */
     micButtonRef?: RefObject<HTMLButtonElement>;
@@ -358,14 +371,14 @@ export function CommandBar({
           type="button"
           aria-label={
             voice.state === 'starting' ? 'Voice mode starting…' :
-            voice.state === 'listening' ? 'Listening — click to turn off voice mode' :
-            voice.state === 'transcribing' ? 'Transcribing…' :
-            voice.state === 'speaking' ? 'Speaking — click to turn off voice mode' :
+            voice.state === 'error' ? 'Voice unavailable' :
+            voice.mode ? 'Voice active — click to turn off' :
             'Turn on voice mode'
           }
           title={
             voice.state === 'starting' ? 'Voice: starting…' :
-            voice.mode ? `Voice: ${voice.state}` :
+            voice.state === 'error' ? 'Voice unavailable' :
+            voice.mode ? 'Voice: active' :
             'Voice mode'
           }
           onClick={voice.onToggle}
@@ -373,23 +386,18 @@ export function CommandBar({
             'otto-mic-btn shrink-0 flex items-center justify-center w-6 h-6 transition-colors relative',
             voice.state === 'starting'
               ? 'text-[#7c7dff]/60 otto-mic-starting'
-              : voice.state === 'listening'
-                ? 'text-[#7c7dff] otto-mic-listening'
-                : voice.state === 'transcribing'
-                  ? 'text-[#b9b9ff] otto-mic-transcribing'
-                  : voice.state === 'speaking'
-                    ? 'text-[#7c7dff]'
-                    : 'text-muted hover:text-text',
+              : voice.mode
+                ? 'text-[#7c7dff] otto-mic-active'
+                : 'text-muted hover:text-text',
           ].join(' ')}
         >
           {voice.state === 'starting'
             ? <Mic size={16} className="otto-spin" />
-            : voice.mode
+            : voice.state === 'error'
               ? <MicOff size={16} />
-              : <Mic size={16} />}
-          {(voice.state === 'listening' || voice.state === 'speaking') && (
-            <span aria-hidden className="otto-mic-ring" />
-          )}
+              : voice.mode
+                ? <MicWaveform />
+                : <Mic size={16} />}
         </button>
       )}
       <div className="flex items-center justify-end h-6 shrink-0">
