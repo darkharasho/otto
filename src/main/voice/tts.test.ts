@@ -71,6 +71,38 @@ describe('TtsService', () => {
     expect(events.filter((e) => e.type === 'tts-chunk')).toHaveLength(1);
   });
 
+  it('cancel-then-speak before drain exits still synthesizes the new sentence', async () => {
+    const events: VoiceEvent[] = [];
+    const { synth, resolvers } = deferredSynth();
+    const tts = new TtsService(synth, (e) => events.push(e));
+
+    // Speak A, wait until synth call 1 is in flight
+    tts.speak('A.');
+    await vi.waitFor(() => expect(resolvers).toHaveLength(1));
+
+    // Barge-in: cancel, then immediately enqueue B
+    tts.cancel();
+    tts.speak('B.');
+
+    // Resolve synth call 1 — its result must be dropped (gen mismatch)
+    resolvers[0]!(chunk(4));
+
+    // B must now be synthesized
+    await vi.waitFor(() => expect(resolvers).toHaveLength(2));
+    resolvers[1]!(chunk(8));
+
+    // Wait for quiescence
+    await vi.waitFor(() => expect(events.some((e) => e.type === 'tts-end')).toBe(true));
+
+    // Exactly one chunk (B's), no chunk for A
+    const chunks = events.filter((e) => e.type === 'tts-chunk');
+    expect(chunks).toHaveLength(1);
+    expect((chunks[0] as { pcm: ArrayBuffer }).pcm.byteLength).toBe(8 * 4); // B's 8 floats
+
+    // Service is quiescent
+    expect(tts.pending).toBe(0);
+  });
+
   it('emits tts-start again for a new batch after draining', async () => {
     const events: VoiceEvent[] = [];
     const tts = new TtsService(async () => chunk(4), (e) => events.push(e));

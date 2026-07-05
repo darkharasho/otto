@@ -32,19 +32,25 @@ export class TtsService {
   private async drain(): Promise<void> {
     this.running = true;
     this.emit({ type: 'tts-start' });
-    while (this.queue.length > 0) {
-      const gen = this.generation;
-      const sentence = this.queue.shift()!;
-      try {
-        const { pcm, sampleRate } = await this.synth(sentence);
-        if (gen !== this.generation) break; // cancelled mid-synthesis
-        // Copy into a plain ArrayBuffer for structured-clone over IPC.
-        const buf = pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength) as ArrayBuffer;
-        this.emit({ type: 'tts-chunk', pcm: buf, sampleRate });
-      } catch {
-        if (gen !== this.generation) break;
-        // Skip the failed sentence, keep going.
+    // Outer loop: re-check queue after each inner iteration so that sentences
+    // enqueued during cancel() (barge-in flow) are not stranded.
+    outer: while (this.queue.length > 0) {
+      while (this.queue.length > 0) {
+        const gen = this.generation;
+        const sentence = this.queue.shift()!;
+        try {
+          const { pcm, sampleRate } = await this.synth(sentence);
+          if (gen !== this.generation) break; // cancelled mid-synthesis; re-check outer
+          // Copy into a plain ArrayBuffer for structured-clone over IPC.
+          const buf = pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength) as ArrayBuffer;
+          this.emit({ type: 'tts-chunk', pcm: buf, sampleRate });
+        } catch {
+          if (gen !== this.generation) break;
+          // Skip the failed sentence, keep going.
+        }
       }
+      // If cancel-then-speak added items between the break and here, keep draining.
+      if (this.queue.length === 0) break outer;
     }
     this.running = false;
     this.emit({ type: 'tts-end' });
