@@ -11,9 +11,14 @@ export class SpeechPipeline {
   private enabled = false;
   private sessionId: string | null = null;
   private stream = new SpeechTextStream({ eagerFirstClause: true });
-  /** Whether the first sentence of the current message has already been spoken. */
-  private firstSpoken = false;
-  /** Accumulated text for coalescing (subsequent sentences only). */
+  /**
+   * Ramp counter for emission ordering within a single message:
+   *   0 = nothing spoken yet
+   *   1 = first clause spoken (eager), next sentence goes out immediately
+   *   2+ = coalesce toward COALESCE_TARGET as usual
+   */
+  private emitCount = 0;
+  /** Accumulated text for coalescing (emission 3+). */
   private coalesceBuf = '';
 
   constructor(private readonly tts: Pick<TtsService, 'speak' | 'cancel'>) {}
@@ -23,7 +28,7 @@ export class SpeechPipeline {
     this.enabled = enabled && sessionId !== null;
     this.sessionId = enabled ? sessionId : null;
     this.stream.reset();
-    this.firstSpoken = false;
+    this.emitCount = 0;
     this.coalesceBuf = '';
     if (wasActive) this.tts.cancel();
   }
@@ -41,14 +46,14 @@ export class SpeechPipeline {
       case 'done': {
         const sentences = this.stream.flush();
         this.speakSentences(sentences, true);
-        this.firstSpoken = false;
+        this.emitCount = 0;
         break;
       }
       case 'message-cancelled':
       case 'error':
         this.stream.reset();
         this.coalesceBuf = '';
-        this.firstSpoken = false;
+        this.emitCount = 0;
         this.tts.cancel();
         break;
       default:
@@ -57,28 +62,33 @@ export class SpeechPipeline {
   }
 
   /**
-   * Route sentences to TTS with coalescing:
-   * - The very first sentence of a message is always spoken immediately (low latency).
-   * - Subsequent sentences are accumulated in coalesceBuf and only spoken when
-   *   the buffer reaches COALESCE_TARGET chars or a flush is forced.
+   * Route sentences to TTS with a three-phase ramp:
+   * - Emission 1 (emitCount 0→1): eager first clause, spoken immediately for low latency.
+   * - Emission 2 (emitCount 1→2): next complete sentence, also sent immediately (no buffering).
+   *   This eliminates the pause while the coalesce buffer fills after the short first clause.
+   * - Emission 3+ (emitCount ≥2): coalesce toward COALESCE_TARGET chars before emitting.
    */
   private speakSentences(sentences: string[], flush: boolean): void {
     for (const s of sentences) {
-      if (!this.firstSpoken) {
-        // Flush any leftover coalesce buffer before speaking the first sentence
-        // (defensive: shouldn't accumulate before first, but guard anyway).
+      if (this.emitCount === 0) {
+        // Emission 1: eager first clause — defensive flush (shouldn't have a buffer yet).
         if (this.coalesceBuf) {
           this.tts.speak(this.coalesceBuf);
           this.coalesceBuf = '';
         }
         this.tts.speak(s);
-        this.firstSpoken = true;
+        this.emitCount = 1;
+      } else if (this.emitCount === 1) {
+        // Emission 2: second sentence goes out immediately without coalescing.
+        this.tts.speak(s);
+        this.emitCount = 2;
       } else {
-        // Accumulate subsequent sentences; join with a space.
+        // Emission 3+: accumulate toward COALESCE_TARGET.
         this.coalesceBuf = this.coalesceBuf ? `${this.coalesceBuf} ${s}` : s;
         if (this.coalesceBuf.length >= COALESCE_TARGET) {
           this.tts.speak(this.coalesceBuf);
           this.coalesceBuf = '';
+          this.emitCount++;
         }
       }
     }

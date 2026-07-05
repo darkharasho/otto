@@ -22,17 +22,16 @@ beforeEach(() => {
 
 describe('SpeechPipeline', () => {
   it('speaks completed sentences from text-deltas of the enabled session', () => {
-    // With coalescing: the first sentence is spoken immediately for low latency.
-    // Subsequent sentences from later handleSessionEvent calls accumulate in the
-    // coalesce buffer and are not emitted until it reaches ~140 chars or flush.
-    // Here 'More to come.' (13 chars) stays buffered until message-end.
+    // Ramp: first clause is spoken immediately; second sentence also goes out
+    // immediately (emission 2); subsequent sentences coalesce toward 140 chars.
+    // Here 'More to come.' is the second sentence so it is spoken immediately.
     const p = new SpeechPipeline(tts);
     p.setEnabled(true, 's1');
     p.handleSessionEvent(delta('s1', 'Hello there. More to'));
     p.handleSessionEvent(delta('s1', ' come.'));
-    // First sentence spoken immediately; second is buffered (< 140 chars).
-    expect(spoken).toEqual(['Hello there.']);
-    // Flush via message-end to emit the coalesced remainder.
+    // Both sentences emitted immediately (clause + lone second sentence).
+    expect(spoken).toEqual(['Hello there.', 'More to come.']);
+    // message-end: nothing left to flush.
     p.handleSessionEvent({ type: 'message-end', sessionId: 's1', messageId: 'm1' });
     expect(spoken).toEqual(['Hello there.', 'More to come.']);
   });
@@ -89,21 +88,23 @@ describe('SpeechPipeline', () => {
     expect(spoken).toEqual(['Tail without message-end']);
   });
 
-  it('coalescing: first sentence emitted alone, subsequent short sentences merged', () => {
+  it('coalescing: first sentence emitted alone, second emitted alone, then short sentences merged', () => {
+    // CHANGED by ramp: emission 1 = eager clause (immediate), emission 2 = lone sentence
+    // (immediate), emission 3+ coalesce toward 140. So 'Short one.' is no longer buffered.
     const p = new SpeechPipeline(tts);
     p.setEnabled(true, 's1');
     // First delta: produces one sentence via SpeechTextStream → spoken immediately.
     p.handleSessionEvent(delta('s1', 'Hello there.'));
     expect(spoken).toEqual(['Hello there.']);
-    // Second delta: produces another short sentence → coalesced, not spoken yet.
+    // Second delta: produces another short sentence → emitted immediately (emission 2, no coalescing).
     p.handleSessionEvent(delta('s1', ' Short one.'));
-    expect(spoken).toEqual(['Hello there.']); // still buffered
-    // Third delta: another short sentence → still below 140 chars.
+    expect(spoken).toEqual(['Hello there.', 'Short one.']); // emitted immediately
+    // Third delta: emission 3 → coalesce, below 140 chars, stays buffered.
     p.handleSessionEvent(delta('s1', ' And another.'));
-    expect(spoken).toEqual(['Hello there.']); // still buffered
+    expect(spoken).toEqual(['Hello there.', 'Short one.']); // 'And another.' is buffered
     // message-end flushes the coalesce buffer as one chunk.
     p.handleSessionEvent({ type: 'message-end', sessionId: 's1', messageId: 'm1' });
-    expect(spoken).toEqual(['Hello there.', 'Short one. And another.']);
+    expect(spoken).toEqual(['Hello there.', 'Short one.', 'And another.']);
   });
 
   it('coalescing: a long sentence is not merged (emits immediately once buffer fills)', () => {
@@ -117,6 +118,36 @@ describe('SpeechPipeline', () => {
     p.handleSessionEvent(delta('s1', ' ' + long));
     // Should have been emitted immediately (buffer exceeded 140).
     expect(spoken).toEqual(['First sentence.', long]);
+  });
+
+  it('ramp: clause → lone sentence → coalesced rest', () => {
+    const p = new SpeechPipeline(tts);
+    p.setEnabled(true, 's1');
+    // Emission 1: eager first clause.
+    p.handleSessionEvent(delta('s1', 'First clause.'));
+    expect(spoken).toEqual(['First clause.']);
+    // Emission 2: second sentence goes out immediately without coalescing.
+    p.handleSessionEvent(delta('s1', ' Second sentence.'));
+    expect(spoken).toEqual(['First clause.', 'Second sentence.']);
+    // Emission 3+: short sentences accumulate in coalesce buffer.
+    p.handleSessionEvent(delta('s1', ' Third one.'));
+    expect(spoken).toEqual(['First clause.', 'Second sentence.']); // buffered
+    p.handleSessionEvent(delta('s1', ' Fourth one.'));
+    expect(spoken).toEqual(['First clause.', 'Second sentence.']); // still buffered
+    // message-end flushes coalesced remainder as one chunk.
+    p.handleSessionEvent({ type: 'message-end', sessionId: 's1', messageId: 'm1' });
+    expect(spoken).toEqual(['First clause.', 'Second sentence.', 'Third one. Fourth one.']);
+    // Ramp counter resets after message-end: next message starts the ramp fresh.
+    p.handleSessionEvent(delta('s1', 'New message first clause.'));
+    expect(spoken).toEqual([
+      'First clause.', 'Second sentence.', 'Third one. Fourth one.',
+      'New message first clause.',
+    ]);
+    p.handleSessionEvent(delta('s1', ' New second sentence.'));
+    expect(spoken).toEqual([
+      'First clause.', 'Second sentence.', 'Third one. Fourth one.',
+      'New message first clause.', 'New second sentence.',
+    ]);
   });
 
   it('does not speak reasoning or tool events', () => {
