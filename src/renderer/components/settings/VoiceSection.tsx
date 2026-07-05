@@ -81,7 +81,9 @@ export function VoiceSection({
   function handlePreview(entry: VoiceCatalogEntry) {
     playerRef.current?.stop();
     setPreviewing(entry.id);
-    void ipc.invoke('voice.preview', { voiceId: entry.id });
+    ipc.invoke('voice.preview', { voiceId: entry.id }).catch(() => {
+      setPreviewing(null);
+    });
   }
 
   function handleVoiceSelect(entry: VoiceCatalogEntry) {

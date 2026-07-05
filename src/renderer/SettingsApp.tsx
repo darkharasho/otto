@@ -28,7 +28,7 @@ export function SettingsApp() {
   const [err, setErr] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>('general');
   const [activeSub, setActiveSub] = useState<string>(defaultSubFor('general'));
-  const [voiceAvailable, setVoiceAvailable] = useState(true);
+  const [voiceAvailable, setVoiceAvailable] = useState<boolean | null>(null);
 
   useEffect(() => {
     ipc.invoke('settings.get', undefined).then(setS).catch((e) => {
@@ -126,7 +126,7 @@ interface RenderArgs {
   patch<K extends keyof SettingsView>(key: K, value: SettingsView[K]): void;
   patchNotifications(p: Partial<SettingsView['notifications']>): void;
   patchVoice(p: Partial<{ ttsVoice: string; speed: number; whisperModel: 'base.en' | 'small.en'; endpointMs: number }>): void;
-  voiceAvailable: boolean;
+  voiceAvailable: boolean | null;
 }
 
 function renderSubsection(args: RenderArgs) {
@@ -230,7 +230,7 @@ function renderSubsection(args: RenderArgs) {
           speed={s.voice.speed}
           whisperModel={s.voice.whisperModel}
           endpointMs={s.voice.endpointMs}
-          voiceAvailable={voiceAvailable}
+          voiceAvailable={voiceAvailable ?? false}
           onVoiceChange={(ttsVoice) => patchVoice({ ttsVoice })}
           onSpeedChange={(speed) => patchVoice({ speed })}
           onWhisperModelChange={(whisperModel) => patchVoice({ whisperModel })}

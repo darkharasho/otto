@@ -330,9 +330,24 @@ export function registerIpcHandlers(deps: {
     'settings.setVoicePrefs',
     async (
       _e,
-      args: Partial<{ ttsVoice: string; speed: number }>
+      args: Partial<{ ttsVoice: string; speed: number; whisperModel: 'base.en' | 'small.en'; endpointMs: number }>
     ): Promise<void> => {
-      await settings.setVoicePrefs(args);
+      const VALID_VOICES = ['af_heart','af_bella','af_nicole','af_sky','am_adam','am_michael','bf_emma','bf_isabella','bm_george','bm_lewis'];
+      const VALID_WHISPER_MODELS: ReadonlyArray<string> = ['base.en', 'small.en'];
+      const sanitized: typeof args = {};
+      if ('ttsVoice' in args && typeof args.ttsVoice === 'string' && VALID_VOICES.includes(args.ttsVoice)) {
+        sanitized.ttsVoice = args.ttsVoice;
+      }
+      if ('speed' in args && typeof args.speed === 'number' && Number.isFinite(args.speed)) {
+        sanitized.speed = Math.min(2, Math.max(0.5, args.speed));
+      }
+      if ('whisperModel' in args && typeof args.whisperModel === 'string' && VALID_WHISPER_MODELS.includes(args.whisperModel)) {
+        sanitized.whisperModel = args.whisperModel as 'base.en' | 'small.en';
+      }
+      if ('endpointMs' in args && typeof args.endpointMs === 'number' && Number.isFinite(args.endpointMs)) {
+        sanitized.endpointMs = Math.min(1500, Math.max(300, args.endpointMs));
+      }
+      await settings.setVoicePrefs(sanitized);
     }
   );
 

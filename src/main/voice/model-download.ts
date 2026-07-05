@@ -20,6 +20,9 @@ const HF_BASE = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main';
 /** Minimum file size (bytes) before the rename succeeds. Overridable for tests. */
 export const DEFAULT_MIN_BYTES = 100 * 1024 * 1024; // 100 MB
 
+/** How long (ms) to wait without receiving any data before aborting a stalled download. */
+export const INACTIVITY_TIMEOUT_MS = 30_000;
+
 /**
  * Returns the canonical HuggingFace download URL for a given model.
  * Exported for testing.
@@ -93,6 +96,7 @@ function download(
   destPath: string,
   onProgress: (pct: number) => void,
   redirectsLeft = 5,
+  inactivityMs = INACTIVITY_TIMEOUT_MS,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const parsed = new URL(url);
@@ -111,7 +115,7 @@ function download(
           return;
         }
         const next = new URL(res.headers.location, url).href;
-        resolve(download(next, destPath, onProgress, redirectsLeft - 1));
+        resolve(download(next, destPath, onProgress, redirectsLeft - 1, inactivityMs));
         return;
       }
 
@@ -126,7 +130,21 @@ function download(
 
       const out = fs.createWriteStream(destPath);
 
+      // Inactivity watchdog: if no data arrives within inactivityMs, destroy the
+      // request so a stalled download doesn't hang the serialized setMode chain.
+      let inactivityTimer = setTimeout(() => {
+        req.destroy(new Error(`Download stalled: no data for ${inactivityMs}ms from ${url}`));
+      }, inactivityMs);
+
+      const resetTimer = (): void => {
+        clearTimeout(inactivityTimer);
+        inactivityTimer = setTimeout(() => {
+          req.destroy(new Error(`Download stalled: no data for ${inactivityMs}ms from ${url}`));
+        }, inactivityMs);
+      };
+
       res.on('data', (chunk: Buffer) => {
+        resetTimer();
         received += chunk.length;
         if (total > 0) {
           const pct = Math.floor((received / total) * 100);
@@ -140,16 +158,19 @@ function download(
       res.pipe(out);
 
       out.on('finish', () => {
+        clearTimeout(inactivityTimer);
         // Ensure we always fire 100% on completion.
         if (lastPct !== 100) onProgress(100);
         resolve();
       });
 
       out.on('error', (err) => {
+        clearTimeout(inactivityTimer);
         reject(err);
       });
 
       res.on('error', (err) => {
+        clearTimeout(inactivityTimer);
         reject(err);
       });
     });

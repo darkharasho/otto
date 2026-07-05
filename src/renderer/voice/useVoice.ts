@@ -67,7 +67,10 @@ export function useVoice(opts: {
     };
     playerRef.current = player;
     const off = ipc.onVoiceEvent((e) => {
-      if (e.type === 'tts-chunk') player.enqueue(new Float32Array(e.pcm), e.sampleRate);
+      // Only enqueue TTS audio when voice mode is active. Settings-window
+      // preview chunks also arrive here; gate them out so previews don't
+      // double-play through the main window's player.
+      if (e.type === 'tts-chunk' && useOttoStore.getState().voiceMode) player.enqueue(new Float32Array(e.pcm), e.sampleRate);
       if (e.type === 'voice-error') {
         logErrorToMain(e.message);
         player.stop();
