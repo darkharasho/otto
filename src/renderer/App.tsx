@@ -124,6 +124,9 @@ export function App() {
             setArmedPrivate(false);
           }
         }
+        if (isNew && useOttoStore.getState().voiceMode) {
+          void ipc.invoke('voice.setMode', { enabled: true, sessionId });
+        }
         inFlightSessionStart.current = null;
         return sessionId;
       });
@@ -324,7 +327,7 @@ export function App() {
   );
 
   const { toggle: toggleVoice } = useVoice({
-    submitText: (text) => handleSubmit({ text, attachments: [] }),
+    submitText: (text) => submitToActiveSession({ text, attachments: [] }),
     ensureSession,
   });
   const voiceMode = useOttoStore((s) => s.voiceMode);
