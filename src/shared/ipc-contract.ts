@@ -178,7 +178,13 @@ export type IpcRequest =
   | { channel: 'voice.transcribe'; args: { pcm: ArrayBuffer; sampleRate: number }; result: { text: string } }
   | { channel: 'voice.cancelSpeech'; args: void; result: void }
   | { channel: 'voice.logError'; args: { message: string }; result: void }
-  | { channel: 'voice.log'; args: { level: 'info' | 'error'; message: string }; result: void };
+  | { channel: 'voice.log'; args: { level: 'info' | 'error'; message: string }; result: void }
+  | {
+      channel: 'settings.setVoicePrefs';
+      args: Partial<{ ttsVoice: string; speed: number }>;
+      result: void;
+    }
+  | { channel: 'voice.preview'; args: { voiceId: string }; result: void };
 
 export type RemoteCeilingChoice = 'match' | 'strict' | 'balanced' | 'full-allow';
 
@@ -250,6 +256,7 @@ export interface SettingsView {
   chatBounds: ChatBounds | null;
   lastVisibleMode: WindowMode;
   pinnedSessionIds: string[];
+  voice: { ttsVoice: string; speed: number };
 }
 
 export type IpcChannel = IpcRequest['channel'];

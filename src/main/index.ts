@@ -211,6 +211,7 @@ async function startElectron(): Promise<void> {
     assetsDir: path.join(app.getAppPath(), 'resources', 'voice'),
     cacheDir: path.join(app.getPath('userData'), 'voice-models'),
     emit: emitVoiceEvent,
+    getVoicePrefs: () => settings.getVoicePrefs(),
   });
   const baseEmit: typeof emitSessionEvent = (event) => {
     notifier.handle(event);

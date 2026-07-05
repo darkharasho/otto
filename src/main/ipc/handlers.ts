@@ -316,6 +316,16 @@ export function registerIpcHandlers(deps: {
     deps.openSettingsWindow();
   });
 
+  ipcMain.handle(
+    'settings.setVoicePrefs',
+    async (
+      _e,
+      args: Partial<{ ttsVoice: string; speed: number }>
+    ): Promise<void> => {
+      await settings.setVoicePrefs(args);
+    }
+  );
+
   ipcMain.handle('settings.resetAllSessions', async (): Promise<{ deleted: number }> => {
     const deleted = repo.deleteAllSessions();
     const { wipeAllSessionFiles } = await import('../screenshot/cleanup');

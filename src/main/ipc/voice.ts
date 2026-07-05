@@ -27,4 +27,7 @@ export function registerVoiceIpc(voice: VoiceManager): void {
     if (args.level === 'error') logger.error(`[voice] ${args.message}`);
     else logger.info(`[voice] ${args.message}`);
   });
+  ipcMain.handle('voice.preview', async (_e, args: { voiceId: string }) => {
+    await voice.preview(args.voiceId);
+  });
 }
