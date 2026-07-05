@@ -77,4 +77,21 @@ describe('SpeechTextStream', () => {
     const out = [...s.push('```\ncode only\n```'), ...s.flush()];
     expect(out).toEqual([]);
   });
+
+  it('strips emoji mid-sentence without leaving double spaces', () => {
+    const s = new SpeechTextStream();
+    expect(s.push('Great job 🎉 well done.')).toEqual(['Great job well done.']);
+  });
+
+  it('produces nothing for emoji-only content', () => {
+    const s = new SpeechTextStream();
+    const out = [...s.push('🎉🚀'), ...s.flush()];
+    expect(out).toEqual([]);
+  });
+
+  it('strips ZWJ sequences like 👩‍💻', () => {
+    const s = new SpeechTextStream();
+    // 👩‍💻 = woman + ZWJ + laptop — all three codepoints should be removed
+    expect(s.push('Your developer 👩‍💻 is ready.')).toEqual(['Your developer is ready.']);
+  });
 });

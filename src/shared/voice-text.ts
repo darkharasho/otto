@@ -8,6 +8,11 @@ const INLINE_CODE_MAX_WORDS = 3;
 
 function sanitize(text: string): string {
   let t = text;
+  // Emoji and pictographs (including ZWJ sequences, variation selectors, skin-tone modifiers).
+  // The Extended_Pictographic property covers the full emoji set; additional ranges handle
+  // variation selector U+FE0F, ZWJ U+200D, and skin-tone modifiers U+1F3FB–U+1F3FF.
+  // We also catch the standalone heart U+2764 and related dingbats.
+  t = t.replace(/[\p{Extended_Pictographic}\u{FE0F}\u{200D}\u{1F3FB}-\u{1F3FF}\u{2764}]/gu, '');
   // Inline code: keep short spans (reads naturally, e.g. command names),
   // drop long ones.
   t = t.replace(/`([^`]*)`/g, (_m, code: string) => {
