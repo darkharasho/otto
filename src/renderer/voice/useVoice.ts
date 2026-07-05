@@ -177,10 +177,10 @@ export function useVoice(opts: {
                 });
                 const transcribeMs = Date.now() - speechEndT;
                 if (text) {
-                  const submitT = Date.now();
                   logToMain('info', `[perf] speechEnd→transcript=${transcribeMs}ms text="${text.slice(0, 60)}"`);
+                  const agentT0 = Date.now();
                   await optsRef.current.submitText(text);
-                  logToMain('info', `[perf] transcript→submit=${Date.now() - submitT}ms`);
+                  logToMain('info', `[perf] submit→agentDone=${Date.now() - agentT0}ms`);
                 }
               } catch (err) {
                 console.error('transcription failed', err);
