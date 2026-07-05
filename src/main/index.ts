@@ -265,9 +265,9 @@ async function startElectron(): Promise<void> {
     if (opts.signal) {
       opts.signal.addEventListener('abort', () => ac.abort(), { once: true });
     }
-    // In packaged builds we must tell the SDK where claude-agent-sdk's cli.js
-    // lives and spawn Electron-as-node — the AppImage has no `node`/`claude`
-    // on PATH. Without this the subprocess exits with code 1 immediately.
+    // In packaged builds we must point the SDK at the asar-unpacked native
+    // `claude` binary — its own resolution lands inside app.asar, which
+    // child_process.spawn can't traverse (spawn ENOTDIR).
     const spawnOverrides = getSdkSpawnOverrides();
     const iter = sdkMod.query({
       prompt,

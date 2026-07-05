@@ -64,46 +64,39 @@ export function __setScreenshotRefsForTest(callId: string, refs: import('@shared
 }
 
 /**
- * In packaged builds, the @anthropic-ai/claude-agent-sdk is asarUnpacked so its
- * bundled cli.js can be read by a child process. We also can't rely on a `node`
- * binary being on PATH inside an AppImage/dmg/nsis — instead we spawn Electron
- * itself in node mode (ELECTRON_RUN_AS_NODE=1) and point it at the unpacked
- * cli.js explicitly. In dev (or when the SDK is still in node_modules normally),
- * we let the SDK auto-resolve its own paths and use the ambient `node`.
+ * Since SDK 0.3.x the CLI is a native `claude` binary shipped in a per-platform
+ * optional package (@anthropic-ai/claude-agent-sdk-<platform>-<arch>), not a
+ * cli.js run under node. In packaged builds the SDK would resolve that binary
+ * to a path inside app.asar, and child_process.spawn can't traverse an asar
+ * archive (spawn ENOTDIR) — so the platform package is asarUnpacked (see
+ * electron-builder.yml) and we point the SDK at the real-filesystem copy. The
+ * SDK spawns a non-.js pathToClaudeCodeExecutable directly, so no `executable`
+ * or env override is needed. In dev the SDK auto-resolves through node_modules.
  */
 type SdkSpawnOverrides = {
-  // The SDK types only allow "bun" | "deno" | "node" for `executable`, but at
-  // runtime it accepts any string and passes it straight to child_process.spawn.
-  // Cast through unknown so the Electron binary path is accepted.
-  executable: 'node';
-  executableArgs: string[];
   pathToClaudeCodeExecutable: string;
-  env: NodeJS.ProcessEnv;
 };
 
 export function getSdkSpawnOverrides(): SdkSpawnOverrides | undefined {
-  // Electron sets process.resourcesPath only when packaged. In dev,
-  // `process.execPath` is `node`, so leaving overrides off is correct.
+  // Electron sets process.resourcesPath only when packaged; in dev the SDK's
+  // own resolution works, so leaving overrides off is correct.
   const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath;
   if (!resourcesPath) return undefined;
+  const platformPkg = `claude-agent-sdk-${process.platform}-${process.arch}`;
+  const binary = process.platform === 'win32' ? 'claude.exe' : 'claude';
   const unpacked = path.join(
     resourcesPath,
     'app.asar.unpacked',
     'node_modules',
     '@anthropic-ai',
-    'claude-agent-sdk',
-    'cli.js'
+    platformPkg,
+    binary
   );
   if (!existsSync(unpacked)) {
-    logger.warn(`Claude Agent SDK cli.js not found at expected unpacked path: ${unpacked}`);
+    logger.warn(`Claude Agent SDK native binary not found at expected unpacked path: ${unpacked}`);
     return undefined;
   }
-  return {
-    executable: process.execPath as unknown as 'node',
-    executableArgs: [],
-    pathToClaudeCodeExecutable: unpacked,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-  };
+  return { pathToClaudeCodeExecutable: unpacked };
 }
 
 // The Agent SDK ships as ESM; loading it via `require()` from the bundled

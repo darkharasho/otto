@@ -15,6 +15,9 @@ files:
   - package.json
   - resources/embedding/**
   - native/darwin_shortcut.node
+  # Electron is always glibc-linked; the musl claude binary is ~235MB of dead
+  # weight in the package.
+  - "!**/node_modules/@anthropic-ai/claude-agent-sdk-*-musl/**"
 
 publish:
   provider: github
@@ -60,10 +63,13 @@ asarUnpack:
   - "native/darwin_shortcut.node"
   - "**/node_modules/better-sqlite3/**"
   - "**/node_modules/sharp/**"
-  # The Claude Agent SDK spawns a child `node` process pointed at its bundled
-  # cli.js. asar paths aren't readable by that child process, so unpack the SDK
-  # (and its embedded wasm assets) onto the real filesystem.
+  # The Claude Agent SDK (0.3.x) spawns a native `claude` binary shipped in a
+  # per-platform optional package. child_process.spawn can't traverse app.asar
+  # (spawn ENOTDIR), so both the SDK and the platform binary packages must live
+  # on the real filesystem. sdk-client.ts points pathToClaudeCodeExecutable at
+  # the unpacked binary.
   - "**/node_modules/@anthropic-ai/claude-agent-sdk/**"
+  - "**/node_modules/@anthropic-ai/claude-agent-sdk-*/**"
   - "**/node_modules/onnxruntime-node/**"
   - "**/node_modules/sqlite-vec/**"
   # The actual loadable extension (vec0.so/.dll/.dylib) lives in a sibling
