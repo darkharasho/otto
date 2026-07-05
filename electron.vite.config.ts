@@ -63,6 +63,7 @@ export default defineConfig({
         '@renderer-shared': resolve('src/renderer-shared'),
       },
     },
+    optimizeDeps: { exclude: ['@ricky0123/vad-web', 'onnxruntime-web'] },
     build: { outDir: 'out/renderer', rollupOptions: { input: 'src/renderer/index.html' } },
   },
 });

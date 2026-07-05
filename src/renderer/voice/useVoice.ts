@@ -72,9 +72,10 @@ export function useVoice(opts: {
 
       try {
         const { MicVAD } = await import('@ricky0123/vad-web');
+        const assetBase = new URL('vad/', document.baseURI).href;
         const vad = await MicVAD.new({
-          baseAssetPath: './vad/',
-          onnxWASMBasePath: './vad/',
+          baseAssetPath: assetBase,
+          onnxWASMBasePath: assetBase,
           onSpeechStart: () => {
             // Barge-in: always cancel speech synthesis when voice mode is active;
             // additionally stop local playback if audio is currently playing.
