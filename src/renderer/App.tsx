@@ -135,7 +135,7 @@ export function App() {
   }, [activeSession, beginSession, model]);
 
   const submitToActiveSession = useCallback(
-    async ({ text, attachments }: { text: string; attachments: ImageRef[] }) => {
+    async ({ text, attachments, voice }: { text: string; attachments: ImageRef[]; voice?: boolean }) => {
       try {
         if (useOttoStore.getState().windowMode === 'bar') {
           setWindowMode('panel');
@@ -144,8 +144,8 @@ export function App() {
         const sessionId = await ensureSession();
         appendUserMessage(crypto.randomUUID(), text, attachments);
         // eslint-disable-next-line no-console
-        console.debug('[otto] session.send', { sessionId, len: text.length, attachments: attachments.length });
-        await ipc.invoke('session.send', { sessionId, text, attachments });
+        console.debug('[otto] session.send', { sessionId, len: text.length, attachments: attachments.length, voice });
+        await ipc.invoke('session.send', { sessionId, text, attachments, voice });
         lastUserSubmitAt.current = Date.now();
         void ipc.invoke('session.list', undefined).then(setSessions);
       } catch (err) {
@@ -328,7 +328,7 @@ export function App() {
 
   const micButtonRef = useRef<HTMLButtonElement>(null);
   const { toggle: toggleVoice } = useVoice({
-    submitText: (text) => submitToActiveSession({ text, attachments: [] }),
+    submitText: (text) => submitToActiveSession({ text, attachments: [], voice: true }),
     ensureSession,
     micButtonRef,
   });

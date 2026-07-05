@@ -33,6 +33,10 @@ export interface SessionSendArgs {
   sessionId: string;
   text: string;
   attachments?: Array<Extract<ContentBlock, { type: 'image-ref' }>>;
+  /** When true, the message originated from a voice transcript. The assistant's
+   *  reply will be shaped for TTS by appending voice guidance to the SDK-bound
+   *  text. The guidance is NOT included in the chat transcript shown to the user. */
+  voice?: boolean;
 }
 
 export interface UploadsStageArgs {

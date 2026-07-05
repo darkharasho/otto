@@ -408,4 +408,47 @@ describe('SessionManager + SessionBus fan-out', () => {
     expect(rendererCalls.some((e) => e.type === 'text-delta')).toBe(true);
     expect(busCalls.some((e) => e.type === 'event' && (e as { kind?: string }).kind === 'text-delta')).toBe(true);
   });
+
+  describe('voice suffix', () => {
+    it('appends the voice suffix to the SDK-bound text but keeps the UI event text clean', async () => {
+      const enqueued: string[] = [];
+      const { openStream } = makeFakeOpenStream(async function* ({ text }) {
+        enqueued.push(text);
+        yield { type: 'text-delta', text: 'sure' };
+        yield { type: 'message-end' };
+        yield { type: 'done' };
+      });
+      fakeSdk.openStream = openStream;
+      const { sessionId } = await manager.start({});
+      await manager.send({ sessionId, text: 'hello', voice: true });
+
+      // The SDK received the text with the voice suffix appended.
+      expect(enqueued[0]).toBe('hello' + SessionManager.VOICE_SUFFIX);
+
+      // The user-message event emitted to the renderer contains the clean text only.
+      const userMsgEvent = events.find((e) => e.type === 'user-message');
+      expect(userMsgEvent).toBeDefined();
+      expect((userMsgEvent as { text: string }).text).toBe('hello');
+
+      // The persisted user message also contains the clean text.
+      const msgs = repo.loadMessages(sessionId);
+      const userMsg = msgs.find((m) => m.role === 'user');
+      expect(userMsg?.content).toEqual([{ type: 'text', text: 'hello' }]);
+    });
+
+    it('does not append the suffix for non-voice sends', async () => {
+      const enqueued: string[] = [];
+      const { openStream } = makeFakeOpenStream(async function* ({ text }) {
+        enqueued.push(text);
+        yield { type: 'text-delta', text: 'ok' };
+        yield { type: 'message-end' };
+        yield { type: 'done' };
+      });
+      fakeSdk.openStream = openStream;
+      const { sessionId } = await manager.start({});
+      await manager.send({ sessionId, text: 'hello' });
+
+      expect(enqueued[0]).toBe('hello');
+    });
+  });
 });
