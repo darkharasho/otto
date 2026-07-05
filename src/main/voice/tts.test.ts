@@ -1,7 +1,35 @@
 // @vitest-environment node
 import { describe, it, expect, vi } from 'vitest';
-import { TtsService, type SynthFn } from './tts';
+import { TtsService, trimSilence, type SynthFn } from './tts';
 import type { VoiceEvent } from '@shared/voice';
+
+describe('trimSilence', () => {
+  const SR = 24000;
+
+  it('trims leading and trailing silence, preserving padMs of padding', () => {
+    // 480 silent samples (20ms) + 480 tone samples (20ms) + 480 silent samples (20ms)
+    const buf = new Float32Array(1440);
+    for (let i = 480; i < 960; i++) buf[i] = 0.5; // tone region
+    const trimmed = trimSilence(buf, SR, 0.01, 0); // padMs=0 for precise length check
+    expect(trimmed.length).toBe(480); // exactly the tone region
+  });
+
+  it('pads the result by padMs on each side', () => {
+    // 2400 silent + 2400 tone + 2400 silent = 7200 samples at 24000Hz
+    const buf = new Float32Array(7200);
+    for (let i = 2400; i < 4800; i++) buf[i] = 0.5;
+    const padMs = 60; // 60ms = 1440 samples at 24000Hz
+    const trimmed = trimSilence(buf, SR, 0.01, padMs);
+    // Tone region 2400 samples + 1440 pad before + 1440 pad after = 5280
+    expect(trimmed.length).toBe(2400 + 1440 + 1440);
+  });
+
+  it('returns empty array for an all-silence buffer', () => {
+    const buf = new Float32Array(1000); // all zeros
+    const trimmed = trimSilence(buf, SR);
+    expect(trimmed.length).toBe(0);
+  });
+});
 
 function deferredSynth() {
   const resolvers: Array<(v: { pcm: Float32Array; sampleRate: number }) => void> = [];
