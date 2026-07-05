@@ -73,6 +73,14 @@ describe('SpeechPipeline', () => {
     expect(spoken).toEqual([]);
   });
 
+  it('flushes the tail on done when message-end is absent', () => {
+    const p = new SpeechPipeline(tts);
+    p.setEnabled(true, 's1');
+    p.handleSessionEvent(delta('s1', 'Tail without message-end'));
+    p.handleSessionEvent({ type: 'done', sessionId: 's1' });
+    expect(spoken).toEqual(['Tail without message-end']);
+  });
+
   it('does not speak reasoning or tool events', () => {
     const p = new SpeechPipeline(tts);
     p.setEnabled(true, 's1');

@@ -28,6 +28,7 @@ export class SpeechPipeline {
         for (const sentence of this.stream.push(e.text)) this.tts.speak(sentence);
         break;
       case 'message-end':
+      case 'done':
         for (const sentence of this.stream.flush()) this.tts.speak(sentence);
         break;
       case 'message-cancelled':
