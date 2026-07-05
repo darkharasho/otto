@@ -44,6 +44,11 @@ export function useVoice(opts: {
       off();
       player.stop();
       void ctx.close().catch(() => {});
+      // Unmount teardown: if voice was active, clean up VAD and notify main process.
+      if (useOttoStore.getState().voiceMode) {
+        void teardownVad(vadRef);
+        ipc.invoke('voice.setMode', { enabled: false, sessionId: null }).catch(() => {});
+      }
     };
   }, [setVoiceMode, setVoiceState]);
 
@@ -65,43 +70,57 @@ export function useVoice(opts: {
       const sessionId = await optsRef.current.ensureSession();
       await ipc.invoke('voice.setMode', { enabled: true, sessionId });
 
-      const { MicVAD } = await import('@ricky0123/vad-web');
-      const vad = await MicVAD.new({
-        baseAssetPath: './vad/',
-        onnxWASMBasePath: './vad/',
-        onSpeechStart: () => {
-          // Barge-in: user talking over Otto silences playback immediately.
-          if (playerRef.current?.playing) {
-            playerRef.current.stop();
-            void ipc.invoke('voice.cancelSpeech', undefined);
-          }
-        },
-        onSpeechEnd: (audio: Float32Array) => {
-          void (async () => {
-            setVoiceState('transcribing');
-            try {
-              const buf = audio.buffer.slice(
-                audio.byteOffset,
-                audio.byteOffset + audio.byteLength,
-              ) as ArrayBuffer;
-              const { text } = await ipc.invoke('voice.transcribe', {
-                pcm: buf,
-                sampleRate: 16000,
-              });
-              if (text) await optsRef.current.submitText(text);
-            } catch (err) {
-              console.error('transcription failed', err);
-            } finally {
-              if (useOttoStore.getState().voiceMode) setVoiceState('listening');
+      try {
+        const { MicVAD } = await import('@ricky0123/vad-web');
+        const vad = await MicVAD.new({
+          baseAssetPath: './vad/',
+          onnxWASMBasePath: './vad/',
+          onSpeechStart: () => {
+            // Barge-in: always cancel speech synthesis when voice mode is active;
+            // additionally stop local playback if audio is currently playing.
+            if (useOttoStore.getState().voiceMode) {
+              if (playerRef.current?.playing) {
+                playerRef.current.stop();
+              }
+              void ipc.invoke('voice.cancelSpeech', undefined);
             }
-          })();
-        },
-      });
-      // Set state BEFORE starting VAD so any instant VAD event sees voiceMode true.
-      setVoiceMode(true);
-      setVoiceState('listening');
-      vad.start();
-      vadRef.current = vad;
+          },
+          onSpeechEnd: (audio: Float32Array) => {
+            void (async () => {
+              setVoiceState('transcribing');
+              try {
+                const buf = audio.buffer.slice(
+                  audio.byteOffset,
+                  audio.byteOffset + audio.byteLength,
+                ) as ArrayBuffer;
+                const { text } = await ipc.invoke('voice.transcribe', {
+                  pcm: buf,
+                  sampleRate: 16000,
+                });
+                if (text) await optsRef.current.submitText(text);
+              } catch (err) {
+                console.error('transcription failed', err);
+              } finally {
+                if (useOttoStore.getState().voiceMode) setVoiceState('listening');
+              }
+            })();
+          },
+        });
+        // Stash the VAD before start() so a start failure still tears it down.
+        vadRef.current = vad;
+        // Set state BEFORE starting VAD so any instant VAD event sees voiceMode true.
+        setVoiceMode(true);
+        setVoiceState('listening');
+        vad.start();
+      } catch (err) {
+        // Roll back: sidecar off, partial VAD destroyed, UI shows voice off.
+        // Toast UX is Phase 2; log the cause for now.
+        console.error('voice enable failed', err);
+        await ipc.invoke('voice.setMode', { enabled: false, sessionId: null }).catch(() => {});
+        await teardownVad(vadRef);
+        setVoiceMode(false);
+        setVoiceState('idle');
+      }
     } finally {
       togglingRef.current = false;
     }
