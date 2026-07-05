@@ -40,6 +40,7 @@
     "electron-log": "^5.2.0",
     "electron-updater": "^6.8.3",
     "emoji-regex": "^10.6.0",
+    "kokoro-js": "^1.2.1",
     "lucide-react": "^1.16.0",
     "onnxruntime-node": "^1.19.2",
     "qrcode": "^1.5.4",
