@@ -1,7 +1,7 @@
 /** Encode mono Float32 PCM as a 16-bit little-endian WAV file. */
-export function pcmToWav(pcm: Float32Array, sampleRate: number): Uint8Array {
+export function pcmToWav(pcm: Float32Array, sampleRate: number): Uint8Array<ArrayBuffer> {
   const dataSize = pcm.length * 2;
-  const out = new Uint8Array(44 + dataSize);
+  const out = new Uint8Array(44 + dataSize) as Uint8Array<ArrayBuffer>;
   const v = new DataView(out.buffer);
   const ascii = (o: number, s: string) => {
     for (let i = 0; i < s.length; i++) out[o + i] = s.charCodeAt(i);

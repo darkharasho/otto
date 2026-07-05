@@ -14,6 +14,9 @@ importers:
       '@fontsource/plus-jakarta-sans':
         specifier: ^5.2.8
         version: 5.2.8
+      '@huggingface/transformers':
+        specifier: 3.8.1
+        version: 3.8.1
       '@xenova/transformers':
         specifier: ^2.17.2
         version: 2.17.2
