@@ -28,11 +28,13 @@ export function SettingsApp() {
   const [err, setErr] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>('general');
   const [activeSub, setActiveSub] = useState<string>(defaultSubFor('general'));
+  const [voiceAvailable, setVoiceAvailable] = useState(true);
 
   useEffect(() => {
     ipc.invoke('settings.get', undefined).then(setS).catch((e) => {
       setErr(e instanceof Error ? `${e.name}: ${e.message}` : String(e));
     });
+    ipc.invoke('app.info', undefined).then((info) => setVoiceAvailable(info.voiceAvailable)).catch(() => setVoiceAvailable(false));
   }, []);
 
   if (err) {
@@ -107,6 +109,7 @@ export function SettingsApp() {
             patch,
             patchNotifications,
             patchVoice,
+            voiceAvailable,
           })}
         </SettingsShell>
       </div>
@@ -123,10 +126,11 @@ interface RenderArgs {
   patch<K extends keyof SettingsView>(key: K, value: SettingsView[K]): void;
   patchNotifications(p: Partial<SettingsView['notifications']>): void;
   patchVoice(p: Partial<{ ttsVoice: string; speed: number; whisperModel: 'base.en' | 'small.en'; endpointMs: number }>): void;
+  voiceAvailable: boolean;
 }
 
 function renderSubsection(args: RenderArgs) {
-  const { activeTab, activeSub, settings: s, model, setModel, patch, patchNotifications, patchVoice } = args;
+  const { activeTab, activeSub, settings: s, model, setModel, patch, patchNotifications, patchVoice, voiceAvailable } = args;
 
   if (activeTab === 'general') {
     if (activeSub === 'model') return <ModelSection value={model} onChange={setModel} />;
@@ -226,6 +230,7 @@ function renderSubsection(args: RenderArgs) {
           speed={s.voice.speed}
           whisperModel={s.voice.whisperModel}
           endpointMs={s.voice.endpointMs}
+          voiceAvailable={voiceAvailable}
           onVoiceChange={(ttsVoice) => patchVoice({ ttsVoice })}
           onSpeedChange={(speed) => patchVoice({ speed })}
           onWhisperModelChange={(whisperModel) => patchVoice({ whisperModel })}

@@ -223,6 +223,8 @@ export interface AppInfo {
   isDev: boolean;
   displayName: string;
   version: string;
+  /** True when the whisper-server binary is present (Linux packaged, or dev with setup-voice-dev.sh run). */
+  voiceAvailable: boolean;
 }
 
 export interface ShortcutInfoView {

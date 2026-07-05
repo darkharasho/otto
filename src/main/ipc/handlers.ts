@@ -13,7 +13,7 @@ import type { ProcessRegistry } from '../shell/process-registry';
 import type { ArtifactRepo } from '../db/artifact-repo';
 import type { FactRepo } from '../db/fact-repo';
 import type { MemorySearch } from '../memory/search';
-import { promises as fsp } from 'node:fs';
+import fs, { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import type {
   SessionStartArgs,
@@ -39,6 +39,7 @@ import { emitAutonomyEvent } from './events';
 import { logger } from '../logger';
 import { gatherShortcutInfo, openKeyboardSettings } from '../shortcut';
 import { instanceDisplayName, isDevInstance } from '../instance';
+import { resolveWhisperBinary } from '../voice/paths';
 import type { HotkeyManager } from '../hotkey';
 import type { RemoteModule } from '../remote';
 import type { PairingStore } from '../remote/pairing-store';
@@ -74,6 +75,15 @@ export function registerIpcHandlers(deps: {
   };
 }): void {
   const { repo, sessions, window, broker, sudoBroker, sudoSession, settings, registry, conversationPolicy, topicShiftDetector } = deps;
+
+  // Cached once per process — the binary path is stable after app.ready.
+  let _voiceAvailable: boolean | null = null;
+  function voiceAvailable(): boolean {
+    if (_voiceAvailable === null) {
+      _voiceAvailable = fs.existsSync(resolveWhisperBinary());
+    }
+    return _voiceAvailable;
+  }
 
   ipcMain.handle('session.start', async (_e, args: SessionStartArgs): Promise<SessionStartResult> => {
     const result = await sessions.start(args);
@@ -357,6 +367,7 @@ export function registerIpcHandlers(deps: {
     isDev: isDevInstance(),
     displayName: instanceDisplayName(),
     version: deps.appVersion,
+    voiceAvailable: voiceAvailable(),
   }));
 
   ipcMain.handle(

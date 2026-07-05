@@ -31,6 +31,7 @@ export function VoiceSection({
   speed,
   whisperModel,
   endpointMs,
+  voiceAvailable = true,
   onVoiceChange,
   onSpeedChange,
   onWhisperModelChange,
@@ -40,6 +41,7 @@ export function VoiceSection({
   speed: number;
   whisperModel: 'base.en' | 'small.en';
   endpointMs: number;
+  voiceAvailable?: boolean;
   onVoiceChange: (voiceId: string) => void;
   onSpeedChange: (speed: number) => void;
   onWhisperModelChange: (model: 'base.en' | 'small.en') => void;
@@ -100,6 +102,19 @@ export function VoiceSection({
   function handleEndpointMsChange(ms: number) {
     onEndpointMsChange(ms);
     void ipc.invoke('settings.setVoicePrefs', { endpointMs: ms });
+  }
+
+  if (!voiceAvailable) {
+    return (
+      <SubsectionPage
+        title="Voice"
+        description="Otto speaks during voice conversation mode. Choose a voice and preview how it sounds."
+      >
+        <div className="text-sm text-muted">
+          Voice isn&apos;t available in this build. Voice requires the whisper-server binary, which is included in Linux releases only.
+        </div>
+      </SubsectionPage>
+    );
   }
 
   return (

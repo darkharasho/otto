@@ -326,6 +326,11 @@ export function App() {
     [activeSession?.id, appendUserMessage, setSessions]
   );
 
+  const [voiceAvailable, setVoiceAvailable] = useState<boolean | null>(null);
+  useEffect(() => {
+    void ipc.invoke('app.info', undefined).then((info) => setVoiceAvailable(info.voiceAvailable)).catch(() => setVoiceAvailable(false));
+  }, []);
+
   const micButtonRef = useRef<HTMLButtonElement>(null);
   const { toggle: toggleVoice, downloadPct } = useVoice({
     submitText: (text) => submitToActiveSession({ text, attachments: [], voice: true }),
@@ -334,6 +339,12 @@ export function App() {
   });
   const voiceMode = useOttoStore((s) => s.voiceMode);
   const voiceState = useOttoStore((s) => s.voiceState);
+
+  // Only pass the voice prop when the whisper binary is present. When null
+  // (still loading), treat as unavailable to avoid a flash of the mic button.
+  const voiceProp = voiceAvailable
+    ? { mode: voiceMode, state: voiceState, onToggle: () => void toggleVoice(), micButtonRef, downloadPct }
+    : undefined;
 
   // One Esc handler with a priority order: cancel a streaming response, else
   // collapse panel→bar, else hide. Splitting into two listeners caused a
@@ -440,7 +451,7 @@ export function App() {
         onPrivateConversation={handlePrivateConversation}
         onSelectSession={handleSelectSession}
         isPrivate={showPrivate}
-        voice={{ mode: voiceMode, state: voiceState, onToggle: () => void toggleVoice(), micButtonRef, downloadPct }}
+        voice={voiceProp}
       />
     );
   }
@@ -459,7 +470,7 @@ export function App() {
           busy={streaming}
           queueDepth={activeSession?.queueDepth ?? 0}
           welcome={isFreshSession}
-          voice={{ mode: voiceMode, state: voiceState, onToggle: () => void toggleVoice(), micButtonRef, downloadPct }}
+          voice={voiceProp}
         />
       </div>
     );
@@ -504,7 +515,7 @@ export function App() {
               busy={streaming}
               queueDepth={activeSession?.queueDepth ?? 0}
               welcome={isFreshSession}
-              voice={{ mode: voiceMode, state: voiceState, onToggle: () => void toggleVoice(), micButtonRef, downloadPct }}
+              voice={voiceProp}
             />
             <StatusFooter
               model={model}
