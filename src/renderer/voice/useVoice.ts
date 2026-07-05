@@ -123,6 +123,9 @@ export function useVoice(opts: {
           positiveSpeechThreshold: 0.6,
           negativeSpeechThreshold: 0.45, // 0.15 below positiveSpeechThreshold per VAD docs
           minSpeechMs: 128, // ~4 frames at 32ms/frame — onSpeechRealStart fires after this
+          // Faster end-of-speech: legacy model uses 1536-sample frames @16 kHz → 96 ms/frame.
+          // Default redemptionMs=1400 (≈14.6 frames). Target ~400 ms: floor(420/96)=4 frames=384 ms.
+          redemptionMs: 420,
           onFrameProcessed: (probabilities, _frame) => {
             // Drive a CSS custom property on the mic button so the animation
             // reflects actual speech energy without pushing through Zustand.
