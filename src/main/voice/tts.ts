@@ -115,10 +115,16 @@ export async function createKokoroSynth(cacheDir: string): Promise<SynthFn> {
   // Set cache dir via the transformers env object (not HF_HUB_CACHE env var)
   const { env } = await import('@huggingface/transformers');
   env.cacheDir = cacheDir;
+  // Log the active ONNX backend so we can confirm native ort-node is used (not WASM).
+  // env.backends.onnx.versions is set by @huggingface/transformers at module load time.
+  const ortVersions = (env as unknown as { backends?: { onnx?: { versions?: unknown } } }).backends?.onnx?.versions;
+  logger.info(`[voice:init] onnx backend versions=${JSON.stringify(ortVersions ?? 'unknown')} IS_NODE_ENV=${typeof process !== 'undefined' && !!process.versions?.node}`);
+  const t0 = Date.now();
   const tts = await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX', {
     dtype: 'q8',
     device: 'cpu',
   });
+  logger.info(`[voice:init] Kokoro model loaded in ${Date.now() - t0}ms`);
   return async (text: string, opts?: SynthOpts) => {
     const voice = opts?.voice ?? 'af_heart';
     const speed = opts?.speed ?? 1.05;
