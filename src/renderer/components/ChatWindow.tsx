@@ -20,7 +20,7 @@ interface Props {
   onPrivateConversation: (args: { text: string; attachments: ImageRef[] }) => void | Promise<void>;
   onSelectSession: (id: string) => void | Promise<void>;
   isPrivate?: boolean;
-  voice?: { mode: boolean; state: 'idle' | 'starting' | 'listening' | 'transcribing' | 'speaking' | 'error'; onToggle(): void; micButtonRef?: RefObject<HTMLButtonElement> };
+  voice?: { mode: boolean; state: 'idle' | 'starting' | 'listening' | 'transcribing' | 'speaking' | 'error'; onToggle(): void; micButtonRef?: RefObject<HTMLButtonElement>; downloadPct?: number | null };
 }
 
 export function ChatWindow({

@@ -47,6 +47,8 @@ interface Props {
     onToggle(): void;
     /** Ref forwarded from the parent for per-frame mic level animation. */
     micButtonRef?: RefObject<HTMLButtonElement>;
+    /** Download progress 0–99 while the whisper model is downloading; null otherwise. */
+    downloadPct?: number | null;
   };
 }
 
@@ -370,12 +372,16 @@ export function CommandBar({
           ref={voice.micButtonRef}
           type="button"
           aria-label={
+            voice.state === 'starting' && voice.downloadPct != null
+              ? `Downloading voice model… ${voice.downloadPct}%` :
             voice.state === 'starting' ? 'Voice mode starting…' :
             voice.state === 'error' ? 'Voice unavailable' :
             voice.mode ? 'Voice active — click to turn off' :
             'Turn on voice mode'
           }
           title={
+            voice.state === 'starting' && voice.downloadPct != null
+              ? `Voice: downloading model… ${voice.downloadPct}%` :
             voice.state === 'starting' ? 'Voice: starting…' :
             voice.state === 'error' ? 'Voice unavailable' :
             voice.mode ? 'Voice: active' :
@@ -383,16 +389,27 @@ export function CommandBar({
           }
           onClick={voice.onToggle}
           className={[
-            'otto-mic-btn shrink-0 flex items-center justify-center w-6 h-6 transition-colors relative',
-            voice.state === 'starting'
-              ? 'text-[#7c7dff]/60 otto-mic-starting'
-              : voice.mode
-                ? 'text-[#7c7dff] otto-mic-active'
-                : 'text-muted hover:text-text',
+            'otto-mic-btn shrink-0 flex items-center justify-center transition-colors relative',
+            voice.state === 'starting' && voice.downloadPct != null
+              ? 'gap-1 text-[#7c7dff]/60 otto-mic-starting'
+              : voice.state === 'starting'
+                ? 'w-6 h-6 text-[#7c7dff]/60 otto-mic-starting'
+                : voice.mode
+                  ? 'w-6 h-6 text-[#7c7dff] otto-mic-active'
+                  : 'w-6 h-6 text-muted hover:text-text',
           ].join(' ')}
         >
           {voice.state === 'starting'
-            ? <Mic size={16} className="otto-spin" />
+            ? (
+              <>
+                <Mic size={16} className="otto-spin shrink-0" />
+                {voice.downloadPct != null && (
+                  <span className="text-[10px] font-medium tabular-nums leading-none">
+                    {voice.downloadPct}%
+                  </span>
+                )}
+              </>
+            )
             : voice.state === 'error'
               ? <MicOff size={16} />
               : voice.mode

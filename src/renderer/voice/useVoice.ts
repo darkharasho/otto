@@ -2,7 +2,7 @@
 // Utterance flow: VAD speech-end -> voice.transcribe (main) -> submitText().
 // Barge-in: VAD speech-start while TTS is audible -> stop playback + flush
 // the main-process synthesis queue. The agent turn is never interrupted.
-import { useEffect, useRef, type RefObject, type MutableRefObject } from 'react';
+import { useEffect, useRef, useState, type RefObject, type MutableRefObject } from 'react';
 import type { MicVAD } from '@ricky0123/vad-web';
 import { ipc } from '../ipc';
 import { useOttoStore } from '../state/store';
@@ -43,7 +43,7 @@ export function useVoice(opts: {
   ensureSession(): Promise<string>;
   /** Optional ref to the mic button element for per-frame level animation. */
   micButtonRef?: RefObject<HTMLButtonElement>;
-}): { toggle(): Promise<void> } {
+}): { toggle(): Promise<void>; downloadPct: number | null } {
   const vadRef = useRef<MicVAD | null>(null);
   const playerRef = useRef<PcmPlayer | null>(null);
   const togglingRef = useRef(false);
@@ -51,6 +51,8 @@ export function useVoice(opts: {
   optsRef.current = opts;
   // rAF handle for frame-level mic level animation throttle.
   const rafRef = useRef<number | null>(null);
+  // Download progress: null = no download in progress, 0–100 = percentage.
+  const [downloadPct, setDownloadPct] = useState<number | null>(null);
 
   const setVoiceMode = useOttoStore((s) => s.setVoiceMode);
   const setVoiceState = useOttoStore((s) => s.setVoiceState);
@@ -70,7 +72,11 @@ export function useVoice(opts: {
         logErrorToMain(e.message);
         player.stop();
         setVoiceMode(false);
+        setDownloadPct(null);
         void teardownVad(vadRef);
+      }
+      if (e.type === 'model-download-progress') {
+        setDownloadPct(e.pct >= 100 ? null : e.pct);
       }
     });
     return () => {
@@ -209,7 +215,7 @@ export function useVoice(opts: {
     }
   }
 
-  return { toggle };
+  return { toggle, downloadPct };
 }
 
 async function teardownVad(

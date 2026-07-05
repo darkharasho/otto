@@ -5,6 +5,7 @@ import { WhisperService } from './whisper';
 import { TtsService, createKokoroSynth, type SynthFn } from './tts';
 import { SpeechPipeline } from './pipeline';
 import { resolveWhisperBinary, whisperModelPath } from './paths';
+import { ensureWhisperModel } from './model-download';
 import { logger } from '../logger';
 
 const MAX_RESPAWNS = 3;
@@ -69,17 +70,25 @@ export class VoiceManager {
     const preferredResolution = whisperModelPath(prefs.whisperModel);
     let resolvedModel = preferredResolution.resolvedPath;
     if (!resolvedModel) {
-      // Preferred model absent — try the other model as a fallback.
+      // Preferred model absent — try the other model as a fallback before downloading.
       const fallbackModel = prefs.whisperModel === 'base.en' ? 'small.en' as const : 'base.en' as const;
       const fallbackResolution = whisperModelPath(fallbackModel);
       if (fallbackResolution.resolvedPath) {
         logger.warn(`[voice] preferred model ggml-${prefs.whisperModel}.bin not found — falling back to ggml-${fallbackModel}.bin`);
         resolvedModel = fallbackResolution.resolvedPath;
       } else {
-        throw new Error(
-          `No whisper model found for ggml-${prefs.whisperModel}.bin or ggml-${fallbackModel}.bin. ` +
-          `Download a model to ${preferredResolution.preferredPath} or run scripts/setup-voice-dev.sh in dev.`
+        // Neither model is present — download the preferred model with progress events.
+        logger.info(`[voice] no whisper model found — downloading ggml-${prefs.whisperModel}.bin to ${preferredResolution.preferredPath}`);
+        const artifact = `whisper-${prefs.whisperModel}`;
+        await ensureWhisperModel(
+          prefs.whisperModel,
+          preferredResolution.preferredPath,
+          (pct) => {
+            this.opts.emit({ type: 'model-download-progress', artifact, pct });
+          },
         );
+        logger.info(`[voice] model download complete: ${preferredResolution.preferredPath}`);
+        resolvedModel = preferredResolution.preferredPath;
       }
     }
 

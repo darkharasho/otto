@@ -327,7 +327,7 @@ export function App() {
   );
 
   const micButtonRef = useRef<HTMLButtonElement>(null);
-  const { toggle: toggleVoice } = useVoice({
+  const { toggle: toggleVoice, downloadPct } = useVoice({
     submitText: (text) => submitToActiveSession({ text, attachments: [], voice: true }),
     ensureSession,
     micButtonRef,
@@ -440,7 +440,7 @@ export function App() {
         onPrivateConversation={handlePrivateConversation}
         onSelectSession={handleSelectSession}
         isPrivate={showPrivate}
-        voice={{ mode: voiceMode, state: voiceState, onToggle: () => void toggleVoice(), micButtonRef }}
+        voice={{ mode: voiceMode, state: voiceState, onToggle: () => void toggleVoice(), micButtonRef, downloadPct }}
       />
     );
   }
@@ -459,7 +459,7 @@ export function App() {
           busy={streaming}
           queueDepth={activeSession?.queueDepth ?? 0}
           welcome={isFreshSession}
-          voice={{ mode: voiceMode, state: voiceState, onToggle: () => void toggleVoice(), micButtonRef }}
+          voice={{ mode: voiceMode, state: voiceState, onToggle: () => void toggleVoice(), micButtonRef, downloadPct }}
         />
       </div>
     );
@@ -504,7 +504,7 @@ export function App() {
               busy={streaming}
               queueDepth={activeSession?.queueDepth ?? 0}
               welcome={isFreshSession}
-              voice={{ mode: voiceMode, state: voiceState, onToggle: () => void toggleVoice(), micButtonRef }}
+              voice={{ mode: voiceMode, state: voiceState, onToggle: () => void toggleVoice(), micButtonRef, downloadPct }}
             />
             <StatusFooter
               model={model}
