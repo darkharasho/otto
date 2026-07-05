@@ -16,16 +16,17 @@ export function useVoice(opts: {
 }): { toggle(): Promise<void> } {
   const vadRef = useRef<MicVAD | null>(null);
   const playerRef = useRef<PcmPlayer | null>(null);
+  const togglingRef = useRef(false);
   const optsRef = useRef(opts);
   optsRef.current = opts;
 
-  const voiceMode = useOttoStore((s) => s.voiceMode);
   const setVoiceMode = useOttoStore((s) => s.setVoiceMode);
   const setVoiceState = useOttoStore((s) => s.setVoiceState);
 
   // TTS playback: subscribe to voice events while mounted.
   useEffect(() => {
-    const player = new PcmPlayer(new AudioContext());
+    const ctx = new AudioContext();
+    const player = new PcmPlayer(ctx);
     player.onPlayingChange = (playing) => {
       const { voiceMode: on } = useOttoStore.getState();
       if (on) setVoiceState(playing ? 'speaking' : 'listening');
@@ -42,57 +43,68 @@ export function useVoice(opts: {
     return () => {
       off();
       player.stop();
+      void ctx.close().catch(() => {});
     };
   }, [setVoiceMode, setVoiceState]);
 
   async function toggle(): Promise<void> {
-    if (voiceMode) {
-      setVoiceMode(false);
-      playerRef.current?.stop();
-      await teardownVad(vadRef);
-      await ipc.invoke('voice.setMode', { enabled: false, sessionId: null });
-      return;
-    }
+    // Re-entrancy guard: rapid double-taps no-op on the second call.
+    if (togglingRef.current) return;
+    togglingRef.current = true;
+    try {
+      // Read fresh state rather than the closure-captured value.
+      const on = useOttoStore.getState().voiceMode;
+      if (on) {
+        setVoiceMode(false);
+        playerRef.current?.stop();
+        await teardownVad(vadRef);
+        await ipc.invoke('voice.setMode', { enabled: false, sessionId: null });
+        return;
+      }
 
-    const sessionId = await optsRef.current.ensureSession();
-    await ipc.invoke('voice.setMode', { enabled: true, sessionId });
+      const sessionId = await optsRef.current.ensureSession();
+      await ipc.invoke('voice.setMode', { enabled: true, sessionId });
 
-    const { MicVAD } = await import('@ricky0123/vad-web');
-    const vad = await MicVAD.new({
-      baseAssetPath: './vad/',
-      onnxWASMBasePath: './vad/',
-      onSpeechStart: () => {
-        // Barge-in: user talking over Otto silences playback immediately.
-        if (playerRef.current?.playing) {
-          playerRef.current.stop();
-          void ipc.invoke('voice.cancelSpeech', undefined);
-        }
-      },
-      onSpeechEnd: (audio: Float32Array) => {
-        void (async () => {
-          setVoiceState('transcribing');
-          try {
-            const buf = audio.buffer.slice(
-              audio.byteOffset,
-              audio.byteOffset + audio.byteLength,
-            ) as ArrayBuffer;
-            const { text } = await ipc.invoke('voice.transcribe', {
-              pcm: buf,
-              sampleRate: 16000,
-            });
-            if (text) await optsRef.current.submitText(text);
-          } catch (err) {
-            console.error('transcription failed', err);
-          } finally {
-            if (useOttoStore.getState().voiceMode) setVoiceState('listening');
+      const { MicVAD } = await import('@ricky0123/vad-web');
+      const vad = await MicVAD.new({
+        baseAssetPath: './vad/',
+        onnxWASMBasePath: './vad/',
+        onSpeechStart: () => {
+          // Barge-in: user talking over Otto silences playback immediately.
+          if (playerRef.current?.playing) {
+            playerRef.current.stop();
+            void ipc.invoke('voice.cancelSpeech', undefined);
           }
-        })();
-      },
-    });
-    vad.start();
-    vadRef.current = vad;
-    setVoiceMode(true);
-    setVoiceState('listening');
+        },
+        onSpeechEnd: (audio: Float32Array) => {
+          void (async () => {
+            setVoiceState('transcribing');
+            try {
+              const buf = audio.buffer.slice(
+                audio.byteOffset,
+                audio.byteOffset + audio.byteLength,
+              ) as ArrayBuffer;
+              const { text } = await ipc.invoke('voice.transcribe', {
+                pcm: buf,
+                sampleRate: 16000,
+              });
+              if (text) await optsRef.current.submitText(text);
+            } catch (err) {
+              console.error('transcription failed', err);
+            } finally {
+              if (useOttoStore.getState().voiceMode) setVoiceState('listening');
+            }
+          })();
+        },
+      });
+      // Set state BEFORE starting VAD so any instant VAD event sees voiceMode true.
+      setVoiceMode(true);
+      setVoiceState('listening');
+      vad.start();
+      vadRef.current = vad;
+    } finally {
+      togglingRef.current = false;
+    }
   }
 
   return { toggle };

@@ -247,6 +247,10 @@ export function App() {
         setWindowMode('panel');
         void ipc.invoke('window.setMode', { mode: 'panel' });
       }
+      // Re-sync the voice pipeline to follow the newly created session.
+      if (useOttoStore.getState().voiceMode) {
+        void ipc.invoke('voice.setMode', { enabled: true, sessionId });
+      }
       appendUserMessage(crypto.randomUUID(), text, attachments);
       await ipc.invoke('session.send', { sessionId, text, attachments });
       void ipc.invoke('session.list', undefined).then(setSessions);
@@ -278,6 +282,10 @@ export function App() {
       if (useOttoStore.getState().windowMode === 'bar') {
         setWindowMode('panel');
         void ipc.invoke('window.setMode', { mode: 'panel' });
+      }
+      // Re-sync the voice pipeline to follow the newly created session.
+      if (useOttoStore.getState().voiceMode) {
+        void ipc.invoke('voice.setMode', { enabled: true, sessionId });
       }
       appendUserMessage(crypto.randomUUID(), text, attachments);
       await ipc.invoke('session.send', { sessionId, text, attachments });
