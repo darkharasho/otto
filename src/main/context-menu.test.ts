@@ -128,7 +128,7 @@ describe('buildTemplate', () => {
     const tpl = buildTemplate(params, actions);
     const labels = tpl.map((i) => i.label ?? i.role ?? (i.type === 'separator' ? '---' : '?'));
     expect(labels.slice(0, 5)).toEqual(['hello', 'halo', 'help', 'hell', 'Add to Dictionary']);
-    (tpl[0].click as () => void)();
+    (tpl[0]!.click as () => void)();
     expect(actions.replaceMisspelling).toHaveBeenCalledWith('hello');
     const add = tpl.find((i) => i.label === 'Add to Dictionary')!;
     (add.click as () => void)();
@@ -144,8 +144,8 @@ describe('buildTemplate', () => {
       editFlags: { ...makeParams().editFlags, canPaste: true, canSelectAll: true },
     });
     const tpl = buildTemplate(params, actions);
-    expect(tpl[0].type).not.toBe('separator');
-    expect(tpl[tpl.length - 1].type).not.toBe('separator');
+    expect(tpl[0]!.type).not.toBe('separator');
+    expect(tpl[tpl.length - 1]!.type).not.toBe('separator');
     // spellcheck group | link group | edit group → exactly two separators
     expect(tpl.filter((i) => i.type === 'separator')).toHaveLength(2);
   });
