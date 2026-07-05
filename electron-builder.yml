@@ -77,6 +77,13 @@ asarUnpack:
   - "native/darwin_shortcut.node"
   - "**/node_modules/better-sqlite3/**"
   - "**/node_modules/sharp/**"
+  # sharp's native binding and libvips live in platform-specific @img/*
+  # packages (sharp-linux-x64 → .node, sharp-libvips-linux-x64 → .so).
+  # electron-builder auto-unpacks .node files but leaves the libvips .so
+  # inside the asar, and dlopen can't traverse app.asar — sharp (and with it
+  # @huggingface/transformers → Kokoro TTS/the embedder) fails to load with
+  # ERR_DLOPEN_FAILED unless the whole scope is unpacked.
+  - "**/node_modules/@img/**"
   # The Claude Agent SDK (0.3.x) spawns a native `claude` binary shipped in a
   # per-platform optional package. child_process.spawn can't traverse app.asar
   # (spawn ENOTDIR), so both the SDK and the platform binary packages must live
@@ -90,4 +97,3 @@ asarUnpack:
   # platform-specific package, not in sqlite-vec itself. dlopen can't traverse
   # into app.asar, so the platform binary has to be on the real filesystem.
   - "**/node_modules/sqlite-vec-*/**"
-  - "**/node_modules/@xenova/transformers/**"
