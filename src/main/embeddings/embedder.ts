@@ -49,14 +49,20 @@ let cachedInstance: Embedder | null = null;
 let initFailed = false;
 
 async function loadRealEmbedder(): Promise<Embedder> {
-  const t = (await import('@xenova/transformers')) as unknown as {
+  // @huggingface/transformers (not @xenova/transformers): the repo pins
+  // onnxruntime-node to 1.21 process-wide (one libonnxruntime.so per process —
+  // see the pnpm override), and xenova v2's Tensor wrapper drops the
+  // prototype `location` getter that ort-node 1.21 requires on feeds
+  // ("Tensor.location must be a string"). HF transformers v3 is built against
+  // ort 1.21 and loads the same local model files.
+  const t = (await import('@huggingface/transformers')) as unknown as {
     env: { localModelPath: string; allowRemoteModels: boolean; allowLocalModels: boolean };
-    pipeline: (task: string, model: string, opts?: { quantized?: boolean }) => Promise<TransformersPipeline>;
+    pipeline: (task: string, model: string, opts?: { dtype?: string }) => Promise<TransformersPipeline>;
   };
   t.env.localModelPath = modelDir();
   t.env.allowRemoteModels = false;
   t.env.allowLocalModels = true;
-  const pipe = await t.pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { quantized: true });
+  const pipe = await t.pipeline('feature-extraction', 'Xenova/all-MiniLM-L6-v2', { dtype: 'q8' });
 
   return {
     dim: DIM,
