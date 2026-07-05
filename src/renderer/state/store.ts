@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { SessionEvent, StructuredError, WindowMode } from '@shared/ipc-contract';
 import type { AssistantMessage, AutonomyMode, ContentBlock, Message, SessionMeta, UserMessage } from '@shared/messages';
+import type { VoiceState } from '@shared/voice';
 
 export type { WindowMode } from '@shared/ipc-contract';
 
@@ -60,6 +61,8 @@ interface OttoState {
   sessions: SessionMeta[];
   mode: AutonomyMode;
   model: string;
+  voiceMode: boolean;
+  voiceState: VoiceState;
 
   pinnedSessionIds: string[];
   setWindowMode(mode: WindowMode): void;
@@ -74,6 +77,8 @@ interface OttoState {
   setModel(model: string): void;
   setPinnedSessionIds(ids: string[]): void;
   togglePinned(id: string): void;
+  setVoiceMode(on: boolean): void;
+  setVoiceState(s: VoiceState): void;
   reset(): void;
 }
 
@@ -106,6 +111,8 @@ const initial = {
   mode: 'balanced' as AutonomyMode,
   model: loadStoredModel(),
   pinnedSessionIds: [] as string[],
+  voiceMode: false,
+  voiceState: 'idle' as VoiceState,
 };
 
 // Cross-window sync: localStorage is shared across BrowserWindows of the
@@ -593,6 +600,14 @@ export const useOttoStore = create<OttoState>((set, get) => ({
         ? s.pinnedSessionIds.filter((x) => x !== id)
         : [...s.pinnedSessionIds, id],
     }));
+  },
+
+  setVoiceMode(on) {
+    set(on ? { voiceMode: true } : { voiceMode: false, voiceState: 'idle' });
+  },
+
+  setVoiceState(s) {
+    set({ voiceState: s });
   },
 
   reset() {
