@@ -56,6 +56,8 @@ export class TtsService {
           logger.info(`[voice:perf] synth wall=${Date.now() - synthT0}ms chars=${sentence.length}`);
           if (gen !== this.generation) break; // cancelled mid-synthesis; re-check outer
           // Copy into a plain ArrayBuffer for structured-clone over IPC.
+          // Skip zero-length PCM (all-silence after trimSilence) — nothing to play.
+          if (pcm.length === 0) continue;
           const buf = pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength) as ArrayBuffer;
           if (this.batchT0 !== null) {
             logger.info(`[voice:perf] first-chunk latency=${Date.now() - this.batchT0}ms`);
@@ -115,6 +117,10 @@ export async function createKokoroSynth(cacheDir: string): Promise<SynthFn> {
   // Set cache dir via the transformers env object (not HF_HUB_CACHE env var)
   const { env } = await import('@huggingface/transformers');
   env.cacheDir = cacheDir;
+  // Ensure remote models are allowed for Kokoro's first-run download.
+  // The embedder previously set allowRemoteModels=false globally (bug, now fixed),
+  // but defensively restore it here in case any other code restricts it.
+  env.allowRemoteModels = true;
   // Log the active ONNX backend so we can confirm native ort-node is used (not WASM).
   // env.backends.onnx.versions is set by @huggingface/transformers at module load time.
   const ortVersions = (env as unknown as { backends?: { onnx?: { versions?: unknown } } }).backends?.onnx?.versions;
