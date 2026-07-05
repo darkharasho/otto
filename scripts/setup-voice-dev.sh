@@ -3,6 +3,12 @@
 # Builds whisper.cpp's whisper-server at a pinned tag and downloads the
 # ggml small.en model into resources/voice/. Packaged builds get CI-built
 # binaries in Phase 3.
+#
+# PACKAGING NOTE: electron-builder.yml's extraResources entry copies
+# resources/voice/whisper-server into the packaged app. If you run
+# `pnpm package` without first running this script, electron-builder will
+# error because the source binary does not exist. Run this script first on
+# any machine that needs to produce a voice-enabled packaged build.
 set -euo pipefail
 
 PIN="v1.7.5"

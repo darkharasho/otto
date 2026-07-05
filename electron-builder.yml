@@ -19,6 +19,15 @@ files:
   # weight in the package.
   - "!**/node_modules/@anthropic-ai/claude-agent-sdk-*-musl/**"
 
+extraResources:
+  # Ship the whisper-server binary (built by scripts/setup-voice-dev.sh) into
+  # resources/voice/ in the packaged app. The glob targets the binary file only
+  # — models/ is intentionally excluded so multi-hundred-MB model files are
+  # never bundled. If electron-builder errors here about a missing source, run
+  # scripts/setup-voice-dev.sh first to build the binary.
+  - from: resources/voice/whisper-server
+    to: voice/whisper-server
+
 publish:
   provider: github
   owner: darkharasho
