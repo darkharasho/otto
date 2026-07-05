@@ -20,20 +20,30 @@ const SPEED_OPTIONS: { value: number; label: string }[] = [
   { value: 1.30, label: '1.30×' },
 ];
 
+const ENDPOINT_MS_OPTIONS: { value: number; label: string; hint: string }[] = [
+  { value: 450, label: 'Snappy', hint: '450 ms' },
+  { value: 650, label: 'Balanced', hint: '650 ms' },
+  { value: 900, label: 'Relaxed', hint: '900 ms' },
+];
+
 export function VoiceSection({
   ttsVoice,
   speed,
   whisperModel,
+  endpointMs,
   onVoiceChange,
   onSpeedChange,
   onWhisperModelChange,
+  onEndpointMsChange,
 }: {
   ttsVoice: string;
   speed: number;
   whisperModel: 'base.en' | 'small.en';
+  endpointMs: number;
   onVoiceChange: (voiceId: string) => void;
   onSpeedChange: (speed: number) => void;
   onWhisperModelChange: (model: 'base.en' | 'small.en') => void;
+  onEndpointMsChange: (ms: number) => void;
 }) {
   const [previewing, setPreviewing] = useState<string | null>(null);
   const playerRef = useRef<PcmPlayer | null>(null);
@@ -87,6 +97,11 @@ export function VoiceSection({
     void ipc.invoke('settings.setVoicePrefs', { whisperModel: model });
   }
 
+  function handleEndpointMsChange(ms: number) {
+    onEndpointMsChange(ms);
+    void ipc.invoke('settings.setVoicePrefs', { endpointMs: ms });
+  }
+
   return (
     <SubsectionPage
       title="Voice"
@@ -118,6 +133,30 @@ export function VoiceSection({
             ))}
           </div>
           <div className="text-[11px] text-muted mt-1.5">Takes effect the next time voice mode is turned on.</div>
+        </div>
+
+        {/* Response pause */}
+        <div>
+          <div className="text-xs font-semibold text-text mb-2">Response pause</div>
+          <div className="flex gap-2">
+            {ENDPOINT_MS_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => handleEndpointMsChange(opt.value)}
+                className={[
+                  'flex flex-col items-start px-3 py-2 rounded-lg border text-sm transition-colors',
+                  endpointMs === opt.value
+                    ? 'border-accent/70 bg-accent/[0.10] text-text'
+                    : 'border-border bg-bg/40 text-muted hover:text-text hover:bg-bg/60',
+                ].join(' ')}
+              >
+                <span className="font-medium">{opt.label}</span>
+                <span className="text-[11px] mt-0.5 opacity-70">{opt.hint}</span>
+              </button>
+            ))}
+          </div>
+          <div className="text-[11px] text-muted mt-1.5">How long Otto waits after you stop talking. Takes effect next time voice mode starts.</div>
         </div>
 
         {/* Speed control */}

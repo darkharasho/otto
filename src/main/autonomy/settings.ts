@@ -30,6 +30,8 @@ export interface VoicePrefs {
   ttsVoice: string;
   speed: number;
   whisperModel: WhisperModel;
+  /** How long (ms) Otto waits after speech stops before transcribing. [300, 1500] */
+  endpointMs: number;
 }
 
 export interface SettingsSnapshot {
@@ -88,7 +90,7 @@ const DEFAULTS: SettingsSnapshot = {
   chatBounds: null,
   lastVisibleMode: 'bar',
   pinnedSessionIds: [],
-  voice: { ttsVoice: DEFAULT_TTS_VOICE, speed: DEFAULT_TTS_SPEED, whisperModel: 'small.en' },
+  voice: { ttsVoice: DEFAULT_TTS_VOICE, speed: DEFAULT_TTS_SPEED, whisperModel: 'small.en', endpointMs: 650 },
 };
 
 type Listener = (snapshot: SettingsSnapshot) => void;
@@ -314,11 +316,18 @@ export class Settings {
         rawVoiceObj?.whisperModel === 'base.en' || rawVoiceObj?.whisperModel === 'small.en'
           ? (rawVoiceObj.whisperModel as WhisperModel)
           : DEFAULTS.voice.whisperModel;
+      const endpointMs: number =
+        typeof rawVoiceObj?.endpointMs === 'number' &&
+        Number.isFinite(rawVoiceObj.endpointMs) &&
+        rawVoiceObj.endpointMs >= 300 &&
+        rawVoiceObj.endpointMs <= 1500
+          ? rawVoiceObj.endpointMs
+          : DEFAULTS.voice.endpointMs;
       const voice: VoicePrefs =
         rawVoiceObj &&
         typeof rawVoiceObj.ttsVoice === 'string' &&
         typeof rawVoiceObj.speed === 'number'
-          ? { ttsVoice: rawVoiceObj.ttsVoice as string, speed: rawVoiceObj.speed as number, whisperModel }
+          ? { ttsVoice: rawVoiceObj.ttsVoice as string, speed: rawVoiceObj.speed as number, whisperModel, endpointMs }
           : DEFAULTS.voice;
       this.state = {
         autonomy: { mode: m },

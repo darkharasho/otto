@@ -58,7 +58,7 @@ export function SettingsApp() {
   function patchNotifications(p: Partial<SettingsView['notifications']>) {
     setS((cur) => (cur ? { ...cur, notifications: { ...cur.notifications, ...p } } : cur));
   }
-  function patchVoice(p: Partial<{ ttsVoice: string; speed: number; whisperModel: 'base.en' | 'small.en' }>) {
+  function patchVoice(p: Partial<{ ttsVoice: string; speed: number; whisperModel: 'base.en' | 'small.en'; endpointMs: number }>) {
     setS((cur) => (cur ? { ...cur, voice: { ...cur.voice, ...p } } : cur));
   }
 
@@ -122,7 +122,7 @@ interface RenderArgs {
   setModel: (m: string) => void;
   patch<K extends keyof SettingsView>(key: K, value: SettingsView[K]): void;
   patchNotifications(p: Partial<SettingsView['notifications']>): void;
-  patchVoice(p: Partial<{ ttsVoice: string; speed: number; whisperModel: 'base.en' | 'small.en' }>): void;
+  patchVoice(p: Partial<{ ttsVoice: string; speed: number; whisperModel: 'base.en' | 'small.en'; endpointMs: number }>): void;
 }
 
 function renderSubsection(args: RenderArgs) {
@@ -225,9 +225,11 @@ function renderSubsection(args: RenderArgs) {
           ttsVoice={s.voice.ttsVoice}
           speed={s.voice.speed}
           whisperModel={s.voice.whisperModel}
+          endpointMs={s.voice.endpointMs}
           onVoiceChange={(ttsVoice) => patchVoice({ ttsVoice })}
           onSpeedChange={(speed) => patchVoice({ speed })}
           onWhisperModelChange={(whisperModel) => patchVoice({ whisperModel })}
+          onEndpointMsChange={(endpointMs) => patchVoice({ endpointMs })}
         />
       );
   }
