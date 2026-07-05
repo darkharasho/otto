@@ -30,8 +30,9 @@ export class VoiceManager {
   }
 
   setMode(enabled: boolean, sessionId: string | null): Promise<void> {
-    this.modeChain = this.modeChain.then(() => this.setModeImpl(enabled, sessionId));
-    return this.modeChain;
+    const next = this.modeChain.then(() => this.setModeImpl(enabled, sessionId));
+    this.modeChain = next.catch(() => {}); // keep the chain usable after a rejection
+    return next; // caller still sees the rejection
   }
 
   private async setModeImpl(enabled: boolean, sessionId: string | null): Promise<void> {
