@@ -163,10 +163,10 @@ describe('Settings — voice prefs (v5→v6 migration)', () => {
   it('defaults ttsVoice=af_heart and speed=1.05 on fresh install', async () => {
     const s = new Settings(settingsPath());
     await s.load();
-    expect(s.getVoicePrefs()).toEqual({ ttsVoice: 'af_heart', speed: 1.05 });
+    expect(s.getVoicePrefs()).toEqual({ ttsVoice: 'af_heart', speed: 1.05, whisperModel: 'small.en' });
     const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
     expect(written.version).toBe(6);
-    expect(written.voice).toEqual({ ttsVoice: 'af_heart', speed: 1.05 });
+    expect(written.voice).toEqual({ ttsVoice: 'af_heart', speed: 1.05, whisperModel: 'small.en' });
   });
 
   it('migrates a v5 file to v6 with default voice prefs', async () => {
@@ -190,7 +190,7 @@ describe('Settings — voice prefs (v5→v6 migration)', () => {
     );
     const s = new Settings(settingsPath());
     await s.load();
-    expect(s.getVoicePrefs()).toEqual({ ttsVoice: 'af_heart', speed: 1.05 });
+    expect(s.getVoicePrefs()).toEqual({ ttsVoice: 'af_heart', speed: 1.05, whisperModel: 'small.en' });
     const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
     expect(written.version).toBe(6);
   });
@@ -199,7 +199,7 @@ describe('Settings — voice prefs (v5→v6 migration)', () => {
     const s = new Settings(settingsPath());
     await s.load();
     await s.setVoicePrefs({ ttsVoice: 'bm_george' });
-    expect(s.getVoicePrefs()).toEqual({ ttsVoice: 'bm_george', speed: 1.05 });
+    expect(s.getVoicePrefs()).toEqual({ ttsVoice: 'bm_george', speed: 1.05, whisperModel: 'small.en' });
     const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
     expect(written.voice.ttsVoice).toBe('bm_george');
     expect(written.voice.speed).toBe(1.05);
