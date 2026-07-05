@@ -13,7 +13,6 @@ files:
   - public/tray/**
   - public/svg/**
   - package.json
-  - resources/embedding/**
   - native/darwin_shortcut.node
   # Electron is always glibc-linked; the musl claude binary is ~235MB of dead
   # weight in the package.
@@ -27,6 +26,12 @@ extraResources:
   # scripts/setup-voice-dev.sh first to build the binary.
   - from: resources/voice/whisper-server
     to: voice/whisper-server
+  # Embedding model must live at <resourcesPath>/embedding — embedder.ts's
+  # modelDir() resolves there when app.isPackaged. Shipping it via `files` +
+  # asarUnpack put it at app.asar.unpacked/resources/embedding instead, which
+  # broke the packaged embedder (found by the voice packaged smoke test).
+  - from: resources/embedding
+    to: embedding
 
 publish:
   provider: github
@@ -86,4 +91,3 @@ asarUnpack:
   # into app.asar, so the platform binary has to be on the real filesystem.
   - "**/node_modules/sqlite-vec-*/**"
   - "**/node_modules/@xenova/transformers/**"
-  - "resources/embedding/**"
