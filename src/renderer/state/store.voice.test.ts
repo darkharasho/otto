@@ -26,4 +26,17 @@ describe('voice state', () => {
     useOttoStore.getState().setVoiceState('listening');
     expect(useOttoStore.getState().voiceState).toBe('listening');
   });
+
+  it('setVoiceState accepts starting state', () => {
+    useOttoStore.getState().setVoiceMode(true);
+    useOttoStore.getState().setVoiceState('starting');
+    expect(useOttoStore.getState().voiceState).toBe('starting');
+  });
+
+  it('setVoiceMode(false) resets starting state to idle', () => {
+    useOttoStore.getState().setVoiceMode(true);
+    useOttoStore.getState().setVoiceState('starting');
+    useOttoStore.getState().setVoiceMode(false);
+    expect(useOttoStore.getState().voiceState).toBe('idle');
+  });
 });

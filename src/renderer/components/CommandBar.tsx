@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent, useEffect } from 'react';
+import { useRef, useState, type FormEvent, useEffect, type RefObject } from 'react';
 import { Paperclip, Lock, Mic, MicOff } from 'lucide-react';
 import { OttoMark } from './OttoMark';
 import { ipc } from '../ipc';
@@ -30,8 +30,10 @@ interface Props {
   /** Voice conversation mode. Omit to hide the mic button. */
   voice?: {
     mode: boolean;
-    state: 'idle' | 'listening' | 'transcribing' | 'speaking';
+    state: 'idle' | 'starting' | 'listening' | 'transcribing' | 'speaking';
     onToggle(): void;
+    /** Ref forwarded from the parent for per-frame mic level animation. */
+    micButtonRef?: RefObject<HTMLButtonElement>;
   };
 }
 
@@ -352,18 +354,42 @@ export function CommandBar({
       {/* Mic button */}
       {voice && (
         <button
+          ref={voice.micButtonRef}
           type="button"
-          aria-label={voice.mode ? 'Turn off voice mode' : 'Turn on voice mode'}
-          title={voice.mode ? `Voice: ${voice.state}` : 'Voice mode'}
+          aria-label={
+            voice.state === 'starting' ? 'Voice mode starting…' :
+            voice.state === 'listening' ? 'Listening — click to turn off voice mode' :
+            voice.state === 'transcribing' ? 'Transcribing…' :
+            voice.state === 'speaking' ? 'Speaking — click to turn off voice mode' :
+            'Turn on voice mode'
+          }
+          title={
+            voice.state === 'starting' ? 'Voice: starting…' :
+            voice.mode ? `Voice: ${voice.state}` :
+            'Voice mode'
+          }
           onClick={voice.onToggle}
           className={[
-            'shrink-0 flex items-center justify-center w-6 h-6 transition-colors',
-            voice.mode
-              ? 'text-[#7c7dff] hover:text-[#b9b9ff]'
-              : 'text-muted hover:text-text',
+            'otto-mic-btn shrink-0 flex items-center justify-center w-6 h-6 transition-colors relative',
+            voice.state === 'starting'
+              ? 'text-[#7c7dff]/60 otto-mic-starting'
+              : voice.state === 'listening'
+                ? 'text-[#7c7dff] otto-mic-listening'
+                : voice.state === 'transcribing'
+                  ? 'text-[#b9b9ff] otto-mic-transcribing'
+                  : voice.state === 'speaking'
+                    ? 'text-[#7c7dff]'
+                    : 'text-muted hover:text-text',
           ].join(' ')}
         >
-          {voice.mode ? <MicOff size={16} /> : <Mic size={16} />}
+          {voice.state === 'starting'
+            ? <Mic size={16} className="otto-spin" />
+            : voice.mode
+              ? <MicOff size={16} />
+              : <Mic size={16} />}
+          {(voice.state === 'listening' || voice.state === 'speaking') && (
+            <span aria-hidden className="otto-mic-ring" />
+          )}
         </button>
       )}
       <div className="flex items-center justify-end h-6 shrink-0">

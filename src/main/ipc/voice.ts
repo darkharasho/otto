@@ -1,6 +1,7 @@
 import { BrowserWindow, ipcMain } from 'electron';
 import { VOICE_EVENT_CHANNEL, type VoiceEvent } from '@shared/voice';
 import type { VoiceManager } from '../voice/manager';
+import { logger } from '../logger';
 
 export function emitVoiceEvent(event: VoiceEvent): void {
   for (const w of BrowserWindow.getAllWindows()) {
@@ -18,5 +19,8 @@ export function registerVoiceIpc(voice: VoiceManager): void {
   });
   ipcMain.handle('voice.cancelSpeech', () => {
     voice.cancelSpeech();
+  });
+  ipcMain.handle('voice.logError', (_e, args: { message: string }) => {
+    logger.error(`[voice] ${args.message}`);
   });
 }

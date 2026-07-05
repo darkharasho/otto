@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type RefObject } from 'react';
 import { Sparkles } from 'lucide-react';
 import { ChatTitlebar } from './ChatTitlebar';
 import { ConversationSidebar } from './ConversationSidebar';
@@ -20,7 +20,7 @@ interface Props {
   onPrivateConversation: (args: { text: string; attachments: ImageRef[] }) => void | Promise<void>;
   onSelectSession: (id: string) => void | Promise<void>;
   isPrivate?: boolean;
-  voice?: { mode: boolean; state: 'idle' | 'listening' | 'transcribing' | 'speaking'; onToggle(): void };
+  voice?: { mode: boolean; state: 'idle' | 'starting' | 'listening' | 'transcribing' | 'speaking'; onToggle(): void; micButtonRef?: RefObject<HTMLButtonElement> };
 }
 
 export function ChatWindow({

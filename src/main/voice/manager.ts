@@ -37,6 +37,7 @@ export class VoiceManager {
 
   private async setModeImpl(enabled: boolean, sessionId: string | null): Promise<void> {
     if (!enabled) {
+      logger.info('[voice] disabling voice mode');
       this.enabled = false;
       this.pipeline?.setEnabled(false, null);
       this.tts?.cancel();
@@ -44,10 +45,12 @@ export class VoiceManager {
       return;
     }
 
+    logger.info('[voice] enabling voice mode — loading Kokoro TTS…');
     this.enabled = true;
     this.respawns = 0;
     // Kokoro: load once, reuse across mode toggles (model load is seconds).
     if (!this.synth) this.synth = await createKokoroSynth(this.opts.cacheDir);
+    logger.info('[voice] Kokoro ready — starting whisper-server…');
     if (!this.tts) this.tts = new TtsService(this.synth, this.opts.emit);
     if (!this.pipeline) this.pipeline = new SpeechPipeline(this.tts);
 
@@ -61,6 +64,7 @@ export class VoiceManager {
       });
     }
     if (!this.whisper.isRunning()) await this.whisper.start();
+    logger.info('[voice] whisper-server ready — voice mode active');
 
     this.pipeline.setEnabled(true, sessionId);
     this.opts.emit({ type: 'voice-ready' });

@@ -8,4 +8,4 @@ export type VoiceEvent =
   | { type: 'voice-error'; message: string };
 // Note: UI 'speaking' state derives from renderer playback (PcmPlayer.onPlayingChange), not tts-start/tts-end.
 
-export type VoiceState = 'idle' | 'listening' | 'transcribing' | 'speaking';
+export type VoiceState = 'idle' | 'starting' | 'listening' | 'transcribing' | 'speaking';

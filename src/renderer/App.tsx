@@ -326,9 +326,11 @@ export function App() {
     [activeSession?.id, appendUserMessage, setSessions]
   );
 
+  const micButtonRef = useRef<HTMLButtonElement>(null);
   const { toggle: toggleVoice } = useVoice({
     submitText: (text) => submitToActiveSession({ text, attachments: [] }),
     ensureSession,
+    micButtonRef,
   });
   const voiceMode = useOttoStore((s) => s.voiceMode);
   const voiceState = useOttoStore((s) => s.voiceState);
@@ -438,7 +440,7 @@ export function App() {
         onPrivateConversation={handlePrivateConversation}
         onSelectSession={handleSelectSession}
         isPrivate={showPrivate}
-        voice={{ mode: voiceMode, state: voiceState, onToggle: () => void toggleVoice() }}
+        voice={{ mode: voiceMode, state: voiceState, onToggle: () => void toggleVoice(), micButtonRef }}
       />
     );
   }
@@ -457,7 +459,7 @@ export function App() {
           busy={streaming}
           queueDepth={activeSession?.queueDepth ?? 0}
           welcome={isFreshSession}
-          voice={{ mode: voiceMode, state: voiceState, onToggle: () => void toggleVoice() }}
+          voice={{ mode: voiceMode, state: voiceState, onToggle: () => void toggleVoice(), micButtonRef }}
         />
       </div>
     );
@@ -502,7 +504,7 @@ export function App() {
               busy={streaming}
               queueDepth={activeSession?.queueDepth ?? 0}
               welcome={isFreshSession}
-              voice={{ mode: voiceMode, state: voiceState, onToggle: () => void toggleVoice() }}
+              voice={{ mode: voiceMode, state: voiceState, onToggle: () => void toggleVoice(), micButtonRef }}
             />
             <StatusFooter
               model={model}

@@ -306,3 +306,46 @@ button {
   background: radial-gradient(circle, rgba(124, 125, 255, 0.22), transparent 70%);
   pointer-events: none;
 }
+
+/* ── Voice mic button animations ───────────────────────────────────────── */
+
+/* 'starting' state: opacity pulse while Kokoro + whisper-server boot up. */
+@keyframes otto-mic-starting {
+  0%, 100% { opacity: 0.45; }
+  50%       { opacity: 0.9; }
+}
+.otto-mic-starting {
+  animation: otto-mic-starting 1.2s ease-in-out infinite;
+}
+
+/* 'listening' state: reactive ring that scales with --mic-level (0–1).
+   Falls back to a slow steady pulse when no frame data is present. */
+@keyframes otto-mic-idle-pulse {
+  0%, 100% { transform: scale(1);    opacity: 0.35; }
+  50%       { transform: scale(1.5); opacity: 0.6; }
+}
+.otto-mic-ring {
+  position: absolute;
+  inset: -3px;
+  border-radius: 9999px;
+  border: 1.5px solid rgba(124, 125, 255, 0.55);
+  pointer-events: none;
+  /* Default animation when frame-level data hasn't arrived yet. */
+  animation: otto-mic-idle-pulse 2s ease-in-out infinite;
+  /* Frame-driven level overrides via JS setting --mic-level on parent button. */
+  /* scale() is driven from JS below via a CSS custom property — the animation
+     keyframes above serve as a fallback. */
+}
+/* When --mic-level is present the ring size follows it. */
+.otto-mic-listening .otto-mic-ring,
+.otto-mic-transcribing .otto-mic-ring {
+  transform: scale(calc(1 + var(--mic-level, 0) * 0.8));
+  opacity: calc(0.3 + var(--mic-level, 0) * 0.55);
+  transition: transform 60ms linear, opacity 60ms linear;
+  animation: none;
+}
+
+/* 'transcribing' state: dimmed ring signals processing. */
+.otto-mic-transcribing {
+  opacity: 0.7;
+}
