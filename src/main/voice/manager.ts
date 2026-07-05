@@ -70,16 +70,11 @@ export class VoiceManager {
     const preferredResolution = whisperModelPath(prefs.whisperModel);
     let resolvedModel = preferredResolution.resolvedPath;
     if (!resolvedModel) {
-      // Preferred model absent — try the other model as a fallback before downloading.
-      const fallbackModel = prefs.whisperModel === 'base.en' ? 'small.en' as const : 'base.en' as const;
-      const fallbackResolution = whisperModelPath(fallbackModel);
-      if (fallbackResolution.resolvedPath) {
-        logger.warn(`[voice] preferred model ggml-${prefs.whisperModel}.bin not found — falling back to ggml-${fallbackModel}.bin`);
-        resolvedModel = fallbackResolution.resolvedPath;
-      } else {
-        // Neither model is present — download the preferred model with progress events.
-        logger.info(`[voice] no whisper model found — downloading ggml-${prefs.whisperModel}.bin to ${preferredResolution.preferredPath}`);
-        const artifact = `whisper-${prefs.whisperModel}`;
+      // Preferred model absent — download it (respects user preference).
+      // Only use the other model as an offline fallback if the download fails.
+      logger.info(`[voice] preferred model ggml-${prefs.whisperModel}.bin not found — downloading to ${preferredResolution.preferredPath}`);
+      const artifact = `whisper-${prefs.whisperModel}`;
+      try {
         await ensureWhisperModel(
           prefs.whisperModel,
           preferredResolution.preferredPath,
@@ -89,13 +84,25 @@ export class VoiceManager {
         );
         logger.info(`[voice] model download complete: ${preferredResolution.preferredPath}`);
         resolvedModel = preferredResolution.preferredPath;
+      } catch (downloadErr) {
+        // Download failed (e.g. offline). Try the other model as a last resort
+        // so voice still works without network access.
+        const fallbackModel = prefs.whisperModel === 'base.en' ? 'small.en' as const : 'base.en' as const;
+        const fallbackResolution = whisperModelPath(fallbackModel);
+        if (fallbackResolution.resolvedPath) {
+          logger.warn(`[voice] download failed (${String(downloadErr)}) — offline fallback to ggml-${fallbackModel}.bin`);
+          resolvedModel = fallbackResolution.resolvedPath;
+        } else {
+          throw downloadErr; // no fallback available
+        }
       }
     }
 
-    // If whisper is running with a different model, stop it so we restart below.
-    if (this.whisper && this.whisperModelPath !== resolvedModel && this.whisper.isRunning()) {
+    // If whisper exists with a different model (running or stopped), tear it
+    // down so it is rebuilt below with the correct model path.
+    if (this.whisper && this.whisperModelPath !== resolvedModel) {
       logger.info(`[voice] whisper model changed (${this.whisperModelPath} → ${resolvedModel}), restarting sidecar`);
-      await this.whisper.stop();
+      await this.whisper.stop(); // safe if already stopped
       this.whisper = null;
       this.whisperModelPath = null;
     }
