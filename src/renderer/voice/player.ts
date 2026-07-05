@@ -18,7 +18,7 @@ export class PcmPlayer {
 
   enqueue(pcm: Float32Array, sampleRate: number): void {
     const buffer = this.ctx.createBuffer(1, pcm.length, sampleRate);
-    buffer.copyToChannel(pcm, 0);
+    buffer.copyToChannel(pcm as Float32Array<ArrayBuffer>, 0);
     const source = this.ctx.createBufferSource();
     source.buffer = buffer;
     source.connect(this.ctx.destination);

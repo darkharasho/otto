@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useState, useRef } from 'react';
 import { ipc } from './ipc';
 import { useOttoStore, isSessionBusy, canProactivelyReset } from './state/store';
+import { useVoice } from './voice/useVoice';
 import type { ContentBlock } from '@shared/messages';
 import { IDLE_GATE_MS, TOPIC_SHIFT_EVALUATE_TIMEOUT_MS } from '@shared/topic-shift-constants';
 import { CommandBar } from './components/CommandBar';
@@ -191,6 +192,10 @@ export function App() {
         setWindowMode('panel');
         void ipc.invoke('window.setMode', { mode: 'panel' });
       }
+      // Re-sync the voice pipeline to follow the newly active session.
+      if (useOttoStore.getState().voiceMode) {
+        void ipc.invoke('voice.setMode', { enabled: true, sessionId: id });
+      }
     },
     [loadSession, setWindowMode]
   );
@@ -204,6 +209,10 @@ export function App() {
     if (useOttoStore.getState().windowMode === 'bar') {
       setWindowMode('panel');
       void ipc.invoke('window.setMode', { mode: 'panel' });
+    }
+    // Re-sync the voice pipeline to follow the newly created session.
+    if (useOttoStore.getState().voiceMode) {
+      void ipc.invoke('voice.setMode', { enabled: true, sessionId });
     }
   }, [beginSession, setWindowMode, model]);
 
@@ -305,6 +314,13 @@ export function App() {
     },
     [activeSession?.id, appendUserMessage, setSessions]
   );
+
+  const { toggle: toggleVoice } = useVoice({
+    submitText: (text) => handleSubmit({ text, attachments: [] }),
+    ensureSession,
+  });
+  const voiceMode = useOttoStore((s) => s.voiceMode);
+  const voiceState = useOttoStore((s) => s.voiceState);
 
   // One Esc handler with a priority order: cancel a streaming response, else
   // collapse panel→bar, else hide. Splitting into two listeners caused a
@@ -429,6 +445,7 @@ export function App() {
           busy={streaming}
           queueDepth={activeSession?.queueDepth ?? 0}
           welcome={isFreshSession}
+          voice={{ mode: voiceMode, state: voiceState, onToggle: () => void toggleVoice() }}
         />
       </div>
     );
@@ -473,6 +490,7 @@ export function App() {
               busy={streaming}
               queueDepth={activeSession?.queueDepth ?? 0}
               welcome={isFreshSession}
+              voice={{ mode: voiceMode, state: voiceState, onToggle: () => void toggleVoice() }}
             />
             <StatusFooter
               model={model}

@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent, useEffect } from 'react';
-import { Paperclip, Lock } from 'lucide-react';
+import { Paperclip, Lock, Mic, MicOff } from 'lucide-react';
 import { OttoMark } from './OttoMark';
 import { ipc } from '../ipc';
 import { extFromMime } from '@shared/messages';
@@ -27,6 +27,12 @@ interface Props {
   busy?: boolean;
   queueDepth?: number;
   welcome?: boolean;
+  /** Voice conversation mode. Omit to hide the mic button. */
+  voice?: {
+    mode: boolean;
+    state: 'idle' | 'listening' | 'transcribing' | 'speaking';
+    onToggle(): void;
+  };
 }
 
 export function CommandBar({
@@ -41,6 +47,7 @@ export function CommandBar({
   busy = false,
   queueDepth = 0,
   welcome = false,
+  voice,
 }: Props) {
   const [value, setValue] = useState('');
   const [attachments, setAttachments] = useState<ImageRef[]>([]);
@@ -340,6 +347,23 @@ export function CommandBar({
           className="shrink-0 flex items-center justify-center w-6 h-6 text-muted hover:text-text transition-colors"
         >
           <Paperclip className="h-4 w-4" />
+        </button>
+      )}
+      {/* Mic button */}
+      {voice && (
+        <button
+          type="button"
+          aria-label={voice.mode ? 'Turn off voice mode' : 'Turn on voice mode'}
+          title={voice.mode ? `Voice: ${voice.state}` : 'Voice mode'}
+          onClick={voice.onToggle}
+          className={[
+            'shrink-0 flex items-center justify-center w-6 h-6 transition-colors',
+            voice.mode
+              ? 'text-[#7c7dff] hover:text-[#b9b9ff]'
+              : 'text-muted hover:text-text',
+          ].join(' ')}
+        >
+          {voice.mode ? <MicOff size={16} /> : <Mic size={16} />}
         </button>
       )}
       <div className="flex items-center justify-end h-6 shrink-0">
