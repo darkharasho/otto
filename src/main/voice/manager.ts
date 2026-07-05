@@ -63,12 +63,13 @@ export class VoiceManager {
     if (!this.enabled) return;
     this.respawns++;
     logger.warn(`whisper-server exited (code ${code}), respawn ${this.respawns}/${MAX_RESPAWNS}`);
-    if (this.respawns > MAX_RESPAWNS) {
+    if (this.respawns >= MAX_RESPAWNS) {
       await this.setMode(false, null);
       this.opts.emit({ type: 'voice-error', message: 'Speech recognition crashed repeatedly; voice mode disabled.' });
       return;
     }
     await new Promise((r) => setTimeout(r, 500 * this.respawns));
+    if (!this.enabled) return;
     try {
       await this.whisper?.start();
     } catch (err) {
