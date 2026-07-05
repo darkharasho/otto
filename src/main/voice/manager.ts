@@ -1,4 +1,5 @@
 import path from 'node:path';
+import fs from 'node:fs';
 import os from 'node:os';
 import type { SessionEvent } from '@shared/ipc-contract';
 import type { VoiceEvent } from '@shared/voice';
@@ -11,6 +12,8 @@ const MAX_RESPAWNS = 3;
 
 export class VoiceManager {
   private whisper: WhisperService | null = null;
+  /** The model path that the running whisper sidecar was started with. */
+  private whisperModelPath: string | null = null;
   private tts: TtsService | null = null;
   private synth: SynthFn | null = null;
   private pipeline: SpeechPipeline | null = null;
@@ -24,7 +27,7 @@ export class VoiceManager {
       assetsDir: string; // resources/voice
       cacheDir: string; // <userData>/voice-models
       emit(e: VoiceEvent): void;
-      getVoicePrefs(): { ttsVoice: string; speed: number };
+      getVoicePrefs(): { ttsVoice: string; speed: number; whisperModel: 'base.en' | 'small.en' };
     }
   ) {}
 
@@ -63,16 +66,43 @@ export class VoiceManager {
     }
     if (!this.pipeline) this.pipeline = new SpeechPipeline(this.tts);
 
+    // Resolve model path from prefs, with fallback to the other model if preferred is missing.
+    const prefs = this.opts.getVoicePrefs();
+    const modelsDir = path.join(this.opts.assetsDir, 'models');
+    const preferredModelFile = `ggml-${prefs.whisperModel}.bin`;
+    const fallbackModelFile = prefs.whisperModel === 'base.en' ? 'ggml-small.en.bin' : 'ggml-base.en.bin';
+    let resolvedModel = path.join(modelsDir, preferredModelFile);
+    if (!fs.existsSync(resolvedModel)) {
+      const fallback = path.join(modelsDir, fallbackModelFile);
+      if (fs.existsSync(fallback)) {
+        logger.warn(`[voice] preferred model ${preferredModelFile} not found on disk — falling back to ${fallbackModelFile}`);
+        resolvedModel = fallback;
+      } else {
+        throw new Error(`No whisper model found in ${modelsDir} (tried ${preferredModelFile} and ${fallbackModelFile}). Run scripts/setup-voice-dev.sh to download models.`);
+      }
+    }
+
+    // If whisper is running with a different model, stop it so we restart below.
+    if (this.whisper && this.whisperModelPath !== resolvedModel && this.whisper.isRunning()) {
+      logger.info(`[voice] whisper model changed (${this.whisperModelPath} → ${resolvedModel}), restarting sidecar`);
+      await this.whisper.stop();
+      this.whisper = null;
+      this.whisperModelPath = null;
+    }
+
     if (!this.whisper) {
       const binary = path.join(this.opts.assetsDir, 'whisper-server');
-      const model = path.join(this.opts.assetsDir, 'models', 'ggml-small.en.bin');
+      const model = resolvedModel;
       this.whisper = new WhisperService({
         command: binary,
         args: (port) => ['-m', model, '--host', '127.0.0.1', '--port', String(port), '--threads', String(Math.max(4, Math.floor(os.cpus().length / 2)))],
         onExit: (code) => void this.handleWhisperExit(code),
       });
     }
-    if (!this.whisper.isRunning()) await this.whisper.start();
+    if (!this.whisper.isRunning()) {
+      await this.whisper.start();
+      this.whisperModelPath = resolvedModel;
+    }
     logger.info('[voice] whisper-server ready — voice mode active');
 
     this.pipeline.setEnabled(true, sessionId);

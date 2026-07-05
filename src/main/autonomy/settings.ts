@@ -24,9 +24,12 @@ export interface NewConversationPrefs {
   idleTimeoutMinutes: number; // 0 disables
 }
 
+export type WhisperModel = 'base.en' | 'small.en';
+
 export interface VoicePrefs {
   ttsVoice: string;
   speed: number;
+  whisperModel: WhisperModel;
 }
 
 export interface SettingsSnapshot {
@@ -85,7 +88,7 @@ const DEFAULTS: SettingsSnapshot = {
   chatBounds: null,
   lastVisibleMode: 'bar',
   pinnedSessionIds: [],
-  voice: { ttsVoice: DEFAULT_TTS_VOICE, speed: DEFAULT_TTS_SPEED },
+  voice: { ttsVoice: DEFAULT_TTS_VOICE, speed: DEFAULT_TTS_SPEED, whisperModel: 'small.en' },
 };
 
 type Listener = (snapshot: SettingsSnapshot) => void;
@@ -306,12 +309,16 @@ export class Settings {
           ? psi
           : DEFAULTS.pinnedSessionIds;
       const rawVoice = (o as { voice?: unknown }).voice;
+      const rawVoiceObj = rawVoice && typeof rawVoice === 'object' ? (rawVoice as Record<string, unknown>) : null;
+      const whisperModel: WhisperModel =
+        rawVoiceObj?.whisperModel === 'base.en' || rawVoiceObj?.whisperModel === 'small.en'
+          ? (rawVoiceObj.whisperModel as WhisperModel)
+          : DEFAULTS.voice.whisperModel;
       const voice: VoicePrefs =
-        rawVoice &&
-        typeof rawVoice === 'object' &&
-        typeof (rawVoice as VoicePrefs).ttsVoice === 'string' &&
-        typeof (rawVoice as VoicePrefs).speed === 'number'
-          ? (rawVoice as VoicePrefs)
+        rawVoiceObj &&
+        typeof rawVoiceObj.ttsVoice === 'string' &&
+        typeof rawVoiceObj.speed === 'number'
+          ? { ttsVoice: rawVoiceObj.ttsVoice as string, speed: rawVoiceObj.speed as number, whisperModel }
           : DEFAULTS.voice;
       this.state = {
         autonomy: { mode: m },

@@ -23,13 +23,17 @@ const SPEED_OPTIONS: { value: number; label: string }[] = [
 export function VoiceSection({
   ttsVoice,
   speed,
+  whisperModel,
   onVoiceChange,
   onSpeedChange,
+  onWhisperModelChange,
 }: {
   ttsVoice: string;
   speed: number;
+  whisperModel: 'base.en' | 'small.en';
   onVoiceChange: (voiceId: string) => void;
   onSpeedChange: (speed: number) => void;
+  onWhisperModelChange: (model: 'base.en' | 'small.en') => void;
 }) {
   const [previewing, setPreviewing] = useState<string | null>(null);
   const playerRef = useRef<PcmPlayer | null>(null);
@@ -78,12 +82,44 @@ export function VoiceSection({
     void ipc.invoke('settings.setVoicePrefs', { speed: newSpeed });
   }
 
+  function handleWhisperModelChange(model: 'base.en' | 'small.en') {
+    onWhisperModelChange(model);
+    void ipc.invoke('settings.setVoicePrefs', { whisperModel: model });
+  }
+
   return (
     <SubsectionPage
       title="Voice"
       description="Otto speaks during voice conversation mode. Choose a voice and preview how it sounds."
     >
       <div className="space-y-6">
+        {/* Transcription model */}
+        <div>
+          <div className="text-xs font-semibold text-text mb-2">Transcription</div>
+          <div className="flex gap-2">
+            {([
+              { value: 'base.en' as const, label: 'Fast', hint: 'base.en' },
+              { value: 'small.en' as const, label: 'Accurate', hint: 'small.en' },
+            ] satisfies { value: 'base.en' | 'small.en'; label: string; hint: string }[]).map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => handleWhisperModelChange(opt.value)}
+                className={[
+                  'flex flex-col items-start px-3 py-2 rounded-lg border text-sm transition-colors',
+                  whisperModel === opt.value
+                    ? 'border-accent/70 bg-accent/[0.10] text-text'
+                    : 'border-border bg-bg/40 text-muted hover:text-text hover:bg-bg/60',
+                ].join(' ')}
+              >
+                <span className="font-medium">{opt.label}</span>
+                <span className="text-[11px] mt-0.5 opacity-70">{opt.hint}</span>
+              </button>
+            ))}
+          </div>
+          <div className="text-[11px] text-muted mt-1.5">Takes effect the next time voice mode is turned on.</div>
+        </div>
+
         {/* Speed control */}
         <div>
           <div className="text-xs font-semibold text-text mb-2">Speaking speed</div>

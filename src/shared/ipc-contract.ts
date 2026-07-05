@@ -181,7 +181,7 @@ export type IpcRequest =
   | { channel: 'voice.log'; args: { level: 'info' | 'error'; message: string }; result: void }
   | {
       channel: 'settings.setVoicePrefs';
-      args: Partial<{ ttsVoice: string; speed: number }>;
+      args: Partial<{ ttsVoice: string; speed: number; whisperModel: 'base.en' | 'small.en' }>;
       result: void;
     }
   | { channel: 'voice.preview'; args: { voiceId: string }; result: void };
@@ -256,7 +256,7 @@ export interface SettingsView {
   chatBounds: ChatBounds | null;
   lastVisibleMode: WindowMode;
   pinnedSessionIds: string[];
-  voice: { ttsVoice: string; speed: number };
+  voice: { ttsVoice: string; speed: number; whisperModel: 'base.en' | 'small.en' };
 }
 
 export type IpcChannel = IpcRequest['channel'];

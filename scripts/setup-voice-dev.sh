@@ -24,14 +24,24 @@ else
   echo "==> whisper-server already present, skipping build"
 fi
 
-MODEL="$OUT/models/ggml-small.en.bin"
-if [ ! -f "$MODEL" ]; then
+MODEL_SMALL="$OUT/models/ggml-small.en.bin"
+if [ ! -f "$MODEL_SMALL" ]; then
   echo "==> Downloading ggml-small.en.bin (~466 MB)"
-  curl -L --fail --progress-bar -o "$MODEL.part" \
+  curl -L --fail --progress-bar -o "$MODEL_SMALL.part" \
     "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin"
-  mv "$MODEL.part" "$MODEL"
+  mv "$MODEL_SMALL.part" "$MODEL_SMALL"
 else
-  echo "==> whisper model already present, skipping download"
+  echo "==> ggml-small.en.bin already present, skipping download"
+fi
+
+MODEL_BASE="$OUT/models/ggml-base.en.bin"
+if [ ! -f "$MODEL_BASE" ]; then
+  echo "==> Downloading ggml-base.en.bin (~148 MB)"
+  curl -L --fail --progress-bar -o "$MODEL_BASE.part" \
+    "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin"
+  mv "$MODEL_BASE.part" "$MODEL_BASE"
+else
+  echo "==> ggml-base.en.bin already present, skipping download"
 fi
 
 echo "==> Voice dev assets ready."
