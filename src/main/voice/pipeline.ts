@@ -10,7 +10,7 @@ const COALESCE_TARGET = 140;
 export class SpeechPipeline {
   private enabled = false;
   private sessionId: string | null = null;
-  private stream = new SpeechTextStream();
+  private stream = new SpeechTextStream({ eagerFirstClause: true });
   /** Whether the first sentence of the current message has already been spoken. */
   private firstSpoken = false;
   /** Accumulated text for coalescing (subsequent sentences only). */

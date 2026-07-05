@@ -2,6 +2,60 @@
 import { describe, it, expect } from 'vitest';
 import { SpeechTextStream } from './voice-text';
 
+describe('SpeechTextStream eagerFirstClause', () => {
+  it('emits on comma when clause meets min-length threshold', () => {
+    const s = new SpeechTextStream({ eagerFirstClause: true });
+    // Leading clause "Let me check that for you" (25 chars before comma+space) meets the ≥12
+    // threshold, so the stream emits at the comma rather than waiting for the period.
+    // The remainder is held until its own boundary arrives.
+    expect(s.push('Let me check that for you, and report back. ')).toEqual([
+      'Let me check that for you',
+      'and report back.',
+    ]);
+  });
+
+  it('subsequent commas do NOT split (only normal sentence boundaries apply after first emission)', () => {
+    const s = new SpeechTextStream({ eagerFirstClause: true });
+    // Force first emission via a sentence boundary first, then commas in subsequent
+    // sentence should NOT split.
+    expect(s.push('Hello there. Now, one more thing, right? Yes.')).toEqual([
+      'Hello there.',
+      'Now, one more thing, right?',
+      'Yes.',
+    ]);
+  });
+
+  it('short leading clause under threshold waits for sentence boundary', () => {
+    const s = new SpeechTextStream({ eagerFirstClause: true });
+    // "Hi" — 2 chars before comma — below 12-char threshold; waits for period.
+    expect(s.push('Hi, how are you doing today.')).toEqual(['Hi, how are you doing today.']);
+  });
+
+  it('resets restores eagerness — next push can emit on first clause again', () => {
+    const s = new SpeechTextStream({ eagerFirstClause: true });
+    // Trigger first emission via sentence boundary.
+    s.push('Let me look into that right now. ');
+    // Reset.
+    s.reset();
+    // After reset, eager mode is active again; long first clause (≥12 chars) splits at comma.
+    expect(s.push('I found the answer you need, so here we go. ')).toEqual([
+      'I found the answer you need',
+      'so here we go.',
+    ]);
+  });
+
+  it('flush restores eagerness on subsequent use', () => {
+    const s = new SpeechTextStream({ eagerFirstClause: true });
+    s.push('Running the check right now. ');
+    s.flush();
+    // After flush+reset, eager again; long leading clause (≥12 chars) emits at comma.
+    expect(s.push('Checking the results now, here is what I found. ')).toEqual([
+      'Checking the results now',
+      'here is what I found.',
+    ]);
+  });
+});
+
 describe('SpeechTextStream', () => {
   it('emits a sentence once its boundary arrives, keeps the tail buffered', () => {
     const s = new SpeechTextStream();

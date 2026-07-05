@@ -32,9 +32,26 @@ function sanitize(text: string): string {
   return t;
 }
 
+// Minimum sanitized-text length for an eager first-clause emission.
+// Avoids waiting for a full sentence boundary on the very first clause
+// (e.g. "Sure, let me check that." emits "Sure, let me check that" at the comma)
+// while still requiring enough text that ultra-short interjections like "Sure,"
+// alone still come through (12 chars is intentionally low — those are natural).
+const EAGER_FIRST_CLAUSE_MIN_CHARS = 12;
+
+// Clause-boundary pattern: comma / semicolon / colon / em-dash followed by whitespace.
+const CLAUSE_BOUNDARY_RE = /([,;:]| —)\s+/;
+
 export class SpeechTextStream {
   private buf = '';
   private inFence = false;
+  private readonly eagerFirstClause: boolean;
+  /** True until the first sentence/clause is emitted after construction or reset/flush. */
+  private firstPending = true;
+
+  constructor(opts?: { eagerFirstClause?: boolean }) {
+    this.eagerFirstClause = opts?.eagerFirstClause ?? false;
+  }
 
   push(delta: string): string[] {
     this.buf += delta;
@@ -50,6 +67,7 @@ export class SpeechTextStream {
   reset(): void {
     this.buf = '';
     this.inFence = false;
+    this.firstPending = true;
   }
 
   private extract(final: boolean): string[] {
@@ -87,12 +105,45 @@ export class SpeechTextStream {
     // Sentence boundaries:
     //   - [.!?] followed by whitespace or end of string
     //   - any run of newlines (heading / bullet line breaks count)
+    // When eagerFirstClause is true, the very first emission also treats clause
+    // boundaries (,  ;  :  " — ") as sentence boundaries, provided the sanitized
+    // text meets EAGER_FIRST_CLAUSE_MIN_CHARS. This lowers time-to-first-speech.
     // Known limitations: ellipses ("...") are treated as three sentence-ends;
     // decimal numbers (e.g. "3.14") and abbreviations (e.g. "Dr.") split mid-phrase;
-    // em-dash separated clauses are not treated as boundaries.
+    // em-dash separated clauses are not treated as boundaries (except in eager mode).
     let pending = speakable;
     for (;;) {
-      const m = pending.match(/([.!?])(\s+|$)|\n+/);
+      const sentenceMatch = pending.match(/([.!?])(\s+|$)|\n+/);
+
+      // Eager first-clause: when we haven't emitted yet, also test clause boundaries.
+      let m = sentenceMatch;
+      if (this.eagerFirstClause && this.firstPending && !final) {
+        const clauseMatch = pending.match(CLAUSE_BOUNDARY_RE);
+        const clausePunct = clauseMatch?.[1]; // the matched punctuation char (, ; : or —)
+        if (clauseMatch && clauseMatch.index !== undefined && clausePunct !== undefined) {
+          const clauseEnd = clauseMatch.index + clauseMatch[0].length;
+          // Prefer whichever boundary comes first (sentence wins ties).
+          if (!sentenceMatch || sentenceMatch.index === undefined || clauseMatch.index < sentenceMatch.index) {
+            // Only use the clause boundary for the very first emission, and only if
+            // the sanitized text meets the minimum length threshold.
+            // Include the punctuation char in the slice (so we advance past it),
+            // but strip trailing clause punctuation from the spoken text so TTS
+            // doesn't say "Sure comma let me check" etc.
+            const clauseCandidate = pending.slice(0, clauseMatch.index + clausePunct.length);
+            if ((clauseCandidate.match(/`/g)?.length ?? 0) % 2 === 0) {
+              const clauseClean = sanitize(clauseCandidate).replace(/[,;:]$/, '').trim();
+              if (clauseClean.length >= EAGER_FIRST_CLAUSE_MIN_CHARS) {
+                // Emit this clause as the first speech unit.
+                sentences.push(clauseClean);
+                this.firstPending = false;
+                pending = pending.slice(clauseEnd);
+                continue;
+              }
+            }
+          }
+        }
+      }
+
       if (!m || m.index === undefined) break;
       const end = m.index + (m[1] ? 1 : 0);
       const candidate = pending.slice(0, end);
@@ -100,7 +151,10 @@ export class SpeechTextStream {
       // Unclosed inline code span: wait for the closing backtick.
       if (!final && (candidate.match(/`/g)?.length ?? 0) % 2 === 1) break;
       const clean = sanitize(candidate).trim();
-      if (clean) sentences.push(clean);
+      if (clean) {
+        sentences.push(clean);
+        this.firstPending = false;
+      }
       pending = pending.slice(restStart);
     }
 
