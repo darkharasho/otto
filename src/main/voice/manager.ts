@@ -15,6 +15,7 @@ export class VoiceManager {
   private pipeline: SpeechPipeline | null = null;
   private enabled = false;
   private respawns = 0;
+  private modeChain: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly opts: {
@@ -28,7 +29,12 @@ export class VoiceManager {
     this.pipeline?.handleSessionEvent(e);
   }
 
-  async setMode(enabled: boolean, sessionId: string | null): Promise<void> {
+  setMode(enabled: boolean, sessionId: string | null): Promise<void> {
+    this.modeChain = this.modeChain.then(() => this.setModeImpl(enabled, sessionId));
+    return this.modeChain;
+  }
+
+  private async setModeImpl(enabled: boolean, sessionId: string | null): Promise<void> {
     if (!enabled) {
       this.enabled = false;
       this.pipeline?.setEnabled(false, null);
@@ -89,6 +95,7 @@ export class VoiceManager {
 
   async dispose(): Promise<void> {
     this.enabled = false;
+    this.pipeline?.setEnabled(false, null);
     this.tts?.cancel();
     await this.whisper?.stop();
   }
