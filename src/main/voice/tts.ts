@@ -4,7 +4,12 @@
 import type { VoiceEvent } from '@shared/voice';
 import { logger } from '../logger';
 
-export type SynthFn = (text: string) => Promise<{ pcm: Float32Array; sampleRate: number }>;
+export interface SynthOpts {
+  voice?: string;
+  speed?: number;
+}
+
+export type SynthFn = (text: string, opts?: SynthOpts) => Promise<{ pcm: Float32Array; sampleRate: number }>;
 
 export class TtsService {
   private queue: string[] = [];
@@ -114,8 +119,10 @@ export async function createKokoroSynth(cacheDir: string): Promise<SynthFn> {
     dtype: 'q8',
     device: 'cpu',
   });
-  return async (text: string) => {
-    const audio = await tts.generate(text, { voice: 'af_heart', speed: 1.05 });
+  return async (text: string, opts?: SynthOpts) => {
+    const voice = opts?.voice ?? 'af_heart';
+    const speed = opts?.speed ?? 1.05;
+    const audio = await tts.generate(text, { voice, speed });
     const pcm = trimSilence(audio.audio as Float32Array, audio.sampling_rate as number);
     return { pcm, sampleRate: audio.sampling_rate as number };
   };
