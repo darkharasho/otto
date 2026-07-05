@@ -82,6 +82,9 @@ export class SpeechTextStream {
     // Sentence boundaries:
     //   - [.!?] followed by whitespace or end of string
     //   - any run of newlines (heading / bullet line breaks count)
+    // Known limitations: ellipses ("...") are treated as three sentence-ends;
+    // decimal numbers (e.g. "3.14") and abbreviations (e.g. "Dr.") split mid-phrase;
+    // em-dash separated clauses are not treated as boundaries.
     let pending = speakable;
     for (;;) {
       const m = pending.match(/([.!?])(\s+|$)|\n+/);

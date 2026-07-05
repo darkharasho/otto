@@ -40,12 +40,14 @@ export default defineConfig({
           },
           // onnxruntime-web 1.27.0 (resolved by vad-web 0.0.30) — wasm backends
           {
+            // Path includes the pnpm virtual-store address — update on vad-web version bump.
             src: resolve(
               'node_modules/.pnpm/@ricky0123+vad-web@0.0.30/node_modules/onnxruntime-web/dist/*.wasm',
             ),
             dest: 'vad',
           },
           {
+            // Path includes the pnpm virtual-store address — update on vad-web version bump.
             src: resolve(
               'node_modules/.pnpm/@ricky0123+vad-web@0.0.30/node_modules/onnxruntime-web/dist/*.mjs',
             ),
