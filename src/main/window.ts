@@ -1,6 +1,7 @@
 import { BrowserWindow, screen, app, shell } from 'electron';
 import path from 'node:path';
 import { logger } from './logger';
+import { attachContextMenu } from './context-menu';
 
 export type WindowMode = 'bar' | 'panel' | 'chat';
 
@@ -159,6 +160,7 @@ export class WindowManager {
     win.setAlwaysOnTop(true, 'floating');
     win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     win.removeMenu();
+    attachContextMenu(win);
 
     // Dev-only: F12 toggles DevTools (removeMenu() stripped the default
     // Cmd/Ctrl+Shift+I binding).

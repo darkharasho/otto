@@ -41,9 +41,10 @@ existing custom image menu in `ImageCard.tsx` keeps owning images.
 - **Spellchecker:** enabled via `session.setSpellCheckerLanguages` derived
   from `app.getLocale()` (fallback `en-US`), set once per session at attach
   time. `webPreferences.spellcheck` is Electron's default (on).
-- **Wiring:** `attachContextMenu(win)` called in `window.ts`,
-  `settings-window.ts`, and `overlay-window.ts` next to their `removeMenu()`
-  calls. The remote/mobile PWA is untouched.
+- **Wiring:** `attachContextMenu(win)` called in `window.ts` and
+  `settings-window.ts` next to their `removeMenu()` calls. The overlay window
+  is excluded: it is fully click-through (`setIgnoreMouseEvents(true)`), so a
+  right-click can never reach it. The remote/mobile PWA is untouched.
 
 ## Testing
 

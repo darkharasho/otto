@@ -3,6 +3,7 @@ import path from 'node:path';
 import { logger } from './logger';
 import { isDevInstance } from './instance';
 import { routeExternalLinksToBrowser } from './window';
+import { attachContextMenu } from './context-menu';
 
 const WIDTH = 780;
 const HEIGHT = 720;
@@ -66,6 +67,7 @@ export class SettingsWindowManager {
       },
     });
     win.removeMenu();
+    attachContextMenu(win);
 
     // Route the renderer to the Settings page via a hash.
     if (this.rendererUrl.startsWith('http')) {
