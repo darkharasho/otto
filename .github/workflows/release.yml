@@ -106,6 +106,23 @@ jobs:
         # arm64 binary — x64 gets Rosetta translation. For true universal,
         # a second node-gyp rebuild with --arch=x64 and lipo would be needed.
 
+      - name: Cache whisper-server binary (linux)
+        if: matrix.platform == 'linux'
+        id: cache-whisper
+        uses: actions/cache@v4
+        with:
+          path: resources/voice/whisper-server
+          key: whisper-server-v1.7.5
+
+      - name: Build whisper-server (linux, cache miss)
+        if: matrix.platform == 'linux' && steps.cache-whisper.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --branch v1.7.5 https://github.com/ggml-org/whisper.cpp /tmp/whisper-build
+          cmake -S /tmp/whisper-build -B /tmp/whisper-build/build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF
+          cmake --build /tmp/whisper-build/build -j$(nproc) --target whisper-server
+          mkdir -p resources/voice
+          cp /tmp/whisper-build/build/bin/whisper-server resources/voice/whisper-server
+
       - name: Build app
         run: pnpm build
         env:

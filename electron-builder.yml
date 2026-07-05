@@ -19,13 +19,6 @@ files:
   - "!**/node_modules/@anthropic-ai/claude-agent-sdk-*-musl/**"
 
 extraResources:
-  # Ship the whisper-server binary (built by scripts/setup-voice-dev.sh) into
-  # resources/voice/ in the packaged app. The glob targets the binary file only
-  # — models/ is intentionally excluded so multi-hundred-MB model files are
-  # never bundled. If electron-builder errors here about a missing source, run
-  # scripts/setup-voice-dev.sh first to build the binary.
-  - from: resources/voice/whisper-server
-    to: voice/whisper-server
   # Embedding model must live at <resourcesPath>/embedding — embedder.ts's
   # modelDir() resolves there when app.isPackaged. Shipping it via `files` +
   # asarUnpack put it at app.asar.unpacked/resources/embedding instead, which
@@ -46,6 +39,14 @@ linux:
   maintainer: otto-dev@otto.app
   icon: build/icon.png
   artifactName: ${productName}-${version}-${arch}.${ext}
+  extraResources:
+    # Ship the whisper-server binary (built by CI for releases, or by
+    # scripts/setup-voice-dev.sh locally) into resources/voice/ in the packaged
+    # app. Linux-only: mac/win CI does not build this binary, so it must not be
+    # referenced at the top-level or electron-builder will fail on those runners.
+    # The glob targets the binary only — models/ is excluded (multi-hundred-MB).
+    - from: resources/voice/whisper-server
+      to: voice/whisper-server
 
 win:
   target: nsis
