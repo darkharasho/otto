@@ -122,7 +122,8 @@ export async function createKokoroSynth(cacheDir: string): Promise<SynthFn> {
   return async (text: string, opts?: SynthOpts) => {
     const voice = opts?.voice ?? 'af_heart';
     const speed = opts?.speed ?? 1.05;
-    const audio = await tts.generate(text, { voice, speed });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const audio = await tts.generate(text, { voice: voice as any, speed });
     const pcm = trimSilence(audio.audio as Float32Array, audio.sampling_rate as number);
     return { pcm, sampleRate: audio.sampling_rate as number };
   };

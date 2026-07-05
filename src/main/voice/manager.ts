@@ -17,12 +17,14 @@ export class VoiceManager {
   private enabled = false;
   private respawns = 0;
   private modeChain: Promise<void> = Promise.resolve();
+  private previewGeneration = 0;
 
   constructor(
     private readonly opts: {
       assetsDir: string; // resources/voice
       cacheDir: string; // <userData>/voice-models
       emit(e: VoiceEvent): void;
+      getVoicePrefs(): { ttsVoice: string; speed: number };
     }
   ) {}
 
@@ -52,7 +54,13 @@ export class VoiceManager {
     // Kokoro: load once, reuse across mode toggles (model load is seconds).
     if (!this.synth) this.synth = await createKokoroSynth(this.opts.cacheDir);
     logger.info('[voice] Kokoro ready — starting whisper-server…');
-    if (!this.tts) this.tts = new TtsService(this.synth, this.opts.emit);
+    if (!this.tts) {
+      const wrappedSynth: SynthFn = (text, opts) => {
+        const prefs = this.opts.getVoicePrefs();
+        return this.synth!(text, { voice: opts?.voice ?? prefs.ttsVoice, speed: opts?.speed ?? prefs.speed });
+      };
+      this.tts = new TtsService(wrappedSynth, this.opts.emit);
+    }
     if (!this.pipeline) this.pipeline = new SpeechPipeline(this.tts);
 
     if (!this.whisper) {
@@ -100,6 +108,30 @@ export class VoiceManager {
 
   cancelSpeech(): void {
     this.tts?.cancel();
+  }
+
+  async preview(voiceId: string): Promise<void> {
+    const SAMPLE = "Hey, I'm Otto. This is how I sound — want me to keep this voice?";
+    // Cancel any in-flight preview or TTS speech.
+    this.tts?.cancel();
+    this.previewGeneration++;
+    const gen = this.previewGeneration;
+
+    // Lazily init synth if not yet loaded (mirrors setModeImpl lazy path).
+    if (!this.synth) {
+      this.synth = await createKokoroSynth(this.opts.cacheDir);
+    }
+
+    // Guard: cancelled while we were loading.
+    if (gen !== this.previewGeneration) return;
+
+    const prefs = this.opts.getVoicePrefs();
+    const { pcm, sampleRate } = await this.synth(SAMPLE, { voice: voiceId, speed: prefs.speed });
+
+    if (gen !== this.previewGeneration) return;
+
+    const buf = pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength) as ArrayBuffer;
+    this.opts.emit({ type: 'tts-chunk', pcm: buf, sampleRate });
   }
 
   async dispose(): Promise<void> {
