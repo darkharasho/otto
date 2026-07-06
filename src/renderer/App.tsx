@@ -452,6 +452,22 @@ export function App() {
         onSelectSession={handleSelectSession}
         isPrivate={showPrivate}
         voice={voiceProp}
+        topicShift={
+          pendingTopicShift
+            ? {
+                onStartNew: () => {
+                  const p = pendingTopicShift;
+                  setPendingTopicShift(null);
+                  if (p) void handleNewConversation(p);
+                },
+                onKeepGoing: () => {
+                  const p = pendingTopicShift;
+                  setPendingTopicShift(null);
+                  if (p) void submitToActiveSession(p);
+                },
+              }
+            : undefined
+        }
       />
     );
   }
