@@ -173,17 +173,17 @@ describe('TopicShiftDetector.evaluate', () => {
     expect(result.suggest).toBe(false);
   });
 
-  it('returns suggest=true when similarity is clearly below threshold', async () => {
+  it('returns suggest=true when similarity is clearly below threshold and no confirmer is configured', async () => {
     const messages = [userMsg('about cooking', 0)];
     const map = new Map<string, number[]>([
       ['user: about cooking', ALIGNED],
-      ['rocket science', ORTHOGONAL],
+      ['tell me about rocket science', ORTHOGONAL],
     ]);
     const d = new TopicShiftDetector({
       repo: fakeRepoWith(messages),
       embedder: makeEmbedder(map),
     });
-    const result = await d.evaluate('s1', 'rocket science');
+    const result = await d.evaluate('s1', 'tell me about rocket science');
     expect(result.suggest).toBe(true);
     expect(result.similarity).toBeCloseTo(0.0, 5);
   });
@@ -194,13 +194,13 @@ describe('TopicShiftDetector.evaluate', () => {
     const SIMILAR = [0.5, Math.sqrt(0.75), 0];
     const map = new Map<string, number[]>([
       ['user: about cooking', ALIGNED],
-      ['more about food', SIMILAR],
+      ['tell me more about food', SIMILAR],
     ]);
     const d = new TopicShiftDetector({
       repo: fakeRepoWith(messages),
       embedder: makeEmbedder(map),
     });
-    const result = await d.evaluate('s1', 'more about food');
+    const result = await d.evaluate('s1', 'tell me more about food');
     expect(result.suggest).toBe(false);
     expect(result.similarity).toBeCloseTo(0.5, 5);
   });
@@ -213,13 +213,13 @@ describe('TopicShiftDetector.evaluate', () => {
     const AT_THRESHOLD = [0.35001, Math.sqrt(1 - 0.35001 * 0.35001), 0];
     const map = new Map<string, number[]>([
       ['user: about cooking', ALIGNED],
-      ['edge case', AT_THRESHOLD],
+      ['this is an edge case', AT_THRESHOLD],
     ]);
     const d = new TopicShiftDetector({
       repo: fakeRepoWith(messages),
       embedder: makeEmbedder(map),
     });
-    const result = await d.evaluate('s1', 'edge case');
+    const result = await d.evaluate('s1', 'this is an edge case');
     expect(result.similarity).toBeGreaterThanOrEqual(0.35);
     expect(result.suggest).toBe(false);
   });
@@ -228,7 +228,7 @@ describe('TopicShiftDetector.evaluate', () => {
     const messages = [userMsg('about cooking', 0)];
     const throwingEmbedder = {
       isAvailable: true,
-      async embedBatch() {
+      async embedBatch(): Promise<Float32Array[]> {
         throw new Error('inference exploded');
       },
     };
@@ -236,8 +236,157 @@ describe('TopicShiftDetector.evaluate', () => {
       repo: fakeRepoWith(messages),
       embedder: throwingEmbedder,
     });
-    const result = await d.evaluate('s1', 'anything');
+    const result = await d.evaluate('s1', 'four whole words here');
     expect(result.suggest).toBe(false);
     expect(Number.isNaN(result.similarity)).toBe(true);
+  });
+
+  it('returns suggest=false for prompts under the min word count without consulting the embedder', async () => {
+    const throwingEmbedder = {
+      isAvailable: true,
+      async embedBatch(): Promise<Float32Array[]> {
+        throw new Error('embedder must not be called for short prompts');
+      },
+    };
+    const d = new TopicShiftDetector({
+      repo: fakeRepoWith([userMsg('about cooking', 0)]),
+      embedder: throwingEmbedder,
+    });
+    for (const prompt of ['A', 'yes', 'yeah do it', '  do   it  ']) {
+      const result = await d.evaluate('s1', prompt);
+      expect(result.suggest).toBe(false);
+      expect(Number.isNaN(result.similarity)).toBe(true);
+    }
+  });
+});
+
+describe('TopicShiftDetector.evaluate with LLM confirmer', () => {
+  function makeEmbedder(map: Map<string, number[]>) {
+    return {
+      isAvailable: true,
+      async embedBatch(texts: string[]) {
+        return texts.map((t) => {
+          const vec = map.get(t);
+          if (!vec) throw new Error(`fake embedder: no vector for ${JSON.stringify(t)}`);
+          return new Float32Array(vec);
+        });
+      },
+    };
+  }
+
+  const ALIGNED = [1, 0, 0];
+  const ORTHOGONAL = [0, 1, 0];
+  const PROMPT = 'tell me about rocket science';
+
+  function lowSimDeps(confirmer: { run(prompt: string, opts: { signal: AbortSignal }): Promise<string> }, confirmTimeoutMs?: number) {
+    const map = new Map<string, number[]>([
+      ['user: about cooking', ALIGNED],
+      [PROMPT, ORTHOGONAL],
+    ]);
+    return {
+      repo: { loadMessages: () => [userMsg('about cooking', 0)] },
+      embedder: makeEmbedder(map),
+      confirmer,
+      confirmTimeoutMs,
+    };
+  }
+
+  it('suggests only when the confirmer answers newTopic=true', async () => {
+    const seen: string[] = [];
+    const d = new TopicShiftDetector(
+      lowSimDeps({
+        async run(prompt) {
+          seen.push(prompt);
+          return '{"newTopic": true}';
+        },
+      }),
+    );
+    const result = await d.evaluate('s1', PROMPT);
+    expect(result.suggest).toBe(true);
+    expect(result.similarity).toBeCloseTo(0.0, 5);
+    // The confirmer prompt must carry both the context and the new message.
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toContain('about cooking');
+    expect(seen[0]).toContain(PROMPT);
+  });
+
+  it('does not suggest when the confirmer answers newTopic=false', async () => {
+    const d = new TopicShiftDetector(
+      lowSimDeps({
+        async run() {
+          return 'Sure! Here is the JSON you asked for: {"newTopic": false}';
+        },
+      }),
+    );
+    const result = await d.evaluate('s1', PROMPT);
+    expect(result.suggest).toBe(false);
+  });
+
+  it('does not suggest when the confirmer throws', async () => {
+    const d = new TopicShiftDetector(
+      lowSimDeps({
+        async run(): Promise<string> {
+          throw new Error('sdk exploded');
+        },
+      }),
+    );
+    const result = await d.evaluate('s1', PROMPT);
+    expect(result.suggest).toBe(false);
+  });
+
+  it('does not suggest when the confirmer returns non-JSON garbage', async () => {
+    const d = new TopicShiftDetector(
+      lowSimDeps({
+        async run() {
+          return 'I think this is probably a new topic, yes.';
+        },
+      }),
+    );
+    const result = await d.evaluate('s1', PROMPT);
+    expect(result.suggest).toBe(false);
+  });
+
+  it('does not suggest and aborts when the confirmer exceeds the timeout', async () => {
+    let aborted = false;
+    const d = new TopicShiftDetector(
+      lowSimDeps(
+        {
+          run(_prompt, { signal }) {
+            return new Promise<string>((_resolve, reject) => {
+              signal.addEventListener('abort', () => {
+                aborted = true;
+                reject(new Error('aborted'));
+              });
+            });
+          },
+        },
+        10,
+      ),
+    );
+    const result = await d.evaluate('s1', PROMPT);
+    expect(result.suggest).toBe(false);
+    expect(aborted).toBe(true);
+  });
+
+  it('does not consult the confirmer when similarity is above threshold', async () => {
+    const SIMILAR = [0.5, Math.sqrt(0.75), 0];
+    const map = new Map<string, number[]>([
+      ['user: about cooking', ALIGNED],
+      ['tell me more about food', SIMILAR],
+    ]);
+    let called = false;
+    const d = new TopicShiftDetector({
+      repo: { loadMessages: () => [userMsg('about cooking', 0)] },
+      embedder: makeEmbedder(map),
+      confirmer: {
+        async run() {
+          called = true;
+          return '{"newTopic": true}';
+        },
+      },
+    });
+    const result = await d.evaluate('s1', 'tell me more about food');
+    expect(result.suggest).toBe(false);
+    expect(called).toBe(false);
   });
 });

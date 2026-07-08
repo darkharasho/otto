@@ -1,12 +1,30 @@
 import type { Repo } from '../db/repo';
 import type { Embedder } from '../embeddings/embedder';
 import type { ContentBlock, Message } from '@shared/messages';
-import { CONTEXT_WINDOW_CHARS, SIMILARITY_THRESHOLD } from '@shared/topic-shift-constants';
+import {
+  CONTEXT_WINDOW_CHARS,
+  MIN_PROMPT_WORDS,
+  SIMILARITY_THRESHOLD,
+  TOPIC_SHIFT_CONFIRM_TIMEOUT_MS,
+} from '@shared/topic-shift-constants';
+import { extractFirstJsonObject } from '../reflection/reflector';
 import { logger } from '../logger';
+
+export interface TopicShiftConfirmer {
+  run(prompt: string, opts: { signal: AbortSignal }): Promise<string>;
+}
 
 export interface TopicShiftDetectorDeps {
   repo: Pick<Repo, 'loadMessages'>;
   embedder: Pick<Embedder, 'embedBatch' | 'isAvailable'>;
+  /**
+   * Optional LLM yes/no check consulted after the embedding prefilter flags a
+   * potential shift. Embedding similarity alone cannot separate real topic
+   * shifts from casual follow-ups (measured distributions overlap fully), so
+   * when a confirmer is configured the popup only fires on its say-so.
+   */
+  confirmer?: TopicShiftConfirmer;
+  confirmTimeoutMs?: number;
 }
 
 export interface EvaluateResult {
@@ -38,22 +56,74 @@ export class TopicShiftDetector {
     if (!this.deps.embedder.isAvailable) {
       return { suggest: false, similarity: NaN };
     }
+    if (newPrompt.trim().split(/\s+/).filter(Boolean).length < MIN_PROMPT_WORDS) {
+      return { suggest: false, similarity: NaN };
+    }
     const context = this.buildContextWindow(sessionId);
     if (context.length === 0) {
       return { suggest: false, similarity: NaN };
     }
+    let sim: number;
     try {
       const [ctxVec, promptVec] = await this.deps.embedder.embedBatch([context, newPrompt]);
       if (!ctxVec || !promptVec) {
         return { suggest: false, similarity: NaN };
       }
-      const sim = cosineSimilarity(ctxVec, promptVec);
-      return { suggest: sim < SIMILARITY_THRESHOLD, similarity: sim };
+      sim = cosineSimilarity(ctxVec, promptVec);
     } catch (err) {
       logger.warn(`topic-shift evaluate failed: ${err instanceof Error ? err.message : err}`);
       return { suggest: false, similarity: NaN };
     }
+    if (!(sim < SIMILARITY_THRESHOLD)) {
+      return { suggest: false, similarity: sim };
+    }
+    if (!this.deps.confirmer) {
+      return { suggest: true, similarity: sim };
+    }
+    const confirmed = await this.confirmShift(context, newPrompt);
+    return { suggest: confirmed, similarity: sim };
   }
+
+  private async confirmShift(context: string, newPrompt: string): Promise<boolean> {
+    const timeoutMs = this.deps.confirmTimeoutMs ?? TOPIC_SHIFT_CONFIRM_TIMEOUT_MS;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const raw = await this.deps.confirmer!.run(confirmerPrompt(context, newPrompt), {
+        signal: controller.signal,
+      });
+      const parsed = extractFirstJsonObject(raw);
+      if (parsed === null || typeof parsed !== 'object' || !('newTopic' in parsed)) {
+        logger.warn(`topic-shift confirmer returned unparseable output: ${raw.slice(0, 200)}`);
+        return false;
+      }
+      return (parsed as { newTopic: unknown }).newTopic === true;
+    } catch (err) {
+      const reason = controller.signal.aborted ? 'timeout' : err instanceof Error ? err.message : err;
+      logger.warn(`topic-shift confirmer failed: ${reason}`);
+      return false;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+
+function confirmerPrompt(context: string, newPrompt: string): string {
+  return [
+    'A user is chatting with a desktop assistant. Given the conversation so far and their newest message, decide whether the newest message starts a genuinely different task or topic (not a follow-up, answer, correction, or aside within the current task).',
+    '',
+    'Conversation so far:',
+    '---',
+    context,
+    '---',
+    '',
+    'Newest message:',
+    '---',
+    newPrompt,
+    '---',
+    '',
+    'Respond with ONLY this JSON: {"newTopic": true} or {"newTopic": false}',
+  ].join('\n');
 }
 
 function renderMessageLine(m: Message): string | null {

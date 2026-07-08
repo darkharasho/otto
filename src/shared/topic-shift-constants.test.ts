@@ -19,7 +19,7 @@ describe('topic-shift constants', () => {
     expect(CONTEXT_WINDOW_CHARS).toBe(2000);
   });
 
-  it('TOPIC_SHIFT_EVALUATE_TIMEOUT_MS is 2 seconds', () => {
-    expect(TOPIC_SHIFT_EVALUATE_TIMEOUT_MS).toBe(2000);
+  it('TOPIC_SHIFT_EVALUATE_TIMEOUT_MS covers the confirmer round-trip', () => {
+    expect(TOPIC_SHIFT_EVALUATE_TIMEOUT_MS).toBe(8000);
   });
 });

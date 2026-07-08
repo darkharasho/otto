@@ -61,7 +61,7 @@ export async function reflect(args: ReflectArgs): Promise<ReflectOutcome> {
   }
 }
 
-function extractFirstJsonObject(text: string): unknown | null {
+export function extractFirstJsonObject(text: string): unknown | null {
   const start = text.indexOf('{');
   if (start === -1) return null;
   let depth = 0;

@@ -265,7 +265,10 @@ async function startElectron(): Promise<void> {
 
   const memorySearch = new MemorySearch({ factRepo, artifactRepo, embedder, db });
 
-  async function runReflectorSdk(prompt: string, opts: { model?: string; signal?: AbortSignal }): Promise<string> {
+  async function runReflectorSdk(
+    prompt: string,
+    opts: { model?: string; signal?: AbortSignal; systemPrompt?: string },
+  ): Promise<string> {
     const sdkMod = await import('@anthropic-ai/claude-agent-sdk');
     const { getSdkSpawnOverrides } = await import('./agent/sdk-client');
     const ac = new AbortController();
@@ -282,6 +285,7 @@ async function startElectron(): Promise<void> {
       options: {
         model: opts.model ?? 'claude-haiku-4-5-20251001',
         systemPrompt:
+          opts.systemPrompt ??
           'You are Otto\'s reflection step. Output ONLY the JSON object requested by the user prompt — no prose, no markdown fences, no commentary.',
         tools: [],
         allowedTools: [],
@@ -429,6 +433,14 @@ async function startElectron(): Promise<void> {
   const topicShiftDetector = new TopicShiftDetector({
     repo,
     embedder: getEmbedder(),
+    confirmer: {
+      run: (prompt, opts) =>
+        runReflectorSdk(prompt, {
+          signal: opts.signal,
+          systemPrompt:
+            'You are Otto\'s topic-shift check. Output ONLY the JSON object requested by the user prompt — no prose, no markdown fences, no commentary.',
+        }),
+    },
   });
   // Remote (iPhone) inputs no longer route through the bus input queue —
   // BridgeServer now invokes sendPrompt/interruptTurn callbacks directly
