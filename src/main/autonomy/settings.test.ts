@@ -26,7 +26,7 @@ describe('Settings.load', () => {
     await s.load();
     expect(s.getMode()).toBe('balanced');
     const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
-    expect(written.version).toBe(6);
+    expect(written.version).toBe(7);
     expect(written.autonomy).toEqual({ mode: 'balanced' });
     expect(written.notifications).toEqual({ turnComplete: true, approval: true, sound: false });
     expect(written.startAtLogin).toBe(false);
@@ -57,7 +57,7 @@ describe('Settings.load', () => {
     await s.load();
     expect(s.getDisplayTarget()).toBe('cursor');
     const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
-    expect(written.version).toBe(6);
+    expect(written.version).toBe(7);
     expect(written.displayTarget).toBe('cursor');
   });
 
@@ -137,7 +137,7 @@ describe('Settings — newConversation', () => {
     await s.load();
     expect(s.getNewConversationIdleTimeoutMinutes()).toBe(60);
     const raw = JSON.parse(await fs.readFile(file, 'utf8'));
-    expect(raw.version).toBe(6);
+    expect(raw.version).toBe(7);
     expect(raw.newConversation).toEqual({ idleTimeoutMinutes: 60 });
   });
 
@@ -165,7 +165,7 @@ describe('Settings — voice prefs (v5→v6 migration)', () => {
     await s.load();
     expect(s.getVoicePrefs()).toEqual({ ttsVoice: 'af_heart', speed: 1.05, whisperModel: 'small.en', endpointMs: 650 });
     const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
-    expect(written.version).toBe(6);
+    expect(written.version).toBe(7);
     expect(written.voice).toEqual({ ttsVoice: 'af_heart', speed: 1.05, whisperModel: 'small.en', endpointMs: 650 });
   });
 
@@ -192,7 +192,7 @@ describe('Settings — voice prefs (v5→v6 migration)', () => {
     await s.load();
     expect(s.getVoicePrefs()).toEqual({ ttsVoice: 'af_heart', speed: 1.05, whisperModel: 'small.en', endpointMs: 650 });
     const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
-    expect(written.version).toBe(6);
+    expect(written.version).toBe(7);
   });
 
   it('setVoicePrefs persists partial update', async () => {
@@ -203,5 +203,92 @@ describe('Settings — voice prefs (v5→v6 migration)', () => {
     const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
     expect(written.voice.ttsVoice).toBe('bm_george');
     expect(written.voice.speed).toBe(1.05);
+  });
+});
+
+describe('Settings — topicShiftSensitivity (v6→v7 migration)', () => {
+  it('defaults to low on fresh install', async () => {
+    const s = new Settings(settingsPath());
+    await s.load();
+    expect(s.getTopicShiftSensitivity()).toBe('low');
+    const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
+    expect(written.version).toBe(7);
+    expect(written.topicShiftSensitivity).toBe('low');
+  });
+
+  it('migrates a v6 file by adding topicShiftSensitivity=low', async () => {
+    writeFileSync(
+      settingsPath(),
+      JSON.stringify({
+        version: 6,
+        autonomy: { mode: 'balanced' },
+        notifications: { turnComplete: true, approval: true, sound: false },
+        startAtLogin: false,
+        windowPosition: 'bottom-center',
+        displayTarget: 'cursor',
+        autoDeleteDays: 0,
+        hideOnBlur: false,
+        showReasoning: true,
+        newConversation: { idleTimeoutMinutes: 60 },
+        chatBounds: null,
+        lastVisibleMode: 'bar',
+        pinnedSessionIds: [],
+        voice: { ttsVoice: 'af_heart', speed: 1.05, whisperModel: 'small.en', endpointMs: 650 },
+      })
+    );
+    const s = new Settings(settingsPath());
+    await s.load();
+    expect(s.getTopicShiftSensitivity()).toBe('low');
+    const raw = JSON.parse(readFileSync(settingsPath(), 'utf8'));
+    expect(raw.version).toBe(7);
+    expect(raw.topicShiftSensitivity).toBe('low');
+  });
+
+  it('preserves an explicit topicShiftSensitivity on a v7 file', async () => {
+    writeFileSync(
+      settingsPath(),
+      JSON.stringify({
+        version: 7,
+        autonomy: { mode: 'balanced' },
+        notifications: { turnComplete: true, approval: true, sound: false },
+        startAtLogin: false,
+        windowPosition: 'bottom-center',
+        displayTarget: 'cursor',
+        autoDeleteDays: 0,
+        hideOnBlur: false,
+        showReasoning: true,
+        newConversation: { idleTimeoutMinutes: 60 },
+        chatBounds: null,
+        lastVisibleMode: 'bar',
+        pinnedSessionIds: [],
+        voice: { ttsVoice: 'af_heart', speed: 1.05, whisperModel: 'small.en', endpointMs: 650 },
+        topicShiftSensitivity: 'high',
+      })
+    );
+    const s = new Settings(settingsPath());
+    await s.load();
+    expect(s.getTopicShiftSensitivity()).toBe('high');
+  });
+
+  it('falls back to low for an invalid stored value', async () => {
+    writeFileSync(
+      settingsPath(),
+      JSON.stringify({ version: 7, autonomy: { mode: 'balanced' }, topicShiftSensitivity: 'bogus' })
+    );
+    const s = new Settings(settingsPath());
+    await s.load();
+    expect(s.getTopicShiftSensitivity()).toBe('low');
+  });
+
+  it('setTopicShiftSensitivity persists a valid value and rejects invalid', async () => {
+    const s = new Settings(settingsPath());
+    await s.load();
+    await s.setTopicShiftSensitivity('off');
+    expect(s.getTopicShiftSensitivity()).toBe('off');
+    const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
+    expect(written.topicShiftSensitivity).toBe('off');
+    await expect(
+      s.setTopicShiftSensitivity('nope' as unknown as 'off')
+    ).rejects.toThrow();
   });
 });

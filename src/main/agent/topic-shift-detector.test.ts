@@ -390,3 +390,127 @@ describe('TopicShiftDetector.evaluate with LLM confirmer', () => {
     expect(called).toBe(false);
   });
 });
+
+describe('TopicShiftDetector.evaluate sensitivity', () => {
+  function makeEmbedder(map: Map<string, number[]>) {
+    return {
+      isAvailable: true,
+      async embedBatch(texts: string[]) {
+        return texts.map((t) => {
+          const vec = map.get(t);
+          if (!vec) throw new Error(`fake embedder: no vector for ${JSON.stringify(t)}`);
+          return new Float32Array(vec);
+        });
+      },
+    };
+  }
+  const ALIGNED = [1, 0, 0];
+  // cosine([1,0,0], [c, sqrt(1-c^2), 0]) === c
+  const atSim = (c: number) => [c, Math.sqrt(1 - c * c), 0];
+  const PROMPT = 'tell me about rocket science stuff';
+
+  function depsWithSim(sim: number, sensitivity: string, extra: Record<string, unknown> = {}) {
+    const map = new Map<string, number[]>([
+      ['user: about cooking', ALIGNED],
+      [PROMPT, atSim(sim)],
+    ]);
+    return {
+      repo: { loadMessages: () => [userMsg('about cooking', 0)] },
+      embedder: makeEmbedder(map),
+      getSensitivity: () => sensitivity as never,
+      ...extra,
+    };
+  }
+
+  it('off never consults the embedder and never suggests', async () => {
+    const throwing = {
+      isAvailable: true,
+      async embedBatch(): Promise<Float32Array[]> {
+        throw new Error('embedder must not be called when sensitivity is off');
+      },
+    };
+    const d = new TopicShiftDetector({
+      repo: { loadMessages: () => [userMsg('about cooking', 0)] },
+      embedder: throwing,
+      getSensitivity: () => 'off' as never,
+    });
+    const result = await d.evaluate('s1', PROMPT);
+    expect(result.suggest).toBe(false);
+  });
+
+  it('high flags a mid-similarity prompt (0.40) that medium would not', async () => {
+    // No confirmer → suggest mirrors the embedding flag.
+    const high = new TopicShiftDetector(depsWithSim(0.4, 'high'));
+    expect((await high.evaluate('s1', PROMPT)).suggest).toBe(true);
+
+    const medium = new TopicShiftDetector(depsWithSim(0.4, 'medium'));
+    expect((await medium.evaluate('s1', PROMPT)).suggest).toBe(false);
+  });
+
+  it('low does NOT flag a prompt (0.30) that medium would', async () => {
+    const low = new TopicShiftDetector(depsWithSim(0.3, 'low'));
+    expect((await low.evaluate('s1', PROMPT)).suggest).toBe(false);
+
+    const medium = new TopicShiftDetector(depsWithSim(0.3, 'medium'));
+    expect((await medium.evaluate('s1', PROMPT)).suggest).toBe(true);
+  });
+
+  it('low requires at least 6 words; a 5-word prompt bypasses the embedder', async () => {
+    const throwing = {
+      isAvailable: true,
+      async embedBatch(): Promise<Float32Array[]> {
+        throw new Error('short prompt must bypass the embedder');
+      },
+    };
+    const d = new TopicShiftDetector({
+      repo: { loadMessages: () => [userMsg('about cooking', 0)] },
+      embedder: throwing,
+      getSensitivity: () => 'low' as never,
+    });
+    const result = await d.evaluate('s1', 'one two three four five');
+    expect(result.suggest).toBe(false);
+  });
+
+  it('low biases the confirmer prompt toward conservative; medium does not', async () => {
+    const lowSeen: string[] = [];
+    const low = new TopicShiftDetector(
+      depsWithSim(0.2, 'low', {
+        confirmer: {
+          async run(prompt: string) {
+            lowSeen.push(prompt);
+            return '{"newTopic": false}';
+          },
+        },
+      }),
+    );
+    await low.evaluate('s1', PROMPT);
+    expect(lowSeen[0]).toMatch(/only.*clearly (unrelated|different)/i);
+
+    const medSeen: string[] = [];
+    const medium = new TopicShiftDetector(
+      depsWithSim(0.2, 'medium', {
+        confirmer: {
+          async run(prompt: string) {
+            medSeen.push(prompt);
+            return '{"newTopic": false}';
+          },
+        },
+      }),
+    );
+    await medium.evaluate('s1', PROMPT);
+    expect(medSeen[0]).not.toMatch(/only.*clearly (unrelated|different)/i);
+  });
+
+  it('defaults to medium behavior when no getSensitivity is provided', async () => {
+    // 0.30 < 0.35 (medium) → flagged; no confirmer → suggest true.
+    const map = new Map<string, number[]>([
+      ['user: about cooking', ALIGNED],
+      [PROMPT, atSim(0.3)],
+    ]);
+    const d = new TopicShiftDetector({
+      repo: { loadMessages: () => [userMsg('about cooking', 0)] },
+      embedder: makeEmbedder(map),
+    });
+    expect((await d.evaluate('s1', PROMPT)).suggest).toBe(true);
+  });
+});

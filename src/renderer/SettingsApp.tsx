@@ -15,6 +15,7 @@ import { ReasoningSection } from './components/settings/ReasoningSection';
 import { NotificationsSection } from './components/settings/NotificationsSection';
 import { SessionHistorySection } from './components/settings/SessionHistorySection';
 import { NewConversationSection } from './components/settings/NewConversationSection';
+import { TopicShiftSection } from './components/settings/TopicShiftSection';
 import { MemorySection, type MemoryKind } from './components/settings/MemorySection';
 import { AboutSection } from './components/settings/AboutSection';
 import { UpdatesSection } from './components/settings/UpdatesSection';
@@ -220,6 +221,16 @@ function renderSubsection(args: RenderArgs) {
           onIdleTimeoutChange={(minutes) => {
             patch('newConversation', { idleTimeoutMinutes: minutes });
             void ipc.invoke('settings.setNewConversationIdleTimeoutMinutes', { minutes });
+          }}
+        />
+      );
+    if (activeSub === 'topicShift')
+      return (
+        <TopicShiftSection
+          sensitivity={s.topicShiftSensitivity}
+          onChange={(sensitivity) => {
+            patch('topicShiftSensitivity', sensitivity);
+            void ipc.invoke('settings.setTopicShiftSensitivity', { sensitivity });
           }}
         />
       );

@@ -3,9 +3,9 @@ import type { Embedder } from '../embeddings/embedder';
 import type { ContentBlock, Message } from '@shared/messages';
 import {
   CONTEXT_WINDOW_CHARS,
-  MIN_PROMPT_WORDS,
-  SIMILARITY_THRESHOLD,
   TOPIC_SHIFT_CONFIRM_TIMEOUT_MS,
+  paramsForSensitivity,
+  type TopicShiftSensitivity,
 } from '@shared/topic-shift-constants';
 import { extractFirstJsonObject } from '../reflection/reflector';
 import { logger } from '../logger';
@@ -25,6 +25,11 @@ export interface TopicShiftDetectorDeps {
    */
   confirmer?: TopicShiftConfirmer;
   confirmTimeoutMs?: number;
+  /**
+   * Reads the user's current sensitivity dial at evaluate time. Absent → the
+   * detector behaves as `medium` (the legacy thresholds).
+   */
+  getSensitivity?: () => TopicShiftSensitivity;
 }
 
 export interface EvaluateResult {
@@ -53,10 +58,14 @@ export class TopicShiftDetector {
   }
 
   async evaluate(sessionId: string, newPrompt: string): Promise<EvaluateResult> {
+    const params = paramsForSensitivity(this.deps.getSensitivity?.() ?? 'medium');
+    if (!params.enabled) {
+      return { suggest: false, similarity: NaN };
+    }
     if (!this.deps.embedder.isAvailable) {
       return { suggest: false, similarity: NaN };
     }
-    if (newPrompt.trim().split(/\s+/).filter(Boolean).length < MIN_PROMPT_WORDS) {
+    if (newPrompt.trim().split(/\s+/).filter(Boolean).length < params.minPromptWords) {
       return { suggest: false, similarity: NaN };
     }
     const context = this.buildContextWindow(sessionId);
@@ -74,22 +83,26 @@ export class TopicShiftDetector {
       logger.warn(`topic-shift evaluate failed: ${err instanceof Error ? err.message : err}`);
       return { suggest: false, similarity: NaN };
     }
-    if (!(sim < SIMILARITY_THRESHOLD)) {
+    if (!(sim < params.similarityThreshold)) {
       return { suggest: false, similarity: sim };
     }
     if (!this.deps.confirmer) {
       return { suggest: true, similarity: sim };
     }
-    const confirmed = await this.confirmShift(context, newPrompt);
+    const confirmed = await this.confirmShift(context, newPrompt, params.confirmerConservative);
     return { suggest: confirmed, similarity: sim };
   }
 
-  private async confirmShift(context: string, newPrompt: string): Promise<boolean> {
+  private async confirmShift(
+    context: string,
+    newPrompt: string,
+    conservative: boolean,
+  ): Promise<boolean> {
     const timeoutMs = this.deps.confirmTimeoutMs ?? TOPIC_SHIFT_CONFIRM_TIMEOUT_MS;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const raw = await this.deps.confirmer!.run(confirmerPrompt(context, newPrompt), {
+      const raw = await this.deps.confirmer!.run(confirmerPrompt(context, newPrompt, conservative), {
         signal: controller.signal,
       });
       const parsed = extractFirstJsonObject(raw);
@@ -108,9 +121,14 @@ export class TopicShiftDetector {
   }
 }
 
-function confirmerPrompt(context: string, newPrompt: string): string {
+function confirmerPrompt(context: string, newPrompt: string, conservative: boolean): string {
   return [
     'A user is chatting with a desktop assistant. Given the conversation so far and their newest message, decide whether the newest message starts a genuinely different task or topic (not a follow-up, answer, correction, or aside within the current task).',
+    ...(conservative
+      ? [
+          'Be conservative: answer true ONLY when the newest message is clearly unrelated to the current task. When in doubt, or when it could plausibly be a follow-up, answer false.',
+        ]
+      : []),
     '',
     'Conversation so far:',
     '---',

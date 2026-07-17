@@ -1,5 +1,6 @@
 import type { ActionClass, AutonomyMode, ContentBlock, Message, SessionMeta } from './messages';
 import type { VoiceEvent } from './voice';
+import type { TopicShiftSensitivity } from './topic-shift-constants';
 
 export type WindowMode = 'bar' | 'panel' | 'chat';
 
@@ -137,6 +138,11 @@ export type IpcRequest =
   | { channel: 'settings.setHideOnBlur'; args: { enabled: boolean }; result: void }
   | { channel: 'settings.setShowReasoning'; args: { enabled: boolean }; result: void }
   | { channel: 'settings.setNewConversationIdleTimeoutMinutes'; args: { minutes: number }; result: void }
+  | {
+      channel: 'settings.setTopicShiftSensitivity';
+      args: { sensitivity: TopicShiftSensitivity };
+      result: void;
+    }
   | { channel: 'settings.openLogsDir'; args: void; result: void }
   | { channel: 'settings.resetAllSessions'; args: void; result: { deleted: number } }
   | { channel: 'settings.setPinnedSessionIds'; args: { ids: string[] }; result: void }
@@ -254,6 +260,7 @@ export interface SettingsView {
   hideOnBlur: boolean;
   showReasoning: boolean;
   newConversation: { idleTimeoutMinutes: number };
+  topicShiftSensitivity: TopicShiftSensitivity;
   version: string;
   chatBounds: ChatBounds | null;
   lastVisibleMode: WindowMode;

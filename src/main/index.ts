@@ -433,6 +433,7 @@ async function startElectron(): Promise<void> {
   const topicShiftDetector = new TopicShiftDetector({
     repo,
     embedder: getEmbedder(),
+    getSensitivity: () => settings.getTopicShiftSensitivity(),
     confirmer: {
       run: (prompt, opts) =>
         runReflectorSdk(prompt, {
