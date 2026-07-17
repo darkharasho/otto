@@ -3,7 +3,11 @@ import { ipc } from './ipc';
 import { useOttoStore, isSessionBusy, canProactivelyReset } from './state/store';
 import { useVoice } from './voice/useVoice';
 import type { ContentBlock } from '@shared/messages';
-import { IDLE_GATE_MS, TOPIC_SHIFT_EVALUATE_TIMEOUT_MS } from '@shared/topic-shift-constants';
+import {
+  TOPIC_SHIFT_EVALUATE_TIMEOUT_MS,
+  paramsForSensitivity,
+  type TopicShiftSensitivity,
+} from '@shared/topic-shift-constants';
 import { CommandBar } from './components/CommandBar';
 import { Panel } from './components/Panel';
 import { MessageList } from './components/MessageList';
@@ -39,9 +43,14 @@ export function App() {
     void ipc.invoke('autonomy.getMode', undefined).then((m) => useOttoStore.getState().setMode(m));
   }, []);
 
+  // Mirror of the topic-shift sensitivity setting, read at mount. The renderer
+  // uses it only to gate/skip the detector call; the main-process detector
+  // reads the live value itself, so a stale mirror can never over-suggest.
+  const topicShiftSensitivity = useRef<TopicShiftSensitivity>('low');
   useEffect(() => {
     void ipc.invoke('settings.get', undefined).then((s) => {
       useOttoStore.getState().setPinnedSessionIds(s.pinnedSessionIds);
+      topicShiftSensitivity.current = s.topicShiftSensitivity;
     });
   }, []);
 
@@ -160,9 +169,11 @@ export function App() {
     async ({ text, attachments }: { text: string; attachments: ImageRef[] }) => {
       const sessionId = activeSession?.id ?? null;
       const idleMs = Date.now() - lastUserSubmitAt.current;
-      // Only consult the detector if we have an active session AND the user has
-      // been idle long enough. Fresh-session submits always go straight through.
-      if (sessionId && idleMs >= IDLE_GATE_MS) {
+      const detect = paramsForSensitivity(topicShiftSensitivity.current);
+      // Only consult the detector if it's enabled, we have an active session,
+      // AND the user has been idle long enough. Fresh-session submits always go
+      // straight through.
+      if (detect.enabled && sessionId && idleMs >= detect.idleGateMs) {
         try {
           const result = await Promise.race([
             ipc.invoke('topicShift.evaluate', { sessionId, newPrompt: text }),
@@ -352,6 +363,9 @@ export function App() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
+      // While the topic-shift popup is up, Esc means "keep going" and is owned
+      // by the chip — don't also collapse the window here.
+      if (pendingTopicShift) return;
       if (streaming && activeSession?.id) {
         handleStop();
         return;
@@ -370,7 +384,7 @@ export function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [windowMode, setWindowMode, streaming, activeSession?.id, handleStop]);
+  }, [windowMode, setWindowMode, streaming, activeSession?.id, handleStop, pendingTopicShift]);
 
   // Ctrl+Shift+Arrow moves Otto across monitors. Right = next, Left = prev.
   // Chord is uncommon enough not to clash with normal typing.

@@ -34,6 +34,7 @@ export const TABS: TabEntry[] = [
       { id: 'notifications', label: 'Notifications' },
       { id: 'sessionHistory', label: 'Session history' },
       { id: 'newConversation', label: 'New conversations' },
+      { id: 'topicShift', label: 'Topic shifts' },
       { id: 'voice', label: 'Voice' },
     ],
   },

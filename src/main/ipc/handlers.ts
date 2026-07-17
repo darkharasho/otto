@@ -35,6 +35,7 @@ import type {
   WindowMode,
 } from '@shared/ipc-contract';
 import type { AutonomyMode, Message, SessionMeta } from '@shared/messages';
+import type { TopicShiftSensitivity } from '@shared/topic-shift-constants';
 import { emitAutonomyEvent } from './events';
 import { logger } from '../logger';
 import { gatherShortcutInfo, openKeyboardSettings } from '../shortcut';
@@ -311,6 +312,13 @@ export function registerIpcHandlers(deps: {
     'settings.setNewConversationIdleTimeoutMinutes',
     async (_e, args: { minutes: number }): Promise<void> => {
       await settings.setNewConversationIdleTimeoutMinutes(args.minutes);
+    }
+  );
+
+  ipcMain.handle(
+    'settings.setTopicShiftSensitivity',
+    async (_e, args: { sensitivity: TopicShiftSensitivity }): Promise<void> => {
+      await settings.setTopicShiftSensitivity(args.sensitivity);
     }
   );
 
