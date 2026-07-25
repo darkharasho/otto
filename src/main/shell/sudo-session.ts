@@ -11,8 +11,37 @@ import { join } from 'node:path';
 const SUDO_DETECT =
   /(?:^|[\n;&|(]|&&|\|\|)\s*sudo\b(?!\s+(?:-n\b|--non-interactive\b))/;
 
+// Quoted spans are arguments or remote commands (`ssh host '… && sudo …'`,
+// `grep 'a|sudo'`), never a local sudo invocation, so they are masked to `_`
+// before matching. The deliberate miss — local sudo hidden inside quotes,
+// e.g. `sh -c 'sudo x'` — fails fast on the locked askpass instead of
+// hanging, which is recoverable; a false-positive password popup is not.
+// An unterminated quote swallows the rest of the command, like a shell would.
+function maskQuotedSpans(command: string): string {
+  let out = '';
+  let i = 0;
+  while (i < command.length) {
+    const ch = command[i]!;
+    if (ch === '\\') {
+      out += '_';
+      i += 2;
+    } else if (ch === "'" || ch === '"') {
+      i += 1;
+      while (i < command.length && command[i] !== ch) {
+        i += ch === '"' && command[i] === '\\' ? 2 : 1;
+      }
+      i += 1;
+      out += '_';
+    } else {
+      out += ch;
+      i += 1;
+    }
+  }
+  return out;
+}
+
 export function commandRequiresSudo(command: string): boolean {
-  return SUDO_DETECT.test(command);
+  return SUDO_DETECT.test(maskQuotedSpans(command));
 }
 
 /**

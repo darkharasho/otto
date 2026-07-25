@@ -50,6 +50,28 @@ describe('commandRequiresSudo', () => {
     expect(commandRequiresSudo('echo pseudosudo')).toBe(false);
     expect(commandRequiresSudo('cat sudoku.txt')).toBe(false);
   });
+
+  it('ignores sudo inside quoted strings', () => {
+    // Remote sudo via ssh — local elevation can't help it.
+    expect(commandRequiresSudo("ssh venus.local 'mkdir -p /opt/x && sudo systemctl restart bot'")).toBe(false);
+    expect(commandRequiresSudo('ssh host "cd /srv; sudo reboot"')).toBe(false);
+    // sudo as data, not a command.
+    expect(commandRequiresSudo("grep -iE 'askpass|sudo' file.ts")).toBe(false);
+    expect(commandRequiresSudo("git commit -m 'fix: gate & sudo prompt'")).toBe(false);
+  });
+
+  it('still detects sudo when quotes appear elsewhere in the command', () => {
+    expect(commandRequiresSudo("sudo cp 'a b.txt' /etc/")).toBe(true);
+    expect(commandRequiresSudo("echo 'done' && sudo reboot")).toBe(true);
+  });
+
+  it('treats a backslash-escaped quote as literal, not a quote opener', () => {
+    expect(commandRequiresSudo("echo \\' ; sudo ls")).toBe(true);
+  });
+
+  it('treats everything after an unbalanced quote as quoted', () => {
+    expect(commandRequiresSudo("echo 'oops && sudo ls")).toBe(false);
+  });
 });
 
 describe('parseSudoError', () => {
