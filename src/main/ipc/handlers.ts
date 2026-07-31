@@ -3,7 +3,6 @@ import type { PrivacyAwareRepo } from '../db/privacy-aware-repo';
 import type { SessionManager } from '../agent/session';
 import type { ConversationPolicy } from '../agent/conversation-policy';
 import { overImageBudget, clearImageBudget } from '../agent/image-budget';
-import type { TopicShiftDetector } from '../agent/topic-shift-detector';
 import type { WindowManager } from '../window';
 import type { DecisionBroker } from '../autonomy/decision-broker';
 import type { SudoBroker } from '../autonomy/sudo-broker';
@@ -30,12 +29,9 @@ import type {
   UploadsStageArgs,
   UploadsStageResult,
   UploadsDiscardArgs,
-  TopicShiftEvaluateArgs,
-  TopicShiftEvaluateResult,
   WindowMode,
 } from '@shared/ipc-contract';
 import type { AutonomyMode, Message, SessionMeta } from '@shared/messages';
-import type { TopicShiftSensitivity } from '@shared/topic-shift-constants';
 import { emitAutonomyEvent } from './events';
 import { logger } from '../logger';
 import { gatherShortcutInfo, openKeyboardSettings } from '../shortcut';
@@ -57,7 +53,6 @@ export function registerIpcHandlers(deps: {
   settings: Settings;
   registry: ProcessRegistry;
   conversationPolicy: ConversationPolicy;
-  topicShiftDetector: TopicShiftDetector;
   appVersion: string;
   recommendedChord: string;
   hotkey: HotkeyManager;
@@ -75,7 +70,7 @@ export function registerIpcHandlers(deps: {
     applyRemoteCeiling?: (c: RemoteCeilingChoice) => void;
   };
 }): void {
-  const { repo, sessions, window, broker, sudoBroker, sudoSession, settings, registry, conversationPolicy, topicShiftDetector } = deps;
+  const { repo, sessions, window, broker, sudoBroker, sudoSession, settings, registry, conversationPolicy } = deps;
 
   // Cached once per process — the binary path is stable after app.ready.
   let _voiceAvailable: boolean | null = null;
@@ -168,16 +163,6 @@ export function registerIpcHandlers(deps: {
   ipcMain.handle('session.peekFresh', async (): Promise<{ fresh: boolean }> => {
     return { fresh: conversationPolicy.shouldStartFresh() };
   });
-
-  ipcMain.handle(
-    'topicShift.evaluate',
-    async (
-      _e,
-      args: TopicShiftEvaluateArgs,
-    ): Promise<TopicShiftEvaluateResult> => {
-      return topicShiftDetector.evaluate(args.sessionId, args.newPrompt);
-    },
-  );
 
   ipcMain.handle('session.list', async (): Promise<SessionMeta[]> => {
     return repo.listSessions();
@@ -312,13 +297,6 @@ export function registerIpcHandlers(deps: {
     'settings.setNewConversationIdleTimeoutMinutes',
     async (_e, args: { minutes: number }): Promise<void> => {
       await settings.setNewConversationIdleTimeoutMinutes(args.minutes);
-    }
-  );
-
-  ipcMain.handle(
-    'settings.setTopicShiftSensitivity',
-    async (_e, args: { sensitivity: TopicShiftSensitivity }): Promise<void> => {
-      await settings.setTopicShiftSensitivity(args.sensitivity);
     }
   );
 

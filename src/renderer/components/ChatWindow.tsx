@@ -4,7 +4,6 @@ import { ChatTitlebar } from './ChatTitlebar';
 import { ConversationSidebar } from './ConversationSidebar';
 import { MessageList } from './MessageList';
 import { CommandBar } from './CommandBar';
-import { TopicShiftChip } from './TopicShiftChip';
 import { ipc } from '../ipc';
 import { useOttoStore, isSessionBusy } from '../state/store';
 import type { SidebarSession, SessionState } from '../lib/conversation-grouping';
@@ -22,7 +21,6 @@ interface Props {
   onSelectSession: (id: string) => void | Promise<void>;
   isPrivate?: boolean;
   voice?: { mode: boolean; state: 'idle' | 'starting' | 'listening' | 'transcribing' | 'speaking' | 'error'; onToggle(): void; micButtonRef?: RefObject<HTMLButtonElement>; downloadPct?: number | null };
-  topicShift?: { onStartNew(): void; onKeepGoing(): void };
 }
 
 export function ChatWindow({
@@ -35,7 +33,6 @@ export function ChatWindow({
   onSelectSession,
   isPrivate = false,
   voice,
-  topicShift,
 }: Props) {
   const sessions = useOttoStore((s) => s.sessions);
   const activeSession = useOttoStore((s) => s.activeSession);
@@ -149,11 +146,6 @@ export function ChatWindow({
             />
           )}
           <div className="px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-            {topicShift && (
-              <div className="mb-2">
-                <TopicShiftChip onStartNew={topicShift.onStartNew} onKeepGoing={topicShift.onKeepGoing} />
-              </div>
-            )}
             <CommandBar
               onSubmit={onSubmit}
               ensureSession={ensureSession}

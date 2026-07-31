@@ -5,7 +5,7 @@
  * turn — memory and token cost both compound with conversation length. Once
  * a session crosses the budget, `session.ensureForSubmit` rolls the next
  * user message into a fresh conversation (same pattern as the idle-timeout
- * and topic-shift rollovers).
+ * rollover).
  */
 
 export const IMAGE_BUDGET = 60;

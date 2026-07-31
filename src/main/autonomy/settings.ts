@@ -3,12 +3,8 @@ import path from 'node:path';
 import type { AutonomyMode } from '@shared/messages';
 import type { ChatBounds, WindowMode } from '@shared/ipc-contract';
 import { DEFAULT_TTS_VOICE, DEFAULT_TTS_SPEED } from '@shared/voice-catalog';
-import {
-  TOPIC_SHIFT_SENSITIVITIES,
-  type TopicShiftSensitivity,
-} from '@shared/topic-shift-constants';
 
-const CURRENT_VERSION = 7;
+const CURRENT_VERSION = 8;
 const DEFAULT_MODE: AutonomyMode = 'balanced';
 const VALID_MODES: AutonomyMode[] = ['strict', 'balanced', 'full-allow'];
 
@@ -52,7 +48,6 @@ export interface SettingsSnapshot {
   lastVisibleMode: WindowMode;
   pinnedSessionIds: string[];
   voice: VoicePrefs;
-  topicShiftSensitivity: TopicShiftSensitivity;
 }
 
 interface SettingsFileV1 {
@@ -76,12 +71,18 @@ interface SettingsFileV5 extends Omit<SettingsSnapshot, 'voice'> {
   version: 5;
 }
 
-interface SettingsFileV6 extends Omit<SettingsSnapshot, 'topicShiftSensitivity'> {
+interface SettingsFileV6 extends SettingsSnapshot {
   version: 6;
 }
 
+// v7 added a topicShiftSensitivity field; the topic-shift detector was removed
+// and v8 drops the field on migration.
 interface SettingsFileV7 extends SettingsSnapshot {
   version: 7;
+}
+
+interface SettingsFileV8 extends SettingsSnapshot {
+  version: 8;
 }
 
 type SettingsFile =
@@ -91,7 +92,8 @@ type SettingsFile =
   | SettingsFileV4
   | SettingsFileV5
   | SettingsFileV6
-  | SettingsFileV7;
+  | SettingsFileV7
+  | SettingsFileV8;
 
 const DEFAULTS: SettingsSnapshot = {
   autonomy: { mode: DEFAULT_MODE },
@@ -107,7 +109,6 @@ const DEFAULTS: SettingsSnapshot = {
   lastVisibleMode: 'bar',
   pinnedSessionIds: [],
   voice: { ttsVoice: DEFAULT_TTS_VOICE, speed: DEFAULT_TTS_SPEED, whisperModel: 'small.en', endpointMs: 650 },
-  topicShiftSensitivity: 'low',
 };
 
 type Listener = (snapshot: SettingsSnapshot) => void;
@@ -169,9 +170,6 @@ export class Settings {
   getNewConversationIdleTimeoutMinutes(): number {
     return this.state.newConversation.idleTimeoutMinutes;
   }
-  getTopicShiftSensitivity(): TopicShiftSensitivity {
-    return this.state.topicShiftSensitivity;
-  }
   snapshot(): SettingsSnapshot {
     return {
       autonomy: { ...this.state.autonomy },
@@ -187,7 +185,6 @@ export class Settings {
       lastVisibleMode: this.state.lastVisibleMode,
       pinnedSessionIds: [...this.state.pinnedSessionIds],
       voice: { ...this.state.voice },
-      topicShiftSensitivity: this.state.topicShiftSensitivity,
     };
   }
 
@@ -240,14 +237,6 @@ export class Settings {
       throw new Error(`invalid idleTimeoutMinutes: ${minutes}`);
     }
     this.state.newConversation = { idleTimeoutMinutes: Math.floor(minutes) };
-    await this.persist();
-  }
-
-  async setTopicShiftSensitivity(sensitivity: TopicShiftSensitivity): Promise<void> {
-    if (!TOPIC_SHIFT_SENSITIVITIES.includes(sensitivity)) {
-      throw new Error(`invalid topicShiftSensitivity: ${sensitivity}`);
-    }
-    this.state.topicShiftSensitivity = sensitivity;
     await this.persist();
   }
 
@@ -322,10 +311,11 @@ export class Settings {
       version === 4 ||
       version === 5 ||
       version === 6 ||
+      version === 7 ||
       version === CURRENT_VERSION
     ) {
       const o = obj as Omit<SettingsFileV2, 'version'> &
-        Partial<Omit<SettingsFileV7, 'version'>>;
+        Partial<Omit<SettingsFileV8, 'version'>>;
       const m = o.autonomy?.mode;
       if (!m || !VALID_MODES.includes(m)) return false;
       const idle = o.newConversation?.idleTimeoutMinutes;
@@ -396,11 +386,6 @@ export class Settings {
         lastVisibleMode,
         pinnedSessionIds,
         voice,
-        topicShiftSensitivity: TOPIC_SHIFT_SENSITIVITIES.includes(
-          (o as { topicShiftSensitivity?: unknown }).topicShiftSensitivity as TopicShiftSensitivity,
-        )
-          ? ((o as { topicShiftSensitivity?: unknown }).topicShiftSensitivity as TopicShiftSensitivity)
-          : DEFAULTS.topicShiftSensitivity,
       };
       return version === CURRENT_VERSION ? 'ok' : 'migrated';
     }
@@ -416,7 +401,7 @@ export class Settings {
     const dir = path.dirname(this.filePath);
     await fs.mkdir(dir, { recursive: true });
     const tmp = `${this.filePath}.tmp`;
-    const payload: SettingsFileV7 = { version: CURRENT_VERSION, ...this.snapshot() };
+    const payload: SettingsFileV8 = { version: CURRENT_VERSION, ...this.snapshot() };
     await fs.writeFile(tmp, JSON.stringify(payload, null, 2));
     await fs.rename(tmp, this.filePath);
   }

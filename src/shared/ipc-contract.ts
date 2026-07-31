@@ -1,6 +1,5 @@
 import type { ActionClass, AutonomyMode, ContentBlock, Message, SessionMeta } from './messages';
 import type { VoiceEvent } from './voice';
-import type { TopicShiftSensitivity } from './topic-shift-constants';
 
 export type WindowMode = 'bar' | 'panel' | 'chat';
 
@@ -75,27 +74,12 @@ export interface SessionEnsureForSubmitResult {
   reason: 'reused' | 'idle-timeout' | 'manual' | 'no-session' | 'image-budget';
 }
 
-export interface TopicShiftEvaluateArgs {
-  sessionId: string;
-  newPrompt: string;
-}
-
-export interface TopicShiftEvaluateResult {
-  suggest: boolean;
-  similarity: number; // may be NaN if detector was unavailable/errored
-}
-
 export type IpcRequest =
   | { channel: 'session.start'; args: SessionStartArgs; result: SessionStartResult }
   | { channel: 'session.send'; args: SessionSendArgs; result: void }
   | { channel: 'session.cancel'; args: SessionCancelArgs; result: void }
   | { channel: 'session.interrupt'; args: SessionInterruptArgs; result: void }
   | { channel: 'session.close'; args: { sessionId: string }; result: void }
-  | {
-      channel: 'topicShift.evaluate';
-      args: TopicShiftEvaluateArgs;
-      result: TopicShiftEvaluateResult;
-    }
   | { channel: 'session.list'; args: void; result: SessionMeta[] }
   | { channel: 'session.load'; args: SessionLoadArgs; result: Message[] }
   | {
@@ -138,11 +122,6 @@ export type IpcRequest =
   | { channel: 'settings.setHideOnBlur'; args: { enabled: boolean }; result: void }
   | { channel: 'settings.setShowReasoning'; args: { enabled: boolean }; result: void }
   | { channel: 'settings.setNewConversationIdleTimeoutMinutes'; args: { minutes: number }; result: void }
-  | {
-      channel: 'settings.setTopicShiftSensitivity';
-      args: { sensitivity: TopicShiftSensitivity };
-      result: void;
-    }
   | { channel: 'settings.openLogsDir'; args: void; result: void }
   | { channel: 'settings.resetAllSessions'; args: void; result: { deleted: number } }
   | { channel: 'settings.setPinnedSessionIds'; args: { ids: string[] }; result: void }
@@ -260,7 +239,6 @@ export interface SettingsView {
   hideOnBlur: boolean;
   showReasoning: boolean;
   newConversation: { idleTimeoutMinutes: number };
-  topicShiftSensitivity: TopicShiftSensitivity;
   version: string;
   chatBounds: ChatBounds | null;
   lastVisibleMode: WindowMode;

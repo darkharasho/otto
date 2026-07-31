@@ -3,18 +3,12 @@ import { ipc } from './ipc';
 import { useOttoStore, isSessionBusy, canProactivelyReset } from './state/store';
 import { useVoice } from './voice/useVoice';
 import type { ContentBlock } from '@shared/messages';
-import {
-  TOPIC_SHIFT_EVALUATE_TIMEOUT_MS,
-  paramsForSensitivity,
-  type TopicShiftSensitivity,
-} from '@shared/topic-shift-constants';
 import { CommandBar } from './components/CommandBar';
 import { Panel } from './components/Panel';
 import { MessageList } from './components/MessageList';
 import { SessionSwitcher } from './components/SessionSwitcher';
 import { StatusFooter } from './components/StatusFooter';
 import { ErrorCard } from './components/ErrorCard';
-import { TopicShiftChip } from './components/TopicShiftChip';
 import { ChatWindow } from './components/ChatWindow';
 
 export function App() {
@@ -43,14 +37,9 @@ export function App() {
     void ipc.invoke('autonomy.getMode', undefined).then((m) => useOttoStore.getState().setMode(m));
   }, []);
 
-  // Mirror of the topic-shift sensitivity setting, read at mount. The renderer
-  // uses it only to gate/skip the detector call; the main-process detector
-  // reads the live value itself, so a stale mirror can never over-suggest.
-  const topicShiftSensitivity = useRef<TopicShiftSensitivity>('low');
   useEffect(() => {
     void ipc.invoke('settings.get', undefined).then((s) => {
       useOttoStore.getState().setPinnedSessionIds(s.pinnedSessionIds);
-      topicShiftSensitivity.current = s.topicShiftSensitivity;
     });
   }, []);
 
@@ -111,10 +100,6 @@ export function App() {
   const pendingPrivate = useRef(false);
   // Reactive mirror of pendingPrivate for the UI indicator (refs don't re-render).
   const [armedPrivate, setArmedPrivate] = useState(false);
-  const lastUserSubmitAt = useRef<number>(Date.now());
-  const [pendingTopicShift, setPendingTopicShift] = useState<
-    { text: string; attachments: ImageRef[] } | null
-  >(null);
 
   const ensureSession = useCallback(async (): Promise<string> => {
     if (inFlightSessionStart.current) return inFlightSessionStart.current;
@@ -155,7 +140,6 @@ export function App() {
         // eslint-disable-next-line no-console
         console.debug('[otto] session.send', { sessionId, len: text.length, attachments: attachments.length, voice });
         await ipc.invoke('session.send', { sessionId, text, attachments, voice });
-        lastUserSubmitAt.current = Date.now();
         void ipc.invoke('session.list', undefined).then(setSessions);
       } catch (err) {
         // eslint-disable-next-line no-console
@@ -163,36 +147,6 @@ export function App() {
       }
     },
     [ensureSession, appendUserMessage, setWindowMode, setSessions],
-  );
-
-  const handleSubmit = useCallback(
-    async ({ text, attachments }: { text: string; attachments: ImageRef[] }) => {
-      const sessionId = activeSession?.id ?? null;
-      const idleMs = Date.now() - lastUserSubmitAt.current;
-      const detect = paramsForSensitivity(topicShiftSensitivity.current);
-      // Only consult the detector if it's enabled, we have an active session,
-      // AND the user has been idle long enough. Fresh-session submits always go
-      // straight through.
-      if (detect.enabled && sessionId && idleMs >= detect.idleGateMs) {
-        try {
-          const result = await Promise.race([
-            ipc.invoke('topicShift.evaluate', { sessionId, newPrompt: text }),
-            new Promise<{ suggest: false; similarity: number }>((resolve) =>
-              setTimeout(() => resolve({ suggest: false, similarity: NaN }), TOPIC_SHIFT_EVALUATE_TIMEOUT_MS),
-            ),
-          ]);
-          if (result.suggest) {
-            setPendingTopicShift({ text, attachments });
-            return;
-          }
-        } catch (err) {
-          // eslint-disable-next-line no-console
-          console.warn('[otto] topicShift.evaluate failed; submitting normally', err);
-        }
-      }
-      void submitToActiveSession({ text, attachments });
-    },
-    [activeSession?.id, submitToActiveSession],
   );
 
   const handleSelectSession = useCallback(
@@ -363,9 +317,6 @@ export function App() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      // While the topic-shift popup is up, Esc means "keep going" and is owned
-      // by the chip — don't also collapse the window here.
-      if (pendingTopicShift) return;
       if (streaming && activeSession?.id) {
         handleStop();
         return;
@@ -384,7 +335,7 @@ export function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [windowMode, setWindowMode, streaming, activeSession?.id, handleStop, pendingTopicShift]);
+  }, [windowMode, setWindowMode, streaming, activeSession?.id, handleStop]);
 
   // Ctrl+Shift+Arrow moves Otto across monitors. Right = next, Left = prev.
   // Chord is uncommon enough not to clash with normal typing.
@@ -457,7 +408,7 @@ export function App() {
   if (windowMode === 'chat') {
     return (
       <ChatWindow
-        onSubmit={handleSubmit}
+        onSubmit={submitToActiveSession}
         ensureSession={ensureSession}
         onStop={handleStop}
         onInterruptAndSend={handleInterruptAndSend}
@@ -466,22 +417,6 @@ export function App() {
         onSelectSession={handleSelectSession}
         isPrivate={showPrivate}
         voice={voiceProp}
-        topicShift={
-          pendingTopicShift
-            ? {
-                onStartNew: () => {
-                  const p = pendingTopicShift;
-                  setPendingTopicShift(null);
-                  if (p) void handleNewConversation(p);
-                },
-                onKeepGoing: () => {
-                  const p = pendingTopicShift;
-                  setPendingTopicShift(null);
-                  if (p) void submitToActiveSession(p);
-                },
-              }
-            : undefined
-        }
       />
     );
   }
@@ -490,7 +425,7 @@ export function App() {
     return (
       <div data-window-mode="bar" key={`bar-${enterTick}`} className="w-screen h-screen p-1 otto-enter">
         <CommandBar
-          onSubmit={handleSubmit}
+          onSubmit={submitToActiveSession}
           ensureSession={ensureSession}
           onStop={handleStop}
           onInterruptAndSend={handleInterruptAndSend}
@@ -520,22 +455,8 @@ export function App() {
         }
         footer={
           <div className="flex flex-col gap-2">
-            {pendingTopicShift && (
-              <TopicShiftChip
-                onStartNew={() => {
-                  const p = pendingTopicShift;
-                  setPendingTopicShift(null);
-                  if (p) void handleNewConversation(p);
-                }}
-                onKeepGoing={() => {
-                  const p = pendingTopicShift;
-                  setPendingTopicShift(null);
-                  if (p) void submitToActiveSession(p);
-                }}
-              />
-            )}
             <CommandBar
-              onSubmit={handleSubmit}
+              onSubmit={submitToActiveSession}
               ensureSession={ensureSession}
               onStop={handleStop}
               onInterruptAndSend={handleInterruptAndSend}
