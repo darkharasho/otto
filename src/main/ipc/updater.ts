@@ -24,6 +24,10 @@ export function setupUpdaterIpc(
 
   autoUpdater.logger = logger;
 
+  // The 4-hour re-check cycles the state machine back through `downloaded`
+  // for the same version; notify the user only once per version.
+  let notifiedVersion: string | null = null;
+
   api = createUpdater({
     autoUpdater: autoUpdater as unknown as Parameters<typeof createUpdater>[0]['autoUpdater'],
     setInterval,
@@ -37,7 +41,8 @@ export function setupUpdaterIpc(
       if (state.kind === 'available') {
         void api!.download();
       }
-      if (notifier && state.kind === 'downloaded') {
+      if (notifier && state.kind === 'downloaded' && state.version !== notifiedVersion) {
+        notifiedVersion = state.version;
         notifier.notifyUpdateReady(state.version, () => api!.install());
       }
     },
