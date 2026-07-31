@@ -6,7 +6,6 @@ import { createUpdater, type UpdaterApi, type UpdaterState } from '../updater';
 let api: UpdaterApi | null = null;
 
 interface UpdateNotifier {
-  notifyUpdateAvailable(version: string, onClick: () => void): void;
   notifyUpdateReady(version: string, onClick: () => void): void;
 }
 
@@ -33,8 +32,10 @@ export function setupUpdaterIpc(
       for (const w of getWindows()) {
         if (!w.isDestroyed()) w.webContents.send('updater:state', state);
       }
-      if (notifier && state.kind === 'available') {
-        notifier.notifyUpdateAvailable(state.version, () => { void api!.download(); });
+      // Updates install on quit regardless, so there is no decision for the
+      // user to make at the "available" stage — just fetch it.
+      if (state.kind === 'available') {
+        void api!.download();
       }
       if (notifier && state.kind === 'downloaded') {
         notifier.notifyUpdateReady(state.version, () => api!.install());

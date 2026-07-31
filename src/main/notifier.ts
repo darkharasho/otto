@@ -98,22 +98,6 @@ export class Notifier {
     this.show({ title: 'Otto needs approval', body, urgency: 'critical' });
   }
 
-  notifyUpdateAvailable(version: string, onClick: () => void): void {
-    if (!Notification.isSupported()) return;
-    if (this.deps.silent()) return;
-    try {
-      const n = new Notification({
-        title: 'Otto update available',
-        body: `Otto ${version} is ready to download. Click to install.`,
-        icon: this.iconPath(),
-      });
-      n.on('click', onClick);
-      n.show();
-    } catch (err) {
-      logger.warn(`notification failed: ${err instanceof Error ? err.message : err}`);
-    }
-  }
-
   notifyUpdateReady(version: string, onClick: () => void): void {
     if (!Notification.isSupported()) return;
     if (this.deps.silent()) return;
