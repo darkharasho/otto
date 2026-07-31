@@ -4,6 +4,7 @@ import { ChatTitlebar } from './ChatTitlebar';
 import { ConversationSidebar } from './ConversationSidebar';
 import { MessageList } from './MessageList';
 import { CommandBar } from './CommandBar';
+import { UpdateBanner } from './UpdateBanner';
 import { ipc } from '../ipc';
 import { useOttoStore, isSessionBusy } from '../state/store';
 import type { SidebarSession, SessionState } from '../lib/conversation-grouping';
@@ -146,6 +147,7 @@ export function ChatWindow({
             />
           )}
           <div className="px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+            <UpdateBanner className="mb-2" />
             <CommandBar
               onSubmit={onSubmit}
               ensureSession={ensureSession}

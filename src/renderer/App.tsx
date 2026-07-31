@@ -10,6 +10,7 @@ import { SessionSwitcher } from './components/SessionSwitcher';
 import { StatusFooter } from './components/StatusFooter';
 import { ErrorCard } from './components/ErrorCard';
 import { ChatWindow } from './components/ChatWindow';
+import { UpdateBanner } from './components/UpdateBanner';
 
 export function App() {
   const windowMode = useOttoStore((s) => s.windowMode);
@@ -455,6 +456,7 @@ export function App() {
         }
         footer={
           <div className="flex flex-col gap-2">
+            <UpdateBanner />
             <CommandBar
               onSubmit={submitToActiveSession}
               ensureSession={ensureSession}
