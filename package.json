@@ -60,6 +60,9 @@
   "pnpm": {
     "overrides": {
       "onnxruntime-node": "1.21.0"
+    },
+    "patchedDependencies": {
+      "app-builder-lib@25.1.8": "patches/app-builder-lib@25.1.8.patch"
     }
   },
   "devDependencies": {
