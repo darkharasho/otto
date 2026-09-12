@@ -237,6 +237,23 @@ describe('store: tool approval events', () => {
     });
   });
 
+  it('propagates the catastrophic flag onto the pending block', () => {
+    useOttoStore.getState().applyEvent({
+      type: 'tool-call-pending',
+      sessionId: 's1',
+      messageId: 'm1',
+      callId: 'c1',
+      decisionId: 'd1',
+      name: 'shell_exec',
+      input: { command: 'mkfs.ext4 /dev/sda1' },
+      actionClass: 'irreversible',
+      reason: 'catastrophic=mkfs, mode=full-allow',
+      catastrophic: true,
+    });
+    const blocks = useOttoStore.getState().activeSession!.messages[0]!.content;
+    expect(blocks[0]).toMatchObject({ type: 'pending_tool_use', catastrophic: true });
+  });
+
   it('transforms pending block on tool-call-decided approve', () => {
     useOttoStore.getState().applyEvent({
       type: 'tool-call-pending',

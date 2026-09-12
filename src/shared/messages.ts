@@ -14,6 +14,8 @@ export type ContentBlock =
       input: unknown;
       actionClass: ActionClass;
       reason: string;
+      /** Denylisted-but-confirmable command: one-time approval only, desktop only. */
+      catastrophic?: boolean;
       decision: 'pending' | 'approved' | 'approved-session' | 'denied';
     }
   | { type: 'tool_denied'; callId: string; name: string; input: unknown; reason: string }

@@ -46,6 +46,13 @@ describe('ApprovalCard', () => {
     expect(invoke).toHaveBeenCalledWith('autonomy.decide', { decisionId: 'd1', decision: 'deny' });
   });
 
+  it('catastrophic block hides Approve for session but keeps Approve and Deny', () => {
+    render(<ApprovalCard block={{ ...block, actionClass: 'irreversible', catastrophic: true }} />);
+    expect(screen.queryByRole('button', { name: /session/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /^approve$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^deny$/i })).toBeInTheDocument();
+  });
+
   it('post-decision: buttons disabled, badge visible', () => {
     render(<ApprovalCard block={{ ...block, decision: 'approved' }} />);
     expect(screen.getByText(/approved/i)).toBeInTheDocument();

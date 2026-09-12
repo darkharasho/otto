@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { classify, denyReason } from './command-class';
+import { classify, denyMatch } from './command-class';
 
 describe('classify', () => {
   const reads: string[] = [
@@ -47,6 +47,7 @@ describe('classify', () => {
     'rm -R bar',
     'dd if=foo of=/dev/sdb',
     'mkfs.ext4 /dev/sdb1',
+    'mkfs -t ext4 /dev/sdb1',
   ];
   for (const cmd of irreversible) {
     it(`'${cmd}' -> irreversible`, () => {
@@ -69,28 +70,45 @@ describe('classify', () => {
   }
 });
 
-describe('denyReason', () => {
-  const denied: Array<[string, string]> = [
+describe('denyMatch', () => {
+  const hard: Array<[string, string]> = [
     ['rm -rf /', 'rm-rf-root'],
     ['rm -rf --no-preserve-root /', 'rm-rf-root'],
-    ['dd if=/dev/zero of=/dev/sda bs=1M', 'dd-to-block-device'],
-    ['mkfs.ext4 /dev/sda1', 'mkfs'],
-    ['shred -vfz /dev/sda', 'shred-device'],
     [':(){ :|:& };:', 'fork-bomb'],
-    ['echo X > /dev/sdc', 'redirect-to-block-device'],
     ['chmod -R 000 /', 'chmod-root'],
     ['chmod -R 00 /', 'chmod-root'],
   ];
-  for (const [cmd, name] of denied) {
-    it(`'${cmd}' -> ${name}`, () => {
-      expect(denyReason(cmd)).toBe(name);
+  for (const [cmd, name] of hard) {
+    it(`'${cmd}' -> hard/${name}`, () => {
+      expect(denyMatch(cmd)).toEqual({ tier: 'hard', name });
+    });
+  }
+
+  const confirm: Array<[string, string]> = [
+    ['dd if=/dev/zero of=/dev/sda bs=1M', 'dd-to-block-device'],
+    ['mkfs.ext4 /dev/sda1', 'mkfs'],
+    ['sudo mkfs.exfat -n STORAGE /dev/sda1 && echo "---DONE---"', 'mkfs'],
+    ['mkfs -t ext4 /dev/sda1', 'mkfs'],
+    ['shred -vfz /dev/sda', 'shred-device'],
+    ['echo X > /dev/sdc', 'redirect-to-block-device'],
+  ];
+  for (const [cmd, name] of confirm) {
+    it(`'${cmd}' -> confirm/${name}`, () => {
+      expect(denyMatch(cmd)).toEqual({ tier: 'confirm', name });
     });
   }
 
   const allowed: string[] = ['ls', 'rm file.txt', 'dd if=foo of=bar', 'chmod 644 file.txt'];
   for (const cmd of allowed) {
     it(`'${cmd}' -> null`, () => {
-      expect(denyReason(cmd)).toBeNull();
+      expect(denyMatch(cmd)).toBeNull();
     });
   }
+
+  it('a command matching both tiers gets the hard tier', () => {
+    expect(denyMatch('mkfs.ext4 /dev/sda1 && rm -rf /')).toEqual({
+      tier: 'hard',
+      name: 'rm-rf-root',
+    });
+  });
 });

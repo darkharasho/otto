@@ -347,6 +347,7 @@ export const useOttoStore = create<OttoState>((set, get) => ({
               input: event.input,
               actionClass: event.actionClass,
               reason: event.reason,
+              catastrophic: event.catastrophic,
               decision: 'pending' as const,
             },
           ],

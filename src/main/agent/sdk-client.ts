@@ -11,7 +11,7 @@ import type { DecisionBroker } from '../autonomy/decision-broker';
 import type { SudoBroker } from '../autonomy/sudo-broker';
 import type { ProcessRegistry } from '../shell/process-registry';
 import { logger } from '../logger';
-import { classify, denyReason } from '../shell/command-class';
+import { classify, denyMatch } from '../shell/command-class';
 import { commandRequiresSudo } from '../shell/sudo-session';
 import { exec } from '../shell/executor';
 import { getPlatformAdapter } from '../platform';
@@ -400,7 +400,7 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
           toolName: t.name,
           actionClass: cls,
           input: args,
-          denyPatternsFn: t.denyPatterns ? (i: unknown) => t.denyPatterns!(i) : null,
+          denyMatchFn: t.denyMatch ? (i: unknown) => t.denyMatch!(i) : null,
         });
 
         if (outcome === 'deny') {
@@ -676,7 +676,7 @@ function createFakeSdkClient(deps?: {
             toolName: 'shell_exec',
             actionClass: classify(cmd),
             input: { command: cmd },
-            denyPatternsFn: (i: unknown) => denyReason((i as { command: string }).command),
+            denyMatchFn: (i: unknown) => denyMatch((i as { command: string }).command),
           });
           if (outcome === 'allow') {
             const r = await exec({ command: cmd, cwd: tmpdir(), timeoutMs: 5_000 }, getPlatformAdapter());
@@ -693,7 +693,7 @@ function createFakeSdkClient(deps?: {
             toolName: 'shell_spawn',
             actionClass: classify(cmd),
             input: { command: cmd },
-            denyPatternsFn: (i: unknown) => denyReason((i as { command: string }).command),
+            denyMatchFn: (i: unknown) => denyMatch((i as { command: string }).command),
           });
           if (outcome === 'allow') {
             // Registry emits process-spawned + later process-stdout/exited.
@@ -713,7 +713,7 @@ function createFakeSdkClient(deps?: {
             toolName: 'fake-mutate',
             actionClass: 'destructive',
             input: { target: 'X' },
-            denyPatternsFn: null,
+            denyMatchFn: null,
           });
           if (outcome === 'allow') {
             yield { type: 'tool-call-start', callId: 'c-mut', name: 'fake-mutate', input: { target: 'X' } };
@@ -729,7 +729,7 @@ function createFakeSdkClient(deps?: {
             toolName: 'screenshot',
             actionClass: 'read',
             input: {},
-            denyPatternsFn: null,
+            denyMatchFn: null,
           });
           if (outcome === 'allow') {
             try {

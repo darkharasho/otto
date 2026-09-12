@@ -270,6 +270,8 @@ export type SessionEvent =
       input: unknown;
       actionClass: ActionClass;
       reason: string;
+      /** Denylisted-but-confirmable command: one-time approval only, desktop only. */
+      catastrophic?: boolean;
     }
   | {
       type: 'tool-call-decided';

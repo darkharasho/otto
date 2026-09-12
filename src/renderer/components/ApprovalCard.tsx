@@ -57,14 +57,16 @@ export function ApprovalCard({ block }: Props) {
         >
           Approve
         </button>
-        <button
-          type="button"
-          onClick={() => submit('approve-session')}
-          disabled={decided}
-          className="px-3 py-1 text-xs rounded-md border border-accent/60 text-accent hover:bg-accent/10 disabled:opacity-50"
-        >
-          Approve for session
-        </button>
+        {!block.catastrophic && (
+          <button
+            type="button"
+            onClick={() => submit('approve-session')}
+            disabled={decided}
+            className="px-3 py-1 text-xs rounded-md border border-accent/60 text-accent hover:bg-accent/10 disabled:opacity-50"
+          >
+            Approve for session
+          </button>
+        )}
         <button
           type="button"
           onClick={() => submit('deny')}

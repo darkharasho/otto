@@ -2,7 +2,7 @@ import { z } from 'zod';
 import type { ActionClass } from '@shared/messages';
 import type { ProcessRegistry } from '../shell/process-registry';
 import { exec } from '../shell/executor';
-import { classify, denyReason } from '../shell/command-class';
+import { classify, denyMatch, type DenyMatch } from '../shell/command-class';
 import { getPlatformAdapter } from '../platform';
 
 export interface OttoTool {
@@ -11,7 +11,7 @@ export interface OttoTool {
   actionClass: ActionClass;
   actionClassFor?(input: unknown): ActionClass;
   schema: z.ZodTypeAny;
-  denyPatterns?(input: unknown): string | null;
+  denyMatch?(input: unknown): DenyMatch | null;
   run(input: unknown): Promise<unknown>;
 }
 
@@ -88,7 +88,7 @@ export function buildShellTools(getRegistry: () => ProcessRegistry): OttoTool[] 
       actionClass: 'destructive',
       actionClassFor: (input) => classify((input as { command: string }).command),
       schema: execSchema,
-      denyPatterns: (input) => denyReason((input as { command: string }).command),
+      denyMatch: (input) => denyMatch((input as { command: string }).command),
       async run(input) {
         const args = execSchema.parse(input);
         const cwd = args.cwd ?? defaultCwd();
@@ -105,7 +105,7 @@ export function buildShellTools(getRegistry: () => ProcessRegistry): OttoTool[] 
       actionClass: 'destructive',
       actionClassFor: (input) => classify((input as { command: string }).command),
       schema: spawnSchema,
-      denyPatterns: (input) => denyReason((input as { command: string }).command),
+      denyMatch: (input) => denyMatch((input as { command: string }).command),
       async run(_input) {
         throw new Error(
           'shell.spawn must be invoked via the SDK handler (see sdk-client). Direct invocation not supported.'

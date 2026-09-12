@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { SessionEvent } from '@shared/ipc-contract';
 import type { ActionClass, AutonomyMode } from '@shared/messages';
+import type { DenyMatch } from '../shell/command-class';
 import { clamp, evaluate, type Decision, type RemoteCeiling } from './policy';
 
 export interface DecideArgs {
@@ -10,7 +11,7 @@ export interface DecideArgs {
   toolName: string;
   actionClass: ActionClass;
   input: unknown;
-  denyPatternsFn: ((input: unknown) => string | null) | null;
+  denyMatchFn: ((input: unknown) => DenyMatch | null) | null;
   origin?: 'desktop' | 'remote';
 }
 
@@ -23,6 +24,7 @@ interface Pending {
   messageId: string;
   callId: string;
   timer: NodeJS.Timeout;
+  catastrophic: boolean;
 }
 
 const DECISION_TIMEOUT_MS = 5 * 60 * 1000;
@@ -46,29 +48,37 @@ export class DecisionBroker {
   }
 
   async decide(args: DecideArgs): Promise<'allow' | 'deny'> {
-    if (args.denyPatternsFn) {
-      const reason = args.denyPatternsFn(args.input);
-      if (reason !== null) {
-        this.emitDenied(args, reason);
-        return 'deny';
-      }
+    const match = args.denyMatchFn ? args.denyMatchFn(args.input) : null;
+    if (match?.tier === 'hard') {
+      this.emitDenied(args, match.name);
+      return 'deny';
     }
+    const catastrophic = match !== null;
+    if (catastrophic && (args.origin ?? 'desktop') === 'remote') {
+      // Approving a disk-wrecking command requires being at the machine.
+      this.emitDenied(args, `catastrophic=${match.name}, origin=remote`);
+      return 'deny';
+    }
+    // Catastrophic calls skip the session-allow cache: every one prompts.
+    const actionClass: ActionClass = catastrophic ? 'irreversible' : args.actionClass;
 
     const cacheKey = `${args.sessionId}::${args.toolName}`;
-    if (this.sessionAllow.has(cacheKey)) return 'allow';
+    if (!catastrophic && this.sessionAllow.has(cacheKey)) return 'allow';
 
     const effectiveMode = (args.origin ?? 'desktop') === 'remote'
       ? clamp(this.mode, this.remoteCeiling)
       : this.mode;
-    const policyOutcome: Decision = evaluate(effectiveMode, args.actionClass);
+    const policyOutcome: Decision = evaluate(effectiveMode, actionClass);
+    const reason = catastrophic
+      ? `catastrophic=${match.name}, mode=${effectiveMode}`
+      : `mode=${effectiveMode}, class=${actionClass}`;
     if (policyOutcome === 'allow') return 'allow';
     if (policyOutcome === 'deny') {
-      this.emitDenied(args, `mode=${effectiveMode}, class=${args.actionClass}`);
+      this.emitDenied(args, reason);
       return 'deny';
     }
 
     const decisionId = randomUUID();
-    const reason = `mode=${effectiveMode}, class=${args.actionClass}`;
 
     return new Promise<'allow' | 'deny'>((resolve) => {
       const timer = setTimeout(() => {
@@ -93,6 +103,7 @@ export class DecisionBroker {
         messageId: args.messageId,
         callId: args.callId,
         timer,
+        catastrophic,
       });
 
       this.emit({
@@ -103,19 +114,24 @@ export class DecisionBroker {
         decisionId,
         name: args.toolName,
         input: args.input,
-        actionClass: args.actionClass,
+        actionClass,
         reason,
+        catastrophic,
       });
     });
   }
 
-  resolve(decisionId: string, choice: UserChoice): void {
+  resolve(decisionId: string, choice: UserChoice, source: 'desktop' | 'remote' = 'desktop'): void {
     const entry = this.pending.get(decisionId);
     if (!entry) return;
+    // Approving a catastrophic command requires being at the machine; a remote
+    // client may only deny. Leave the decision pending for the desktop.
+    if (entry.catastrophic && source === 'remote' && choice !== 'deny') return;
     this.pending.delete(decisionId);
     clearTimeout(entry.timer);
 
-    if (choice === 'approve-session') {
+    // A catastrophic approval is one-time only; never whitelist the tool from it.
+    if (choice === 'approve-session' && !entry.catastrophic) {
       this.sessionAllow.add(`${entry.sessionId}::${entry.toolName}`);
     }
 

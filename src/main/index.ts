@@ -466,7 +466,7 @@ async function startElectron(): Promise<void> {
       loadScreenshot: async () => null,
       imageCache,
       activeSessionId: () => sessions.getActiveSessionId(),
-      resolveApproval: (id, choice) => { broker.resolve(id, choice); return true; },
+      resolveApproval: (id, choice) => { broker.resolve(id, choice, 'remote'); return true; },
       resolveSudo: (promptId, password) => { sudoBroker.resolveSudo(promptId, password); return true; },
       configDir: ottoConfigDir,
       sendPrompt: async (text, _origin, attachments) => {

@@ -25,12 +25,13 @@ describe('buildShellTools', () => {
     expect(exec.actionClassFor!({ command: 'mv a b' })).toBe('destructive');
   });
 
-  it('shell_exec exposes denyPatterns', () => {
+  it('shell_exec exposes denyMatch with tiers', () => {
     const { byName } = makeTools();
     const exec = byName.get('shell_exec')!;
-    expect(exec.denyPatterns).toBeTruthy();
-    expect(exec.denyPatterns!({ command: 'rm -rf /' })).toBeTruthy();
-    expect(exec.denyPatterns!({ command: 'ls' })).toBeNull();
+    expect(exec.denyMatch).toBeTruthy();
+    expect(exec.denyMatch!({ command: 'rm -rf /' })).toEqual({ tier: 'hard', name: 'rm-rf-root' });
+    expect(exec.denyMatch!({ command: 'mkfs.exfat /dev/sda1' })).toEqual({ tier: 'confirm', name: 'mkfs' });
+    expect(exec.denyMatch!({ command: 'ls' })).toBeNull();
   });
 
   it('shell_kill has static destructive class and no command-based deny', () => {
@@ -38,7 +39,7 @@ describe('buildShellTools', () => {
     const kill = byName.get('shell_kill')!;
     expect(kill.actionClass).toBe('destructive');
     expect(kill.actionClassFor).toBeUndefined();
-    expect(kill.denyPatterns).toBeUndefined();
+    expect(kill.denyMatch).toBeUndefined();
   });
 
   it('shell_read and shell_wait are static read class (they take a handle, not a command)', () => {
@@ -58,7 +59,7 @@ describe('buildScreenshotTool', () => {
     expect(t.name).toBe('screenshot');
     expect(t.actionClass).toBe('read');
     expect(t.actionClassFor).toBeUndefined();
-    expect(t.denyPatterns).toBeUndefined();
+    expect(t.denyMatch).toBeUndefined();
   });
 
   it('schema accepts no args (region optional)', () => {

@@ -36,18 +36,32 @@ const IRREVERSIBLE_PATTERNS: RegExp[] = [
   /\brm\s+-[rR]f?\b/,
   /\brm\s+-f[rR]\b/,
   /\bdd\b.*\bof=/,
-  /\bmkfs\./,
+  /\bmkfs\b/,
 ];
 
-const DENY_RULES: Array<{ name: string; pattern: RegExp }> = [
+export type DenyTier = 'hard' | 'confirm';
+
+export interface DenyMatch {
+  tier: DenyTier;
+  name: string;
+}
+
+// Commands with no legitimate agent use: denied in every autonomy mode.
+const HARD_DENY_RULES: Array<{ name: string; pattern: RegExp }> = [
   { name: 'rm-rf-root', pattern: /\brm\s+(?:-[rRf]+\s+)+(?:--no-preserve-root\s+)?\/(?:\s|$)/ },
   { name: 'rm-rf-root', pattern: /\brm\s+-rf\s+--no-preserve-root\s+\// },
-  { name: 'dd-to-block-device', pattern: /\bdd\b.*\bof=\/dev\/(?:sd|nvme|hd|vd)/ },
-  { name: 'mkfs', pattern: /\bmkfs\./ },
-  { name: 'shred-device', pattern: /\bshred\b.*\s\/dev\// },
   { name: 'fork-bomb', pattern: /:\s*\(\s*\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/ },
-  { name: 'redirect-to-block-device', pattern: />\s*\/dev\/(?:sd|nvme|hd|vd)/ },
   { name: 'chmod-root', pattern: /\bchmod\s+-R\s+0{1,3}\s+\// },
+];
+
+// Catastrophic but sometimes legitimate (formatting a USB stick, writing an
+// ISO): escalated to 'irreversible' so the mode matrix decides — denied in
+// strict/balanced, explicit confirmation in full-allow. Never auto-run.
+const CONFIRM_DENY_RULES: Array<{ name: string; pattern: RegExp }> = [
+  { name: 'dd-to-block-device', pattern: /\bdd\b.*\bof=\/dev\/(?:sd|nvme|hd|vd)/ },
+  { name: 'mkfs', pattern: /\bmkfs\b/ },
+  { name: 'shred-device', pattern: /\bshred\b.*\s\/dev\// },
+  { name: 'redirect-to-block-device', pattern: />\s*\/dev\/(?:sd|nvme|hd|vd)/ },
 ];
 
 export function classify(command: string): ActionClass {
@@ -57,7 +71,12 @@ export function classify(command: string): ActionClass {
   return 'destructive';
 }
 
-export function denyReason(command: string): string | null {
-  for (const rule of DENY_RULES) if (rule.pattern.test(command)) return rule.name;
+export function denyMatch(command: string): DenyMatch | null {
+  for (const rule of HARD_DENY_RULES) {
+    if (rule.pattern.test(command)) return { tier: 'hard', name: rule.name };
+  }
+  for (const rule of CONFIRM_DENY_RULES) {
+    if (rule.pattern.test(command)) return { tier: 'confirm', name: rule.name };
+  }
   return null;
 }
