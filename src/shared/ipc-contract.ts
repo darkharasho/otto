@@ -256,6 +256,14 @@ export type SessionEvent =
   | { type: 'reasoning'; sessionId: string; messageId: string; text: string }
   | { type: 'tool-call-start'; sessionId: string; messageId: string; callId: string; name: string; input: unknown }
   | { type: 'tool-call-result'; sessionId: string; messageId: string; callId: string; result: unknown; isError: boolean }
+  /** Incremental stdout/stderr of a running blocking tool call (shell_exec), keyed by callId. Ephemeral — the final tool_result carries the full output. */
+  | { type: 'tool-call-output'; sessionId: string; messageId: string; callId: string; stream: 'stdout' | 'stderr'; data: string }
+  /** Agent attached a takeaway/why annotation to an already-emitted tool result. */
+  | { type: 'tool-result-annotated'; sessionId: string; messageId: string; callId: string; takeaway?: string; why?: string }
+  /** Live snapshot of a running watch (observe tool), keyed by callId. Ephemeral — the final tool_result carries the full series. */
+  | { type: 'tool-call-snapshot'; sessionId: string; messageId: string; callId: string; snapshot: unknown }
+  /** End-of-task outcome block appended to the in-flight assistant message. */
+  | { type: 'outcome'; sessionId: string; messageId: string; block: Extract<ContentBlock, { type: 'outcome' }> }
   | { type: 'message-end'; sessionId: string; messageId: string }
   | { type: 'message-cancelled'; sessionId: string; messageId: string }
   | { type: 'error'; sessionId: string; error: StructuredError }

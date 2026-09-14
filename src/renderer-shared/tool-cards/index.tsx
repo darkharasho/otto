@@ -18,6 +18,7 @@ import { KeyCapsCard } from './KeyCapsCard';
 import { TypedCard } from './TypedCard';
 import { TasksCard } from './TasksCard';
 import { JsonTreeCard } from './JsonTreeCard';
+import { ObserveCard } from './ObserveCard';
 
 // Each Card narrows `view` internally via Extract<ResultView, { kind: '...' }>.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -45,6 +46,7 @@ const RENDERERS: Record<ResultView['kind'], AnyCard> = {
   tasks:    TasksCard,
   notebook: NotebookCard,
   tree:     JsonTreeCard,
+  observe:  ObserveCard,
 };
 
 export function ToolCardBody({ view, compact }: { view: ResultView; compact?: boolean }) {

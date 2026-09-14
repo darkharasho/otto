@@ -51,6 +51,41 @@ describe('exec', () => {
     expect(res.stdout.length).toBeLessThanOrEqual(1024 * 1024 + 64);
     expect(res.stdout).toContain('[output truncated]');
   });
+
+  it('streams incremental output through onChunk while running', async () => {
+    const chunks: Array<{ stream: 'stdout' | 'stderr'; data: string }> = [];
+    const res = await exec(
+      {
+        command: 'printf out1; printf err1 >&2; printf out2',
+        cwd: tmpdir(),
+        timeoutMs: 5_000,
+        onChunk: (stream, data) => chunks.push({ stream, data }),
+      },
+      adapter
+    );
+    expect(res.exitCode).toBe(0);
+    const stdout = chunks.filter((c) => c.stream === 'stdout').map((c) => c.data).join('');
+    const stderr = chunks.filter((c) => c.stream === 'stderr').map((c) => c.data).join('');
+    expect(stdout).toBe(res.stdout);
+    expect(stdout).toBe('out1out2');
+    expect(stderr).toBe('err1');
+  });
+
+  it('onChunk totals match the capped buffer when output is truncated', async () => {
+    let streamed = '';
+    const res = await exec(
+      {
+        command: 'head -c 1572864 /dev/zero | base64',
+        cwd: tmpdir(),
+        timeoutMs: 10_000,
+        onChunk: (stream, data) => { if (stream === 'stdout') streamed += data; },
+      },
+      adapter
+    );
+    // Every kept byte was also streamed, exactly once, marker included.
+    expect(streamed).toBe(res.stdout);
+    expect(streamed).toContain('[output truncated]');
+  });
 });
 
 describe('spawn', () => {

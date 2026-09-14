@@ -3,6 +3,44 @@ import type { ResultView } from '@shared/tool-presenters';
 
 type View = Extract<ResultView, { kind: 'image' }>;
 
+/**
+ * Click reticles over the capture. Marker coords are virtual-desktop pixels;
+ * the image spans (originX, originY)…(originX+width, originY+height) of the
+ * same space and scales with its rendered box, so percentage positioning maps
+ * a marker to the right pixel at any thumbnail size.
+ */
+function MarkerOverlay({ view }: { view: View }) {
+  if (!view.markers || view.markers.length === 0) return null;
+  if (view.width === undefined || view.height === undefined || view.width <= 0 || view.height <= 0) return null;
+  const ox = view.originX ?? 0;
+  const oy = view.originY ?? 0;
+  return (
+    <>
+      {view.markers.map((m, i) => {
+        const left = ((m.x - ox) / view.width!) * 100;
+        const top = ((m.y - oy) / view.height!) * 100;
+        if (left < 0 || left > 100 || top < 0 || top > 100) return null;
+        return (
+          <span
+            key={i}
+            data-testid="image-marker"
+            className="absolute pointer-events-none z-[1]"
+            style={{ left: `${left}%`, top: `${top}%` }}
+          >
+            <span aria-hidden className="absolute w-6 h-6 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent/30 motion-safe:animate-ping" />
+            <span aria-hidden className="absolute w-6 h-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-accent shadow-[0_0_10px_rgba(124,125,255,0.55)]" />
+            {m.label && (
+              <span className="absolute left-3.5 top-2 whitespace-nowrap rounded border border-accent/40 bg-bg/85 px-1 py-0.5 font-mono text-[9px] text-[#b9b9ff]">
+                {m.label}
+              </span>
+            )}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
 export function ImageCard({ view, compact }: { view: View; compact?: boolean }) {
   const [zoom, setZoom] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
@@ -79,13 +117,18 @@ export function ImageCard({ view, compact }: { view: View; compact?: boolean }) 
           aria-label="Click to zoom, right-click for options"
           className="block w-full text-left rounded border border-border hover:border-accent transition-colors bg-bg/40 cursor-zoom-in overflow-hidden"
         >
-          <img
-            src={view.src}
-            alt={view.alt ?? 'screenshot'}
-            draggable={false}
-            loading="lazy"
-            className="block w-full h-auto max-h-[500px] object-contain pointer-events-none"
-          />
+          {/* Relative wrapper sized by the img so percentage markers track the
+              rendered image box (object-contain letterboxing would skew them). */}
+          <span className="relative block w-fit max-w-full mx-auto">
+            <img
+              src={view.src}
+              alt={view.alt ?? 'screenshot'}
+              draggable={false}
+              loading="lazy"
+              className="block max-w-full h-auto max-h-[500px] pointer-events-none"
+            />
+            <MarkerOverlay view={view} />
+          </span>
         </button>
         {view.meta && (
           <div className={`text-muted mt-1 ${compact ? 'text-[10px]' : 'text-[10.5px]'} flex items-center gap-2 flex-wrap`}>

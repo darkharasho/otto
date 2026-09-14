@@ -128,6 +128,118 @@ describe('SessionManager', () => {
     ]);
   });
 
+  it('folds annotate_result into the target tool_result instead of rendering it as blocks', async () => {
+    const { openStream } = makeFakeOpenStream(async function* () {
+      yield { type: 'tool-call-start', callId: 'c1', name: 'mcp__otto-tools__shell_exec', input: { command: 'iostat' } };
+      yield { type: 'tool-call-result', callId: 'c1', result: { stdout: 'x\n', exitCode: 0 }, isError: false };
+      yield { type: 'tool-call-start', callId: 'c2', name: 'mcp__otto-tools__annotate_result', input: { takeaway: 'indexer reading 212 MB/s during the hitch' } };
+      yield { type: 'tool-call-result', callId: 'c2', result: 'noted', isError: false };
+      yield { type: 'message-end' };
+      yield { type: 'done' };
+    });
+    fakeSdk.openStream = openStream;
+    const { sessionId } = await manager.start({});
+    await manager.send({ sessionId, text: 'check disk' });
+    const assistant = repo.loadMessages(sessionId).find((m) => m.role === 'assistant')!;
+    // The annotate call itself never becomes content — only the annotated target persists.
+    expect(assistant.content).toEqual([
+      { type: 'tool_use', callId: 'c1', name: 'mcp__otto-tools__shell_exec', input: { command: 'iostat' } },
+      { type: 'tool_result', callId: 'c1', result: { stdout: 'x\n', exitCode: 0 }, isError: false, takeaway: 'indexer reading 212 MB/s during the hitch' },
+    ]);
+    const ann = events.find((e) => e.type === 'tool-result-annotated');
+    expect(ann).toMatchObject({ callId: 'c1', takeaway: 'indexer reading 212 MB/s during the hitch' });
+    expect(events.filter((e) => e.type === 'tool-call-start')).toHaveLength(1);
+    expect(events.filter((e) => e.type === 'tool-call-result')).toHaveLength(1);
+  });
+
+  it('annotate_result honors call_id and attaches why to the named result', async () => {
+    const { openStream } = makeFakeOpenStream(async function* () {
+      yield { type: 'tool-call-start', callId: 'c1', name: 'mcp__otto-tools__shell_exec', input: { command: 'frobnicate' } };
+      yield { type: 'tool-call-result', callId: 'c1', result: { stdout: '', stderr: 'frobnicate: command not found\n', exitCode: 127 }, isError: false };
+      yield { type: 'tool-call-start', callId: 'c2', name: 'mcp__otto-tools__shell_exec', input: { command: 'which frob' } };
+      yield { type: 'tool-call-result', callId: 'c2', result: { stdout: '', exitCode: 1 }, isError: false };
+      yield { type: 'tool-call-start', callId: 'c3', name: 'mcp__otto-tools__annotate_result', input: { call_id: 'c1', why: "frobnicate isn't installed — trying the flatpak next" } };
+      yield { type: 'tool-call-result', callId: 'c3', result: 'noted', isError: false };
+      yield { type: 'message-end' };
+      yield { type: 'done' };
+    });
+    fakeSdk.openStream = openStream;
+    const { sessionId } = await manager.start({});
+    await manager.send({ sessionId, text: 'run frobnicate' });
+    const assistant = repo.loadMessages(sessionId).find((m) => m.role === 'assistant')!;
+    const results = assistant.content.filter((b): b is Extract<ContentBlock, { type: 'tool_result' }> => b.type === 'tool_result');
+    expect(results).toHaveLength(2);
+    expect(results[0]!.why).toBe("frobnicate isn't installed — trying the flatpak next");
+    expect(results[1]!.why).toBeUndefined();
+  });
+
+  it('folds a structured mark_task_complete into an outcome block with computed stats', async () => {
+    const { openStream } = makeFakeOpenStream(async function* () {
+      yield { type: 'tool-call-start', callId: 'c1', name: 'mcp__otto-tools__shell_exec', input: { command: 'balooctl suspend' } };
+      yield { type: 'tool-call-result', callId: 'c1', result: { stdout: '', exitCode: 0 }, isError: false };
+      yield { type: 'tool-call-start', callId: 'c2', name: 'mcp__otto-tools__knowledge_append', input: { note: 'baloo indexing causes frame hitches under load' } };
+      yield { type: 'tool-call-result', callId: 'c2', result: 'noted', isError: false };
+      yield {
+        type: 'tool-call-start', callId: 'c3', name: 'mcp__otto-tools__mark_task_complete',
+        input: {
+          summary: 'paused the indexer',
+          title: 'Stopped the frame hitches',
+          cause: 'baloo indexing a fresh 200GB dump',
+          fix: 'balooctl suspend',
+          verified: '0 spikes over 20ms in a 3m watch',
+          undo_command: 'balooctl resume',
+        },
+      };
+      yield { type: 'tool-call-result', callId: 'c3', result: 'noted', isError: false };
+      yield { type: 'message-end' };
+      yield { type: 'done' };
+    });
+    fakeSdk.openStream = openStream;
+    const { sessionId } = await manager.start({});
+    await manager.send({ sessionId, text: 'fix the stutters' });
+
+    const assistant = repo.loadMessages(sessionId).find((m) => m.role === 'assistant')!;
+    // The mark call never becomes tool blocks — it becomes the outcome block.
+    expect(assistant.content.filter((b) => b.type === 'tool_use').map((b) => (b as { callId: string }).callId)).toEqual(['c1', 'c2']);
+    const last = assistant.content[assistant.content.length - 1]!;
+    expect(last).toMatchObject({
+      type: 'outcome',
+      title: 'Stopped the frame hitches',
+      summary: 'paused the indexer',
+      cause: 'baloo indexing a fresh 200GB dump',
+      fix: 'balooctl suspend',
+      verified: '0 spikes over 20ms in a 3m watch',
+      undoCommand: 'balooctl resume',
+      learnedNote: 'baloo indexing causes frame hitches under load',
+      toolCalls: 2,
+    });
+    const oe = events.find((e) => e.type === 'outcome');
+    expect(oe).toMatchObject({ sessionId, block: { title: 'Stopped the frame hitches' } });
+    expect(events.filter((e) => e.type === 'tool-call-start')).toHaveLength(2);
+    expect(events.filter((e) => e.type === 'tool-call-result')).toHaveLength(2);
+  });
+
+  it('swallows a summary-only mark_task_complete without emitting an outcome', async () => {
+    const { openStream } = makeFakeOpenStream(async function* () {
+      yield { type: 'tool-call-start', callId: 'c1', name: 'mcp__otto-tools__shell_exec', input: { command: 'ls' } };
+      yield { type: 'tool-call-result', callId: 'c1', result: { stdout: 'a\n', exitCode: 0 }, isError: false };
+      yield { type: 'tool-call-start', callId: 'c2', name: 'mcp__otto-tools__mark_task_complete', input: { summary: 'answered the question' } };
+      yield { type: 'tool-call-result', callId: 'c2', result: 'noted', isError: false };
+      yield { type: 'message-end' };
+      yield { type: 'done' };
+    });
+    fakeSdk.openStream = openStream;
+    const { sessionId } = await manager.start({});
+    await manager.send({ sessionId, text: 'what files are here' });
+
+    const assistant = repo.loadMessages(sessionId).find((m) => m.role === 'assistant')!;
+    expect(assistant.content).toEqual([
+      { type: 'tool_use', callId: 'c1', name: 'mcp__otto-tools__shell_exec', input: { command: 'ls' } },
+      { type: 'tool_result', callId: 'c1', result: { stdout: 'a\n', exitCode: 0 }, isError: false },
+    ]);
+    expect(events.find((e) => e.type === 'outcome')).toBeUndefined();
+  });
+
   it('records reasoning as a thinking block ahead of the answer text and emits reasoning events', async () => {
     const { openStream } = makeFakeOpenStream(async function* () {
       yield { type: 'reasoning', text: 'let me ' };

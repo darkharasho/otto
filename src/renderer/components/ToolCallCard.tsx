@@ -13,6 +13,16 @@ interface Props {
   turnActive?: boolean;
   /** Rendered inside an activity-group spine — draw the state dot on the left rail. */
   inSpine?: boolean;
+  /** Agent-supplied one-liner about the result (annotate_result). */
+  takeaway?: string;
+  /** Agent-supplied failure explanation; wins over stderr classification. */
+  why?: string;
+  /** Click reticles merged onto this capture (click→capture merge in Message.tsx). */
+  markers?: Array<{ x: number; y: number; label?: string }>;
+  /** Streamed stdout/stderr while the call is still running (tool-call-output). */
+  partialOutput?: { stdout: string; stderr: string };
+  /** Latest partial-result snapshot while the call is still running (tool-call-snapshot, observe). */
+  partialSnapshot?: unknown;
 }
 
 const SETTLE_AFTER_DONE_MS = 30_000;
@@ -29,12 +39,13 @@ function formatClock(t: number): string {
 }
 
 /** One-line right-side text for the receipt form: exit/duration, or the error reason. */
-function receiptNote(view: ResultView | null): { text: string; tone: 'muted' | 'danger' } | null {
-  if (!view) return null;
-  if (view.kind === 'error') {
+function receiptNote(view: ResultView | null, takeaway?: string): { text: string; tone: 'muted' | 'danger' } | null {
+  if (view?.kind === 'error') {
     const first = view.text.split('\n')[0] ?? '';
     return { text: first.length > 64 ? `${first.slice(0, 63)}…` : first, tone: 'danger' };
   }
+  if (takeaway) return { text: takeaway, tone: 'muted' };
+  if (!view) return null;
   if (view.kind === 'terminal') {
     if (view.takeaway) return { text: view.takeaway, tone: 'muted' };
     if (view.exitCode !== undefined) {
@@ -42,16 +53,33 @@ function receiptNote(view: ResultView | null): { text: string; tone: 'muted' | '
       return { text: `exit ${view.exitCode}${dur}`, tone: view.exitCode === 0 ? 'muted' : 'danger' };
     }
   }
+  if (view.kind === 'observe' && view.verdict) {
+    return { text: view.verdict.text, tone: view.verdict.ok ? 'muted' : 'danger' };
+  }
   return null;
 }
 
-export function ToolCallCard({ name, input, result, isError, turnActive, inSpine }: Props) {
+export function ToolCallCard({ name, input, result, isError, turnActive, inSpine, takeaway, why, markers, partialOutput, partialSnapshot }: Props) {
   const status: 'running' | 'done' | 'error' =
     result === undefined ? 'running' : isError ? 'error' : 'done';
 
   const desc = describeTool(name);
   const summary = summarizeInput(name, input);
-  const view = result === undefined ? null : classifyResult(name, result, isError, input);
+  // A running watch renders its latest snapshot as the live view.
+  let view = result === undefined
+    ? (partialSnapshot !== undefined ? classifyResult(name, partialSnapshot, false, input) : null)
+    : classifyResult(name, result, isError, input);
+  // Fold agent annotations and click markers into the classified view.
+  if (view?.kind === 'terminal' && (takeaway !== undefined || why !== undefined)) {
+    view = {
+      ...view,
+      ...(takeaway !== undefined ? { takeaway } : {}),
+      ...(why !== undefined ? { why } : {}),
+    };
+  }
+  if (view?.kind === 'image' && markers && markers.length > 0) {
+    view = { ...view, markers };
+  }
 
   // Cards restored from history (result already present at mount) and quiet
   // tools start settled; live cards settle on turn end or 30s after done.
@@ -118,7 +146,7 @@ export function ToolCallCard({ name, input, result, isError, turnActive, inSpine
     override === 'receipt' ||
     (override !== 'expand' && (quiet || (settled && status !== 'running')));
 
-  const note = receiptNote(view);
+  const note = receiptNote(view, takeaway);
   const dotClass = inSpine
     ? showReceipt
       ? 'bg-[#3f4046]'
@@ -224,18 +252,18 @@ export function ToolCallCard({ name, input, result, isError, turnActive, inSpine
           </span>
         </button>
         {status === 'running' && <div className="otto-hairline" aria-hidden />}
-        <CardBody name={name} input={input} view={view} status={status} icon={desc.icon} />
+        <CardBody input={input} view={view} status={status} icon={desc.icon} partialOutput={partialOutput} />
       </div>
     </div>
   );
 }
 
-function CardBody({ name, input, view, status, icon }: {
-  name: string;
+function CardBody({ input, view, status, icon, partialOutput }: {
   input: unknown;
   view: ResultView | null;
   status: 'running' | 'done' | 'error';
   icon: string;
+  partialOutput?: { stdout: string; stderr: string };
 }) {
   const inputIsEmpty =
     input === undefined ||
@@ -250,12 +278,17 @@ function CardBody({ name, input, view, status, icon }: {
     view?.kind !== 'terminal';
 
   // Running bodies: screenshot tools show a capture placeholder; shell tools
-  // echo the command in a terminal box until the result lands (streamed
-  // stdout arrives in P2).
+  // echo the command in a terminal box that fills live from streamed stdout.
   const command = input && typeof input === 'object' ? (input as Record<string, unknown>)['command'] : undefined;
   const runningView: ResultView | null =
     status === 'running' && typeof command === 'string'
-      ? { kind: 'terminal', command, streaming: true }
+      ? {
+          kind: 'terminal',
+          command,
+          streaming: true,
+          ...(partialOutput?.stdout ? { stdout: partialOutput.stdout } : {}),
+          ...(partialOutput?.stderr ? { stderr: partialOutput.stderr } : {}),
+        }
       : null;
 
   if (status === 'running' && icon === 'camera') {

@@ -81,6 +81,13 @@ export class SessionManager {
   private readonly cancelling = new Map<string, Set<string>>(); // sessionId -> set of messageIds awaiting cancelled-finalize
   private readonly finalizedMessages = new Map<string, Set<string>>(); // sessionId -> messageIds already persisted
   private readonly seenSdkSessionId = new Set<string>();
+  // callIds of annotate_result / mark_task_complete invocations: their
+  // tool_use/tool_result never become content blocks — the annotation folds
+  // into the target card, the outcome (when structured) becomes its own block.
+  private readonly swallowedCallIds = new Set<string>();
+  // Highest persisted seq covered by the previous outcome card, per session —
+  // the next outcome's stats only span messages after it.
+  private readonly lastOutcomeSeq = new Map<string, number>();
   private activeSessionId: string | null = null;
   private readonly doneListeners: Array<(sessionId: string) => void> = [];
   private readonly userActiveListeners: Array<(sessionId: string) => void> = [];
@@ -231,6 +238,18 @@ export class SessionManager {
             const row = this.getOrCreateAssistant(sessionId, messageId);
             if (!row) break;
             this.ensureStarted(sessionId, row);
+            if (bareToolName(ev.name) === 'annotate_result') {
+              this.swallowedCallIds.add(ev.callId);
+              this.applyAnnotation(sessionId, messageId, row, ev.input);
+              this.notifyActivity();
+              break;
+            }
+            if (bareToolName(ev.name) === 'mark_task_complete') {
+              this.swallowedCallIds.add(ev.callId);
+              this.applyOutcome(sessionId, messageId, row, ev.input);
+              this.notifyActivity();
+              break;
+            }
             row.message.content.push({ type: 'tool_use', callId: ev.callId, name: ev.name, input: ev.input });
             this.emit({
               type: 'tool-call-start',
@@ -244,6 +263,7 @@ export class SessionManager {
             break;
           }
           case 'tool-call-result': {
+            if (this.swallowedCallIds.delete(ev.callId)) break;
             const row = this.getOrCreateAssistant(sessionId, messageId);
             if (!row) break;
             this.ensureStarted(sessionId, row);
@@ -314,6 +334,107 @@ export class SessionManager {
         try { cb(sessionId); } catch (err2) { logger.warn(`done listener threw: ${err2 instanceof Error ? err2.message : err2}`); }
       }
     }
+  }
+
+  /**
+   * Fold an annotate_result call into its target tool_result block (the one
+   * named by call_id, else the most recent) and re-emit so live renderers
+   * update the already-drawn card. The mutation lands before finalizeMessage
+   * persists, so history replays carry the annotation for free.
+   */
+  private applyAnnotation(
+    sessionId: string,
+    messageId: string,
+    row: ActiveAssistant,
+    input: unknown,
+  ): void {
+    const a = (input && typeof input === 'object' ? input : {}) as {
+      takeaway?: unknown; why?: unknown; call_id?: unknown;
+    };
+    const takeaway = typeof a.takeaway === 'string' && a.takeaway.trim().length > 0 ? a.takeaway.trim() : undefined;
+    const why = typeof a.why === 'string' && a.why.trim().length > 0 ? a.why.trim() : undefined;
+    if (!takeaway && !why) return;
+    const targetCallId = typeof a.call_id === 'string' && a.call_id.length > 0 ? a.call_id : undefined;
+    for (let i = row.message.content.length - 1; i >= 0; i -= 1) {
+      const b = row.message.content[i]!;
+      if (b.type !== 'tool_result') continue;
+      if (targetCallId && b.callId !== targetCallId) continue;
+      if (takeaway) b.takeaway = takeaway;
+      if (why) b.why = why;
+      this.emit({
+        type: 'tool-result-annotated',
+        sessionId,
+        messageId,
+        callId: b.callId,
+        ...(takeaway !== undefined ? { takeaway } : {}),
+        ...(why !== undefined ? { why } : {}),
+      });
+      return;
+    }
+    logger.warn(`annotate_result: no matching tool_result${targetCallId ? ` for call ${targetCallId}` : ''} in message ${messageId}`);
+  }
+
+  /**
+   * A structured mark_task_complete (has a title) becomes an outcome block on
+   * the in-flight assistant message: the agent supplies the facts, we compute
+   * the stats over the task slice (persisted messages since the previous
+   * outcome plus the in-flight content). A plain summary-only call is
+   * swallowed silently — reflection still runs via the tool handler.
+   */
+  private applyOutcome(
+    sessionId: string,
+    messageId: string,
+    row: ActiveAssistant,
+    input: unknown,
+  ): void {
+    const a = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>;
+    const str = (v: unknown): string | undefined =>
+      typeof v === 'string' && v.trim().length > 0 ? v.trim() : undefined;
+    const title = str(a['title']);
+    if (!title) return;
+
+    const sinceSeq = this.lastOutcomeSeq.get(sessionId) ?? Number.NEGATIVE_INFINITY;
+    let persisted: ReturnType<Repo['loadMessages']> = [];
+    try {
+      persisted = this.repo.loadMessages(sessionId);
+    } catch (err) {
+      logger.warn(`outcome stats: loadMessages failed: ${err instanceof Error ? err.message : err}`);
+    }
+    const slice = persisted.filter((m) => m.seq > sinceSeq);
+    const blocks = [...slice.flatMap((m) => m.content), ...row.message.content];
+
+    let toolCalls = 0;
+    let learnedNote: string | undefined;
+    for (const b of blocks) {
+      if (b.type !== 'tool_use') continue;
+      toolCalls += 1;
+      if (bareToolName(b.name) === 'knowledge_append') {
+        const note = b.input && typeof b.input === 'object'
+          ? (b.input as Record<string, unknown>)['note']
+          : undefined;
+        if (typeof note === 'string' && note.trim().length > 0) learnedNote = note.trim();
+      }
+    }
+    const startAt = (slice.find((m) => m.role === 'user') ?? slice[0])?.createdAt ?? row.message.createdAt;
+
+    const block: Extract<ContentBlock, { type: 'outcome' }> = {
+      type: 'outcome',
+      title,
+      durationMs: Math.max(0, Date.now() - startAt),
+      toolCalls,
+      ...(str(a['summary']) !== undefined ? { summary: str(a['summary'])! } : {}),
+      ...(str(a['cause']) !== undefined ? { cause: str(a['cause'])! } : {}),
+      ...(str(a['fix']) !== undefined ? { fix: str(a['fix'])! } : {}),
+      ...(str(a['verified']) !== undefined ? { verified: str(a['verified'])! } : {}),
+      ...(str(a['undo_command']) !== undefined ? { undoCommand: str(a['undo_command'])! } : {}),
+      ...(learnedNote !== undefined ? { learnedNote } : {}),
+    };
+    row.message.content.push(block);
+    this.emit({ type: 'outcome', sessionId, messageId, block });
+    // +1 covers the in-flight message's future seq so the next task's slice
+    // doesn't re-count this turn's tool calls.
+    const maxSeq = persisted.length > 0 ? persisted[persisted.length - 1]!.seq : 0;
+    this.lastOutcomeSeq.set(sessionId, maxSeq + 1);
   }
 
   private ensureStarted(sessionId: string, row: ActiveAssistant): void {
@@ -482,6 +603,14 @@ export class SessionManager {
   cancel(args: { sessionId: string }): void {
     this.aborts.get(args.sessionId)?.abort();
   }
+}
+
+/** Strip the SDK's MCP prefix: `mcp__otto-tools__shell_exec` → `shell_exec`. */
+function bareToolName(name: string): string {
+  if (!name.startsWith('mcp__')) return name;
+  const rest = name.slice('mcp__'.length);
+  const sep = rest.indexOf('__');
+  return sep === -1 ? name : rest.slice(sep + 2);
 }
 
 function isAbort(err: unknown): boolean {

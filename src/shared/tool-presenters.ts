@@ -1,7 +1,7 @@
 export type IconName =
   | 'camera' | 'terminal' | 'edit' | 'file' | 'search' | 'globe'
   | 'mouse' | 'keyboard' | 'github' | 'database' | 'image'
-  | 'brain' | 'plug' | 'tool';
+  | 'brain' | 'plug' | 'tool' | 'pulse';
 
 export interface ToolDescriptor {
   label: string;
@@ -28,6 +28,12 @@ const BUILTIN: Record<string, ToolDescriptor> = {
   web_fetch:         { label: 'Fetch page', group: 'Web', icon: 'globe' },
   Read:              { label: 'Read file', group: 'Files', icon: 'file', quiet: true },
   Glob:              { label: 'Find files', group: 'Files', icon: 'search', quiet: true },
+  observe:           { label: 'Observe', icon: 'pulse' },
+  // Never normally rendered (session.ts folds it into the annotated card);
+  // quiet keeps it a one-line receipt if a block ever slips through.
+  annotate_result:   { label: 'Noted', group: 'Shell', icon: 'terminal', quiet: true },
+  // Likewise swallowed by session.ts (folds into the outcome card when structured).
+  mark_task_complete: { label: 'Task complete', icon: 'brain', quiet: true },
 };
 
 const GROUP_OVERRIDES: Record<string, string> = {
@@ -157,6 +163,10 @@ const SUMMARIZERS: Record<string, Summarizer> = {
   },
   Read:         (o, m) => { const p = asString(o['file_path']); return p ? truncate(p, m) : null; },
   Glob:         (o, m) => { const p = asString(o['pattern']);   return p ? truncate(p, m) : null; },
+  observe:      (o, m) => {
+    const parts = [asString(o['label']), asString(o['command'])].filter((s): s is string => s !== null);
+    return parts.length > 0 ? truncate(parts.join(' · '), m) : null;
+  },
 };
 
 function mcpSummary(tool: string, o: Record<string, unknown>, max: number): string | null {
@@ -201,8 +211,12 @@ export interface Hunk {
 }
 
 export type ResultView =
-  | { kind: 'image';    src: string; alt?: string; meta?: string; width?: number; height?: number; monitors?: number; path?: string }
-  | { kind: 'terminal'; command?: string; stdout?: string; stderr?: string; exitCode?: number; durationMs?: number; streaming?: boolean; takeaway?: string }
+  | { kind: 'image';    src: string; alt?: string; meta?: string; width?: number; height?: number; monitors?: number; path?: string;
+      /** Virtual-desktop coords of the capture's top-left (from the meta tiles); anchors click markers. */
+      originX?: number; originY?: number;
+      /** Click reticles drawn over the capture, in virtual-desktop coords. */
+      markers?: Array<{ x: number; y: number; label?: string }> }
+  | { kind: 'terminal'; command?: string; stdout?: string; stderr?: string; exitCode?: number; durationMs?: number; streaming?: boolean; takeaway?: string; why?: string }
   | { kind: 'markdown'; text: string }
   | { kind: 'kv';       entries: Array<[string, string]> }
   | { kind: 'error';    text: string; suggestion?: string }
@@ -218,6 +232,14 @@ export type ResultView =
   | { kind: 'keypress'; keys: string[] }
   | { kind: 'typed';    text: string }
   | { kind: 'tasks';    items: Array<{ status: 'pending' | 'in_progress' | 'completed'; title: string }> }
+  | { kind: 'observe';  label: string; unit: string; threshold?: number;
+      /** Alert side for the threshold ('above' when absent) — marks spike dots. */
+      alertWhen?: 'above' | 'below';
+      startedAt: number; endedAt?: number; series: number[];
+      events: Array<{ t: number; text: string; level: 'info' | 'alert' }>;
+      verdict?: { ok: boolean; text: string };
+      /** Moment a fix was applied mid-watch — draws the before/after divider. */
+      fixAt?: number }
   | { kind: 'notebook'; path: string; cellIndex?: number; cellType?: 'code' | 'markdown'; language?: string; text: string; op?: 'replace' | 'insert' | 'delete' }
   | { kind: 'tree';     value: unknown }
   | { kind: 'json';     value: unknown };
@@ -475,6 +497,8 @@ export function classifyResult(name: string, result: unknown, isError: boolean, 
       let path: string | undefined;
       let width = typeof imgRef.width === 'number' ? imgRef.width : undefined;
       let height = typeof imgRef.height === 'number' ? imgRef.height : undefined;
+      let originX: number | undefined;
+      let originY: number | undefined;
       for (const b of content) {
         if (b && typeof b === 'object' && (b as { type?: unknown }).type === 'text'
             && typeof (b as { text?: unknown }).text === 'string') {
@@ -484,6 +508,16 @@ export function classifyResult(name: string, result: unknown, isError: boolean, 
             if (typeof parsed['path'] === 'string') path = parsed['path'];
             if (width === undefined && typeof parsed['width'] === 'number') width = parsed['width'];
             if (height === undefined && typeof parsed['height'] === 'number') height = parsed['height'];
+            // Tiles carry virtual-desktop rects for slices of this capture; the
+            // capture's own top-left is the min corner across them.
+            if (Array.isArray(parsed['tiles'])) {
+              for (const t of parsed['tiles'] as Array<Record<string, unknown>>) {
+                if (t && typeof t['x'] === 'number' && typeof t['y'] === 'number') {
+                  originX = originX === undefined ? t['x'] : Math.min(originX, t['x']);
+                  originY = originY === undefined ? t['y'] : Math.min(originY, t['y']);
+                }
+              }
+            }
           } catch { /* not JSON, ignore */ }
           break;
         }
@@ -492,7 +526,7 @@ export function classifyResult(name: string, result: unknown, isError: boolean, 
       if (width !== undefined && height !== undefined) metaParts.push(`${width}×${height}`);
       if (monitors !== undefined && monitors > 1) metaParts.push(`${monitors} monitors`);
       const meta = metaParts.length > 0 ? metaParts.join(' · ') : undefined;
-      const view: { kind: 'image'; src: string; meta?: string; width?: number; height?: number; monitors?: number; path?: string } = {
+      const view: { kind: 'image'; src: string; meta?: string; width?: number; height?: number; monitors?: number; path?: string; originX?: number; originY?: number } = {
         kind: 'image',
         src: `otto-image://${imgRef.sessionId}/${imgRef.id}.png`,
       };
@@ -501,6 +535,8 @@ export function classifyResult(name: string, result: unknown, isError: boolean, 
       if (height !== undefined) view.height = height;
       if (monitors !== undefined) view.monitors = monitors;
       if (path !== undefined) view.path = path;
+      if (originX !== undefined) view.originX = originX;
+      if (originY !== undefined) view.originY = originY;
       return view;
     }
   }
@@ -522,6 +558,42 @@ export function classifyResult(name: string, result: unknown, isError: boolean, 
 
   if (typeof result === 'object' && result !== null && !Array.isArray(result)) {
     const o = result as Record<string, unknown>;
+
+    // Observe payload (watch tool result or live snapshot): self-describing via
+    // kind:'observe' so MCP tools can opt into the chart card too.
+    if (
+      o['kind'] === 'observe' && typeof o['label'] === 'string' && typeof o['unit'] === 'string'
+      && typeof o['startedAt'] === 'number' && Array.isArray(o['series'])
+    ) {
+      const series = (o['series'] as unknown[]).filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+      const events = (Array.isArray(o['events']) ? (o['events'] as unknown[]) : [])
+        .filter((e): e is Record<string, unknown> => !!e && typeof e === 'object')
+        .filter((e) => typeof e['t'] === 'number' && typeof e['text'] === 'string')
+        .map((e) => ({
+          t: e['t'] as number,
+          text: e['text'] as string,
+          level: (e['level'] === 'alert' ? 'alert' : 'info') as 'alert' | 'info',
+        }));
+      const rawVerdict = o['verdict'] as Record<string, unknown> | undefined;
+      const verdict =
+        rawVerdict && typeof rawVerdict === 'object'
+        && typeof rawVerdict['ok'] === 'boolean' && typeof rawVerdict['text'] === 'string'
+          ? { ok: rawVerdict['ok'], text: rawVerdict['text'] }
+          : undefined;
+      return {
+        kind: 'observe',
+        label: o['label'],
+        unit: o['unit'],
+        startedAt: o['startedAt'],
+        series,
+        events,
+        ...(typeof o['threshold'] === 'number' ? { threshold: o['threshold'] } : {}),
+        ...(o['alertWhen'] === 'above' || o['alertWhen'] === 'below' ? { alertWhen: o['alertWhen'] } : {}),
+        ...(typeof o['endedAt'] === 'number' ? { endedAt: o['endedAt'] } : {}),
+        ...(verdict !== undefined ? { verdict } : {}),
+        ...(typeof o['fixAt'] === 'number' ? { fixAt: o['fixAt'] } : {}),
+      };
+    }
 
     const parsedGh = parseMcpName(name);
     if (parsedGh && /github/i.test(parsedGh.server)) {

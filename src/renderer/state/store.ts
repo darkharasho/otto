@@ -13,6 +13,27 @@ export interface ActiveSessionState {
   error: StructuredError | null;
   /** True for a private (/p) conversation: never persisted, learned, or saved. */
   private?: boolean;
+  /**
+   * Live partial output of running blocking tool calls, keyed by callId
+   * (tool-call-output events). Ephemeral: an entry is dropped when its
+   * tool-call-result lands, and none of this is ever persisted.
+   */
+  toolOutput?: Record<string, { stdout: string; stderr: string }>;
+  /**
+   * Latest partial-result snapshot of running watch calls, keyed by callId
+   * (tool-call-snapshot events). Same lifecycle as toolOutput: replaced on
+   * each event, dropped when the result lands, never persisted.
+   */
+  toolSnapshot?: Record<string, unknown>;
+}
+
+// Keep only the tail of streamed partial output — the live view shows the
+// last few lines, and the final tool_result carries the full text anyway.
+const TOOL_OUTPUT_TAIL_CHARS = 64_000;
+
+function appendTail(base: string, data: string): string {
+  const next = base + data;
+  return next.length > TOOL_OUTPUT_TAIL_CHARS ? next.slice(-TOOL_OUTPUT_TAIL_CHARS) : next;
 }
 
 export function isSessionBusy(s: ActiveSessionState | null): boolean {
@@ -330,6 +351,65 @@ export const useOttoStore = create<OttoState>((set, get) => ({
               isError: event.isError,
             },
           ],
+        }));
+        // The full output is in the result now — drop the streamed partials.
+        let final = next;
+        if (final.toolOutput && event.callId in final.toolOutput) {
+          const { [event.callId]: _dropped, ...rest } = final.toolOutput;
+          final = { ...final, toolOutput: rest };
+        }
+        if (final.toolSnapshot && event.callId in final.toolSnapshot) {
+          const { [event.callId]: _dropped, ...rest } = final.toolSnapshot;
+          final = { ...final, toolSnapshot: rest };
+        }
+        set({ activeSession: final });
+        return;
+      }
+      case 'tool-call-output': {
+        const cur = session.toolOutput?.[event.callId] ?? { stdout: '', stderr: '' };
+        set({
+          activeSession: {
+            ...session,
+            toolOutput: {
+              ...session.toolOutput,
+              [event.callId]: {
+                ...cur,
+                [event.stream]: appendTail(cur[event.stream], event.data),
+              },
+            },
+          },
+        });
+        return;
+      }
+      case 'tool-call-snapshot': {
+        set({
+          activeSession: {
+            ...session,
+            toolSnapshot: { ...session.toolSnapshot, [event.callId]: event.snapshot },
+          },
+        });
+        return;
+      }
+      case 'outcome': {
+        const next = updateAssistant(session, event.messageId, (m) => ({
+          ...m,
+          content: [...m.content, event.block],
+        }));
+        set({ activeSession: next });
+        return;
+      }
+      case 'tool-result-annotated': {
+        const next = updateAssistant(session, event.messageId, (m) => ({
+          ...m,
+          content: m.content.map((b) =>
+            b.type === 'tool_result' && b.callId === event.callId
+              ? {
+                  ...b,
+                  ...(event.takeaway !== undefined ? { takeaway: event.takeaway } : {}),
+                  ...(event.why !== undefined ? { why: event.why } : {}),
+                }
+              : b
+          ),
         }));
         set({ activeSession: next });
         return;

@@ -85,6 +85,118 @@ describe('ToolCallCard — lifecycle', () => {
     render(<ToolCallCard name="screenshot" input={{}} result={undefined} isError={false} />);
     expect(screen.getByText(/nothing leaves this machine/i)).toBeInTheDocument();
   });
+
+  it('fills the running terminal with streamed partial output', () => {
+    render(
+      <ToolCallCard
+        name="shell_exec"
+        input={{ command: 'pnpm build' }}
+        result={undefined}
+        isError={false}
+        partialOutput={{ stdout: 'compiling main…\nbundling renderer…\n', stderr: '' }}
+      />
+    );
+    expect(screen.getByText(/compiling main/)).toBeInTheDocument();
+    expect(screen.getByText(/bundling renderer/)).toBeInTheDocument();
+    expect(screen.getByText(/streaming…/)).toBeInTheDocument();
+  });
+});
+
+describe('ToolCallCard — agent annotations', () => {
+  it('prefers the agent takeaway on the settled receipt', () => {
+    render(
+      <ToolCallCard
+        name="shell_exec"
+        input={{ command: 'iostat -x 1 3' }}
+        result={{ stdout: 'lots of numbers\n', exitCode: 0, durationMs: 3100 }}
+        isError={false}
+        takeaway="indexer reading 212 MB/s during the hitch"
+      />
+    );
+    expect(screen.getByText('indexer reading 212 MB/s during the hitch')).toBeInTheDocument();
+    expect(screen.queryByText(/exit 0/)).not.toBeInTheDocument();
+  });
+
+  it('agent why beats the stderr classification in the Why row', async () => {
+    render(
+      <ToolCallCard
+        name="shell_exec"
+        input={{ command: 'cp big.iso /mnt/usb/' }}
+        result={{ stdout: '', stderr: 'cp: error writing', exitCode: 1 }}
+        isError={false}
+        why="The USB stick is full — freeing space, then retrying."
+      />
+    );
+    await userEvent.click(screen.getByRole('button'));
+    expect(screen.getByText(/freeing space, then retrying/)).toBeInTheDocument();
+  });
+
+  it('draws click markers on a merged capture', async () => {
+    const result = {
+      content: [
+        { type: 'image-ref', id: 'shot1', sessionId: 's1', path: '/tmp/s.png', width: 200, height: 100, mimeType: 'image/png', source: 'screenshot' },
+        { type: 'text', text: JSON.stringify({ tiles: [{ index: 0, x: 0, y: 0, w: 200, h: 100 }] }) },
+      ],
+    };
+    render(
+      <ToolCallCard
+        name="screenshot"
+        input={{}}
+        result={result}
+        isError={false}
+        markers={[{ x: 40, y: 60, label: 'click · 40, 60' }]}
+      />
+    );
+    await userEvent.click(screen.getByRole('button'));
+    expect(screen.getByTestId('image-marker')).toBeInTheDocument();
+    expect(screen.getByText('click · 40, 60')).toBeInTheDocument();
+  });
+});
+
+describe('ToolCallCard — observe', () => {
+  const base = {
+    kind: 'observe',
+    label: 'frame times',
+    unit: 'ms',
+    threshold: 20,
+    alertWhen: 'above',
+    startedAt: Date.now() - 65_000,
+    series: [12, 38, 14],
+    events: [{ t: Date.now() - 30_000, text: '38 ms — over 20 ms', level: 'alert' }],
+  };
+
+  it('renders the live chart from the partial snapshot while running', () => {
+    render(
+      <ToolCallCard
+        name="mcp__otto-tools__observe"
+        input={{ label: 'frame times', command: 'cat /tmp/frametime', unit: 'ms' }}
+        result={undefined}
+        isError={false}
+        partialSnapshot={base}
+      />
+    );
+    expect(screen.getByText(/running/i)).toBeInTheDocument();
+    expect(screen.getByTestId('observe-sparkline')).toBeInTheDocument();
+    expect(screen.getByText(/watching · frame times/)).toBeInTheDocument();
+    expect(screen.queryByTestId('observe-verdict')).not.toBeInTheDocument();
+  });
+
+  it('uses the verdict as the settled receipt note', () => {
+    render(
+      <ToolCallCard
+        name="mcp__otto-tools__observe"
+        input={{ label: 'frame times', command: 'cat /tmp/frametime', unit: 'ms' }}
+        result={{
+          ...base,
+          endedAt: Date.now(),
+          verdict: { ok: true, text: 'Resolved — 1 of 3 samples over 20 ms in 1m 5s' },
+        }}
+        isError={false}
+      />
+    );
+    expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByText('Resolved — 1 of 3 samples over 20 ms in 1m 5s')).toBeInTheDocument();
+  });
 });
 
 describe('ToolCallCard — result rendering', () => {

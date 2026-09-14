@@ -4,6 +4,8 @@ export interface ExecOptions {
   command: string;
   cwd: string;
   timeoutMs: number;
+  /** Incremental output as it arrives (before the buffered result returns). Stops after the 1MB cap trips. */
+  onChunk?: (stream: 'stdout' | 'stderr', data: string) => void;
 }
 
 export interface ExecResult {
@@ -29,23 +31,29 @@ export async function exec(opts: ExecOptions, adapter: PlatformAdapter): Promise
 
   const onStdout = (chunk: Buffer): void => {
     if (stdoutTruncated) return;
-    const next = stdout + chunk.toString('utf8');
-    if (next.length > OUTPUT_CAP_BYTES) {
-      stdout = next.slice(0, OUTPUT_CAP_BYTES) + TRUNCATION_MARKER;
+    const text = chunk.toString('utf8');
+    const kept = Math.min(text.length, OUTPUT_CAP_BYTES - stdout.length);
+    if (kept < text.length) {
+      stdout = stdout + text.slice(0, kept) + TRUNCATION_MARKER;
       stdoutTruncated = true;
+      opts.onChunk?.('stdout', text.slice(0, kept) + TRUNCATION_MARKER);
     } else {
-      stdout = next;
+      stdout += text;
+      opts.onChunk?.('stdout', text);
     }
   };
 
   const onStderr = (chunk: Buffer): void => {
     if (stderrTruncated) return;
-    const next = stderr + chunk.toString('utf8');
-    if (next.length > OUTPUT_CAP_BYTES) {
-      stderr = next.slice(0, OUTPUT_CAP_BYTES) + TRUNCATION_MARKER;
+    const text = chunk.toString('utf8');
+    const kept = Math.min(text.length, OUTPUT_CAP_BYTES - stderr.length);
+    if (kept < text.length) {
+      stderr = stderr + text.slice(0, kept) + TRUNCATION_MARKER;
       stderrTruncated = true;
+      opts.onChunk?.('stderr', text.slice(0, kept) + TRUNCATION_MARKER);
     } else {
-      stderr = next;
+      stderr += text;
+      opts.onChunk?.('stderr', text);
     }
   };
 

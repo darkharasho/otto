@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { buildShellTools, type OttoTool } from './tools';
 import type { ProcessRegistry } from '../shell/process-registry';
 
@@ -219,4 +219,98 @@ describe('buildMarkTaskCompleteTool', () => {
     expect(() => t.schema.parse({})).toThrow();
     expect(() => t.schema.parse({ summary: '' })).toThrow();
   });
+
+  it('schema accepts the structured outcome fields', () => {
+    const t = buildMarkTaskCompleteTool();
+    expect(() =>
+      t.schema.parse({
+        summary: 'paused the indexer',
+        title: 'Stopped the frame hitches',
+        cause: 'baloo indexing a fresh 200GB dump',
+        fix: 'balooctl suspend',
+        verified: '0 spikes over 20ms in a 3m watch',
+        undo_command: 'balooctl resume',
+      })
+    ).not.toThrow();
+    expect(() => t.schema.parse({ summary: 'x', title: '' })).toThrow();
+  });
+});
+
+import { buildObserveTool } from './tools';
+import type { exec as execFn } from '../shell/executor';
+
+function makeFakeExec(samples: Array<{ stdout: string; exitCode?: number }>) {
+  let i = 0;
+  const fake = vi.fn(async () => {
+    const s = samples[Math.min(i, samples.length - 1)]!;
+    i += 1;
+    return { stdout: s.stdout, stderr: '', exitCode: s.exitCode ?? 0, durationMs: 1, timedOut: false };
+  });
+  return fake as unknown as typeof execFn;
+}
+
+describe('buildObserveTool', () => {
+  it('classifies by the sampling command and exposes denyMatch', () => {
+    const t = buildObserveTool();
+    expect(t.name).toBe('observe');
+    expect(t.actionClassFor!({ command: 'cat /proc/loadavg' })).toBe('read');
+    expect(t.denyMatch!({ command: 'rm -rf /' })).toEqual({ tier: 'hard', name: 'rm-rf-root' });
+    expect(t.denyMatch!({ command: 'cat /proc/loadavg' })).toBeNull();
+  });
+
+  it('samples the first number, flags one alert event per excursion, and concludes Still occurring', async () => {
+    const t = buildObserveTool({ exec: makeFakeExec([{ stdout: 'io 25.5 MB/s\n' }]) });
+    const snapshots: Array<Record<string, unknown>> = [];
+    const res = (await t.run(
+      { label: 'disk reads', command: 'iostat -x 1 1', unit: 'MB/s', interval_s: 0.5, duration_s: 1.2, threshold: 20 },
+      { emitSnapshot: (s) => snapshots.push(s as Record<string, unknown>) }
+    )) as Record<string, unknown>;
+
+    expect(res.kind).toBe('observe');
+    expect(res.label).toBe('disk reads');
+    const series = res.series as number[];
+    expect(series.length).toBeGreaterThanOrEqual(2);
+    expect(series.every((v) => v === 25.5)).toBe(true);
+    // Consecutive over-threshold samples are ONE excursion → one alert event.
+    const events = res.events as Array<{ level: string; text: string }>;
+    expect(events.filter((e) => e.level === 'alert')).toHaveLength(1);
+    expect(events[0]!.text).toContain('over 20 MB/s');
+    const verdict = res.verdict as { ok: boolean; text: string };
+    expect(verdict.ok).toBe(false);
+    expect(verdict.text).toContain('Still occurring');
+    // Snapshots are throttled to ≤1/s, so a ~1.2s watch emits fewer than its samples.
+    expect(snapshots.length).toBeGreaterThanOrEqual(1);
+    expect(snapshots.length).toBeLessThanOrEqual(2);
+    expect(snapshots[0]).toMatchObject({ kind: 'observe', label: 'disk reads', threshold: 20 });
+  }, 10_000);
+
+  it('concludes Resolved when no sample crosses the threshold', async () => {
+    const t = buildObserveTool({ exec: makeFakeExec([{ stdout: '3\n' }]) });
+    const res = (await t.run(
+      { label: 'load', command: 'cat /proc/loadavg', unit: '%', interval_s: 0.5, duration_s: 1, threshold: 90 },
+      {}
+    )) as Record<string, unknown>;
+    const verdict = res.verdict as { ok: boolean; text: string };
+    expect(verdict.ok).toBe(true);
+    expect(verdict.text).toContain('Resolved');
+    expect((res.events as unknown[])).toHaveLength(0);
+  }, 10_000);
+
+  it('bails after repeated sample failures with a No data verdict', async () => {
+    const t = buildObserveTool({ exec: makeFakeExec([{ stdout: 'not a number', exitCode: 0 }]) });
+    const start = Date.now();
+    const res = (await t.run(
+      { label: 'broken', command: 'echo not a number', unit: 'ms', interval_s: 0.5, duration_s: 30 },
+      {}
+    )) as Record<string, unknown>;
+    // Bailed on the fail-streak, not the 30s duration.
+    expect(Date.now() - start).toBeLessThan(10_000);
+    expect(res.series).toEqual([]);
+    const verdict = res.verdict as { ok: boolean; text: string };
+    expect(verdict.ok).toBe(false);
+    expect(verdict.text).toContain('No data');
+    const events = res.events as Array<{ level: string; text: string }>;
+    expect(events).toHaveLength(1); // fail noted once, not per tick
+    expect(events[0]!.text).toContain('no number');
+  }, 15_000);
 });

@@ -5,6 +5,14 @@ import { exec } from '../shell/executor';
 import { classify, denyMatch, type DenyMatch } from '../shell/command-class';
 import { getPlatformAdapter } from '../platform';
 
+/** Side-channels a tool run may use while executing (all optional). */
+export interface ToolRunIO {
+  /** Stream incremental output to the renderer while the call is still running. */
+  emitOutput?(stream: 'stdout' | 'stderr', data: string): void;
+  /** Publish a partial-result snapshot (observe tool) so the running card fills live. */
+  emitSnapshot?(snapshot: unknown): void;
+}
+
 export interface OttoTool {
   name: string;
   description: string;
@@ -12,7 +20,7 @@ export interface OttoTool {
   actionClassFor?(input: unknown): ActionClass;
   schema: z.ZodTypeAny;
   denyMatch?(input: unknown): DenyMatch | null;
-  run(input: unknown): Promise<unknown>;
+  run(input: unknown, io?: ToolRunIO): Promise<unknown>;
 }
 
 export const echoTool: OttoTool = {
@@ -89,11 +97,16 @@ export function buildShellTools(getRegistry: () => ProcessRegistry): OttoTool[] 
       actionClassFor: (input) => classify((input as { command: string }).command),
       schema: execSchema,
       denyMatch: (input) => denyMatch((input as { command: string }).command),
-      async run(input) {
+      async run(input, io) {
         const args = execSchema.parse(input);
         const cwd = args.cwd ?? defaultCwd();
         return exec(
-          { command: args.command, cwd, timeoutMs: args.timeout_ms ?? 60_000 },
+          {
+            command: args.command,
+            cwd,
+            timeoutMs: args.timeout_ms ?? 60_000,
+            ...(io?.emitOutput ? { onChunk: io.emitOutput } : {}),
+          },
           getPlatformAdapter()
         );
       },
@@ -288,15 +301,190 @@ export function buildRecallTool(): OttoTool {
   };
 }
 
+export function buildAnnotateTool(): OttoTool {
+  return {
+    name: 'annotate_result',
+    description:
+      "Attach a one-line plain-language annotation to the tool call that just finished (or a specific `call_id`). `takeaway` (one sentence, ≤90 chars): the single fact the output revealed — information, not status (\"indexer reading 212 MB/s during the hitch\", not \"command succeeded\"). `why` (failed calls only): why it failed and what you'll do next. The annotation renders inline on that tool's card in the chat. Use it when the output contains a real finding or after a failure; skip routine successes.",
+    actionClass: 'read',
+    schema: z.object({
+      takeaway: z.string().min(1).max(140).optional(),
+      why: z.string().min(1).max(240).optional(),
+      call_id: z.string().optional(),
+    }),
+    async run(_input) {
+      // The annotation is applied by SessionManager when it observes this
+      // call in the event stream; the tool itself has nothing to do.
+      return 'noted';
+    },
+  };
+}
+
 export function buildMarkTaskCompleteTool(): OttoTool {
   return {
     name: 'mark_task_complete',
     description:
-      "Call this when you believe the user's request is fully addressed and you are about to stop. Provide a one-sentence `summary` of what was accomplished. This triggers Otto's background reflection pass; it does not affect the user-visible chat. Do NOT call between sub-steps of an ongoing task — only at true completion.",
+      "Call this when you believe the user's request is fully addressed and you are about to stop. Provide a one-sentence `summary` of what was accomplished; this triggers Otto's background reflection pass. When the task fixed a concrete problem, ALSO supply the structured fields — they render an outcome card in the chat: `title` (one line, what got fixed), `cause` (what was wrong), `fix` (the exact command or change, shown in mono), `verified` (how you confirmed it worked), `undo_command` (only if the fix is cleanly reversible). Do NOT call between sub-steps of an ongoing task — only at true completion.",
     actionClass: 'read',
-    schema: z.object({ summary: z.string().min(1).max(500) }),
+    schema: z.object({
+      summary: z.string().min(1).max(500),
+      title: z.string().min(1).max(80).optional(),
+      cause: z.string().min(1).max(140).optional(),
+      fix: z.string().min(1).max(200).optional(),
+      verified: z.string().min(1).max(140).optional(),
+      undo_command: z.string().min(1).max(200).optional(),
+    }),
     async run(_input) {
       throw new Error('mark_task_complete must be invoked via the SDK handler');
+    },
+  };
+}
+
+const observeSchema = z.object({
+  label: z.string().min(1).max(60),
+  command: z.string().min(1),
+  unit: z.string().min(1).max(12),
+  interval_s: z.number().min(0.5).max(60).optional(),
+  duration_s: z.number().min(1).max(1800).optional(),
+  threshold: z.number().optional(),
+  alert_when: z.enum(['above', 'below']).optional(),
+});
+
+/** First finite number anywhere in the sample output. */
+function firstNumber(s: string): number | null {
+  const m = /-?\d+(?:\.\d+)?/.exec(s);
+  if (!m) return null;
+  const v = Number.parseFloat(m[0]);
+  return Number.isFinite(v) ? v : null;
+}
+
+function formatSpan(ms: number): string {
+  const s = Math.round(ms / 1000);
+  return s >= 60 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${s}s`;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+// Live snapshots are throttled to ≤1/s regardless of sample interval (spec:
+// re-render at most 1 fps).
+const SNAPSHOT_MIN_GAP_MS = 1_000;
+
+/**
+ * Watch a numeric metric over time: run `command` every `interval_s`, read the
+ * first number in its stdout, flag threshold crossings, and conclude with a
+ * verdict. Blocks for `duration_s`. `deps.exec` is a test seam.
+ */
+export function buildObserveTool(deps?: { exec?: typeof exec }): OttoTool {
+  const runExec = deps?.exec ?? exec;
+  return {
+    name: 'observe',
+    description:
+      'Watch a numeric metric over time. Runs `command` every interval_s (default 2s) for duration_s (default 60s, max 1800), reading the FIRST number in its stdout as the sample. `threshold` + `alert_when` (default "above") flag spikes as alert events. The chat shows a live chart while watching; the result carries {series, events, verdict}. A watch never just ends — it concludes with a verdict you should act on. Use it to catch intermittent problems (frame hitches, IO bursts, CPU spikes) instead of eyeballing repeated shell_exec calls.',
+    actionClass: 'destructive',
+    actionClassFor: (input) => classify((input as { command: string }).command),
+    denyMatch: (input) => denyMatch((input as { command: string }).command),
+    schema: observeSchema,
+    async run(input, io) {
+      const args = observeSchema.parse(input);
+      const intervalMs = Math.round((args.interval_s ?? 2) * 1000);
+      const durationMs = Math.round((args.duration_s ?? 60) * 1000);
+      const alertWhen = args.alert_when ?? 'above';
+      const startedAt = Date.now();
+      const series: number[] = [];
+      const events: Array<{ t: number; text: string; level: 'info' | 'alert' }> = [];
+      let alerts = 0;
+      let inAlert = false; // one alert event per excursion, not per sample
+      let failStreak = 0;
+      let lastSnapshotAt = 0;
+
+      const base = {
+        kind: 'observe' as const,
+        label: args.label,
+        unit: args.unit,
+        startedAt,
+        ...(args.threshold !== undefined ? { threshold: args.threshold, alertWhen } : {}),
+      };
+
+      while (Date.now() - startedAt < durationMs) {
+        const tickStart = Date.now();
+        const res = await runExec(
+          {
+            command: args.command,
+            cwd: defaultCwd(),
+            timeoutMs: Math.max(1_000, Math.min(intervalMs, 30_000)),
+          },
+          getPlatformAdapter()
+        );
+        const value = res.exitCode === 0 ? firstNumber(res.stdout) : null;
+        const t = Date.now();
+        if (value !== null) {
+          failStreak = 0;
+          series.push(value);
+          const crossed =
+            args.threshold !== undefined
+            && (alertWhen === 'above' ? value > args.threshold : value < args.threshold);
+          if (crossed) {
+            alerts += 1;
+            if (!inAlert) {
+              events.push({
+                t,
+                text: `${value} ${args.unit} — ${alertWhen === 'above' ? 'over' : 'under'} ${args.threshold} ${args.unit}`,
+                level: 'alert',
+              });
+            }
+            inAlert = true;
+          } else {
+            inAlert = false;
+          }
+        } else {
+          failStreak += 1;
+          if (failStreak === 1) {
+            events.push({
+              t,
+              text: res.exitCode !== 0 ? `sample failed (exit ${res.exitCode})` : 'no number in sample output',
+              level: 'info',
+            });
+          }
+          // Never produced a single sample after several tries — the command is
+          // wrong; bail instead of burning the whole watch window.
+          if (failStreak >= 5 && series.length === 0) break;
+        }
+        if (io?.emitSnapshot && Date.now() - lastSnapshotAt >= SNAPSHOT_MIN_GAP_MS) {
+          lastSnapshotAt = Date.now();
+          io.emitSnapshot({ ...base, series: [...series], events: [...events] });
+        }
+        const remaining = durationMs - (Date.now() - startedAt);
+        if (remaining <= 0) break;
+        const wait = Math.min(Math.max(intervalMs - (Date.now() - tickStart), 0), remaining);
+        if (wait > 0) await sleep(wait);
+      }
+
+      const endedAt = Date.now();
+      const span = formatSpan(endedAt - startedAt);
+      let verdict: { ok: boolean; text: string };
+      if (series.length === 0) {
+        verdict = { ok: false, text: `No data — "${args.command}" produced no numeric output` };
+      } else if (args.threshold === undefined) {
+        const last = series[series.length - 1]!;
+        const peak = alertWhen === 'below' ? Math.min(...series) : Math.max(...series);
+        verdict = {
+          ok: true,
+          text: `Watch ended — ${series.length} samples over ${span} · last ${last} ${args.unit} · peak ${peak} ${args.unit}`,
+        };
+      } else if (alerts === 0) {
+        verdict = {
+          ok: true,
+          text: `Resolved — 0 of ${series.length} samples ${alertWhen === 'above' ? 'over' : 'under'} ${args.threshold} ${args.unit} in ${span}`,
+        };
+      } else {
+        verdict = {
+          ok: false,
+          text: `Still occurring — ${alerts} of ${series.length} samples ${alertWhen === 'above' ? 'over' : 'under'} ${args.threshold} ${args.unit} in ${span}`,
+        };
+      }
+      return { ...base, endedAt, series, events, verdict };
     },
   };
 }

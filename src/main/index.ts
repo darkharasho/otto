@@ -409,6 +409,7 @@ async function startElectron(): Promise<void> {
       detector.onMarkComplete(sessionId);
     },
     showReasoning: () => settings.getShowReasoning(),
+    emit: emitWithNotify,
   });
   const sessions = new SessionManager(
     repo,

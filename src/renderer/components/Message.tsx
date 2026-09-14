@@ -8,11 +8,14 @@ import { ToolCallCard } from './ToolCallCard';
 import { ApprovalCard } from './ApprovalCard';
 import { SudoPromptCard } from './SudoPromptCard';
 import { ProcessCard } from './ProcessCard';
+import { OutcomeCard } from './OutcomeCard';
+import { FilmStrip, type FilmStripCapture } from './FilmStrip';
 import { rehypeEmojiIcons } from './rehype-emoji-icons';
 import { EMOJI_TO_ICON, fluentEmojiUrl } from './emoji-icons';
 import { OttoMark } from './OttoMark';
 import { toLocalImageSrc } from '@shared/image-src';
 import { classifyErrorText, InlineErrorCard } from './ErrorCard';
+import { useOttoStore } from '../state/store';
 
 const markdownComponents: Components = {
   // The rehype plugin emits <span class="otto-emoji" data-emoji="…" />; we
@@ -143,6 +146,11 @@ interface Props {
 }
 
 export function MessageView({ message, isStreamingTarget = false }: Props) {
+  // Live partial stdout/stderr of in-flight blocking tool calls (P2 streamed
+  // output), keyed by callId. Only running cards read it.
+  const toolOutput = useOttoStore((s) => s.activeSession?.toolOutput);
+  // Latest partial-result snapshot of running watch calls (P3, observe).
+  const toolSnapshot = useOttoStore((s) => s.activeSession?.toolSnapshot);
   if (message.role === 'system') {
     const block = message.content[0];
     if (!block || block.type !== 'memory-update') return null;
@@ -199,7 +207,7 @@ export function MessageView({ message, isStreamingTarget = false }: Props) {
           <span className="otto-mark-halo"><OttoMark className="w-3.5 h-3.5 text-accent" /></span>
           <span>Otto</span>
         </div>
-        {renderBlocks(message.content, isStreamingTarget)}
+        {renderBlocks(message.content, isStreamingTarget, toolOutput, toolSnapshot)}
         {message.cancelled && <div className="text-xs text-muted mt-1">(cancelled)</div>}
       </div>
     );
@@ -239,12 +247,112 @@ function SpineDot({ active }: { active?: boolean }) {
   );
 }
 
-function renderBlocks(content: ContentBlock[], streamingTarget: boolean) {
-  const elements: React.ReactNode[] = [];
-  const toolResults = new Map<string, { result: unknown; isError: boolean }>();
+/** Strip Otto's MCP prefix so tool_use blocks compare by bare tool name. */
+function bareToolName(name: string): string {
+  return name.startsWith('mcp__otto-tools__') ? name.slice('mcp__otto-tools__'.length) : name;
+}
+
+/**
+ * Click→capture merge (spec §3): a completed click that follows a completed
+ * screenshot in the same activity run becomes a marker ON that capture instead
+ * of its own row. Text/thinking breaks the run; a click with no capture to
+ * anchor to keeps its current row form.
+ */
+function computeClickMerges(
+  content: ContentBlock[],
+  toolResults: Map<string, { result: unknown; isError: boolean }>,
+) {
+  const markersByCall = new Map<string, Array<{ x: number; y: number; label?: string }>>();
+  const suppressed = new Set<string>();
+  let anchor: string | null = null;
   for (const b of content) {
-    if (b.type === 'tool_result') toolResults.set(b.callId, { result: b.result, isError: b.isError ?? false });
+    if (b.type === 'text' || b.type === 'thinking') {
+      anchor = null;
+      continue;
+    }
+    if (b.type !== 'tool_use') continue;
+    const bare = bareToolName(b.name);
+    const res = toolResults.get(b.callId);
+    if (bare === 'screenshot') {
+      anchor = res && !res.isError ? b.callId : null;
+      continue;
+    }
+    if ((bare === 'click' || bare === 'double_click') && anchor && res && !res.isError) {
+      const i = b.input && typeof b.input === 'object' ? (b.input as Record<string, unknown>) : null;
+      if (i && typeof i['x'] === 'number' && typeof i['y'] === 'number') {
+        const list = markersByCall.get(anchor) ?? [];
+        list.push({ x: i['x'], y: i['y'], label: `click · ${i['x']}, ${i['y']}` });
+        markersByCall.set(anchor, list);
+        suppressed.add(b.callId);
+      }
+    }
   }
+  return { markersByCall, suppressed };
+}
+
+/**
+ * Film-strip fold (spec §3): once the turn has settled, ≥2 completed captures
+ * in one activity run collapse to a single strip receipt (expandable gallery).
+ * Runs break on narration, same as the click merge. Returns the strip payload
+ * keyed by its first capture's callId, plus every folded capture's callId.
+ */
+function computeFilmStrips(
+  content: ContentBlock[],
+  toolResults: Map<string, { result: unknown; isError: boolean }>,
+  markersByCall: Map<string, Array<{ x: number; y: number; label?: string }>>,
+) {
+  const strips = new Map<string, { captures: FilmStripCapture[]; clicks: number }>();
+  const folded = new Set<string>();
+  let run: Array<Extract<ContentBlock, { type: 'tool_use' }>> = [];
+  const flushRun = () => {
+    const captures = run.filter((b) => {
+      if (bareToolName(b.name) !== 'screenshot') return false;
+      const res = toolResults.get(b.callId);
+      return !!res && !res.isError;
+    });
+    if (captures.length >= 2) {
+      const items: FilmStripCapture[] = captures.map((b) => ({
+        callId: b.callId,
+        name: b.name,
+        input: b.input,
+        result: toolResults.get(b.callId)!.result,
+        markers: markersByCall.get(b.callId),
+      }));
+      const clicks = captures.reduce((n, b) => n + (markersByCall.get(b.callId)?.length ?? 0), 0);
+      strips.set(captures[0]!.callId, { captures: items, clicks });
+      for (const b of captures) folded.add(b.callId);
+    }
+    run = [];
+  };
+  for (const b of content) {
+    if (b.type === 'text' || b.type === 'thinking') {
+      flushRun();
+      continue;
+    }
+    if (b.type === 'tool_use') run.push(b);
+  }
+  flushRun();
+  return { strips, folded };
+}
+
+function renderBlocks(
+  content: ContentBlock[],
+  streamingTarget: boolean,
+  toolOutput?: Record<string, { stdout: string; stderr: string }>,
+  toolSnapshot?: Record<string, unknown>,
+) {
+  const elements: React.ReactNode[] = [];
+  const toolResults = new Map<string, { result: unknown; isError: boolean; takeaway?: string; why?: string }>();
+  for (const b of content) {
+    if (b.type === 'tool_result') {
+      toolResults.set(b.callId, { result: b.result, isError: b.isError ?? false, takeaway: b.takeaway, why: b.why });
+    }
+  }
+  const { markersByCall, suppressed } = computeClickMerges(content, toolResults);
+  // Strips only form once the turn is over — live captures keep their own cards.
+  const { strips, folded } = streamingTarget
+    ? { strips: new Map<string, { captures: FilmStripCapture[]; clicks: number }>(), folded: new Set<string>() }
+    : computeFilmStrips(content, toolResults, markersByCall);
 
   // Caret goes on the trailing text run only (visual cursor where new tokens land).
   let lastTextIndex = -1;
@@ -298,7 +406,22 @@ function renderBlocks(content: ContentBlock[], streamingTarget: boolean) {
       const streaming = streamingTarget && i === content.length - 1;
       elements.push(<ReasoningBlock key={`think-${i}`} text={b.text} streaming={streaming} />);
     } else if (b.type === 'tool_use') {
+      if (suppressed.has(b.callId)) continue; // merged into the preceding capture's markers
+      const strip = strips.get(b.callId);
+      if (strip) {
+        activityBuf.push((inSpine) => (
+          <div key={`strip-${b.callId}`} id={`activity-${b.callId}`} className="relative">
+            {inSpine && <SpineDot />}
+            <FilmStrip captures={strip.captures} clicks={strip.clicks} />
+          </div>
+        ));
+        continue;
+      }
+      if (folded.has(b.callId)) continue; // rolled into the preceding film strip
       const res = toolResults.get(b.callId);
+      const markers = markersByCall.get(b.callId);
+      const partial = res === undefined ? toolOutput?.[b.callId] : undefined;
+      const snapshot = res === undefined ? toolSnapshot?.[b.callId] : undefined;
       activityBuf.push((inSpine) => (
         <div key={b.callId} id={`activity-${b.callId}`}>
           <ToolCallCard
@@ -308,9 +431,17 @@ function renderBlocks(content: ContentBlock[], streamingTarget: boolean) {
             isError={res?.isError ?? false}
             turnActive={streamingTarget}
             inSpine={inSpine}
+            takeaway={res?.takeaway}
+            why={res?.why}
+            markers={markers}
+            partialOutput={partial}
+            partialSnapshot={snapshot}
           />
         </div>
       ));
+    } else if (b.type === 'outcome') {
+      flushActivity();
+      elements.push(<OutcomeCard key={`outcome-${i}`} block={b} />);
     } else if (b.type === 'pending_tool_use') {
       activityBuf.push((inSpine) => (
         <div key={b.callId} id={`activity-${b.callId}`} className="relative">

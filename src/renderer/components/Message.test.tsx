@@ -125,7 +125,8 @@ describe('MessageView inline markdown images', () => {
 });
 
 describe('MessageView mark_task_complete visibility', () => {
-  it('renders mark_task_complete tool_use as a tool call card', () => {
+  it('renders a legacy persisted mark_task_complete block as a quiet receipt', () => {
+    // Sessions persisted before the outcome fold still carry these blocks.
     const m: Message = {
       ...baseAssistant,
       content: [
@@ -136,7 +137,8 @@ describe('MessageView mark_task_complete visibility', () => {
     };
     render(<MessageView message={m} />);
     expect(screen.getByText('all done')).toBeInTheDocument();
-    expect(screen.getByText(/mark task complete/i)).toBeInTheDocument();
+    expect(screen.getByText('Task complete')).toBeInTheDocument();
+    expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'false');
   });
 });
 
@@ -157,5 +159,144 @@ describe('MessageView user image-ref blocks', () => {
     expect(screen.getByText('look')).toBeInTheDocument();
     const img = screen.getByRole('presentation', { hidden: true }) as HTMLImageElement;
     expect(img.getAttribute('src')).toBe('otto-user-image://s1/r1.png');
+  });
+});
+
+describe('MessageView click→capture merge', () => {
+  const screenshotResult = {
+    content: [
+      { type: 'image-ref', id: 'shot1', sessionId: 's1', path: '/tmp/shot1.png', width: 200, height: 100, mimeType: 'image/png', source: 'screenshot' },
+      { type: 'text', text: JSON.stringify({ path: '/tmp/shot1.png', width: 200, height: 100, monitors: [{}], tiles: [{ index: 0, x: 0, y: 0, w: 200, h: 100 }] }) },
+    ],
+  };
+
+  function assistantWith(content: Message['content']): Message {
+    return { ...baseAssistant, content };
+  }
+
+  it('merges a completed click into the preceding capture and suppresses its row', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    const m = assistantWith([
+      { type: 'tool_use', callId: 'ss1', name: 'mcp__otto-tools__screenshot', input: {} },
+      { type: 'tool_result', callId: 'ss1', result: screenshotResult, isError: false },
+      { type: 'tool_use', callId: 'ck1', name: 'mcp__otto-tools__click', input: { x: 40, y: 60, button: 'left' } },
+      { type: 'tool_result', callId: 'ck1', result: { content: [{ type: 'text', text: '{"ok":true}' }] }, isError: false },
+    ]);
+    const { container } = render(<MessageView message={m} />);
+    // Only the screenshot card remains — the click folded into it as a marker.
+    expect(container.querySelectorAll('[id^="activity-"]')).toHaveLength(1);
+    expect(screen.queryByText('Click')).not.toBeInTheDocument();
+    // Expanding the capture shows the reticle at the click point.
+    await userEvent.click(screen.getByRole('button', { name: /screenshot/i }));
+    expect(screen.getByTestId('image-marker')).toBeInTheDocument();
+    expect(screen.getByText('click · 40, 60')).toBeInTheDocument();
+  });
+
+  it('keeps the click row when no capture precedes it', () => {
+    const m = assistantWith([
+      { type: 'tool_use', callId: 'ck1', name: 'mcp__otto-tools__click', input: { x: 40, y: 60, button: 'left' } },
+      { type: 'tool_result', callId: 'ck1', result: { content: [{ type: 'text', text: '{"ok":true}' }] }, isError: false },
+    ]);
+    render(<MessageView message={m} />);
+    expect(screen.getByText('Click')).toBeInTheDocument();
+  });
+
+  it('does not merge across intervening narration text', () => {
+    const m = assistantWith([
+      { type: 'tool_use', callId: 'ss1', name: 'mcp__otto-tools__screenshot', input: {} },
+      { type: 'tool_result', callId: 'ss1', result: screenshotResult, isError: false },
+      { type: 'text', text: 'Found the button, clicking it now.' },
+      { type: 'tool_use', callId: 'ck1', name: 'mcp__otto-tools__click', input: { x: 40, y: 60, button: 'left' } },
+      { type: 'tool_result', callId: 'ck1', result: { content: [{ type: 'text', text: '{"ok":true}' }] }, isError: false },
+    ]);
+    render(<MessageView message={m} />);
+    expect(screen.getByText('Click')).toBeInTheDocument();
+  });
+});
+
+describe('MessageView film-strip fold', () => {
+  const shot = (id: string) => ({
+    content: [
+      { type: 'image-ref', id, sessionId: 's1', path: `/tmp/${id}.png`, width: 200, height: 100, mimeType: 'image/png', source: 'screenshot' },
+      { type: 'text', text: JSON.stringify({ path: `/tmp/${id}.png`, width: 200, height: 100, monitors: [{}], tiles: [{ index: 0, x: 0, y: 0, w: 200, h: 100 }] }) },
+    ],
+  });
+  const clickOk = { content: [{ type: 'text', text: '{"ok":true}' }] };
+
+  function assistantWith(content: Message['content']): Message {
+    return { ...baseAssistant, content };
+  }
+
+  const twoCapturesAndAClick: Message['content'] = [
+    { type: 'tool_use', callId: 'ss1', name: 'mcp__otto-tools__screenshot', input: {} },
+    { type: 'tool_result', callId: 'ss1', result: shot('shot1'), isError: false },
+    { type: 'tool_use', callId: 'ss2', name: 'mcp__otto-tools__screenshot', input: {} },
+    { type: 'tool_result', callId: 'ss2', result: shot('shot2'), isError: false },
+    { type: 'tool_use', callId: 'ck1', name: 'mcp__otto-tools__click', input: { x: 40, y: 60, button: 'left' } },
+    { type: 'tool_result', callId: 'ck1', result: clickOk, isError: false },
+  ];
+
+  it('collapses two settled captures (plus merged click) into one strip receipt', () => {
+    const { container } = render(<MessageView message={assistantWith(twoCapturesAndAClick)} />);
+    const strip = screen.getByTestId('film-strip');
+    expect(strip).toHaveTextContent('Screen');
+    expect(strip).toHaveTextContent('2 captures · 1 click');
+    expect(strip.querySelectorAll('img')).toHaveLength(2); // thumbnails
+    // The individual capture cards are folded away.
+    expect(screen.queryByText('Screenshot')).not.toBeInTheDocument();
+    expect(container.querySelectorAll('[id^="activity-"]')).toHaveLength(1);
+  });
+
+  it('expands to a gallery that keeps the merged click markers', async () => {
+    const userEvent = (await import('@testing-library/user-event')).default;
+    render(<MessageView message={assistantWith(twoCapturesAndAClick)} />);
+    await userEvent.click(screen.getByTestId('film-strip'));
+    const gallery = screen.getByTestId('film-strip-gallery');
+    expect(gallery.querySelectorAll('img')).toHaveLength(2);
+    expect(screen.getByTestId('image-marker')).toBeInTheDocument();
+    expect(screen.getByText('click · 40, 60')).toBeInTheDocument();
+  });
+
+  it('keeps individual capture cards while the turn is still streaming', () => {
+    render(<MessageView message={assistantWith(twoCapturesAndAClick)} isStreamingTarget={true} />);
+    expect(screen.queryByTestId('film-strip')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Screenshot').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('does not fold across intervening narration', () => {
+    const m = assistantWith([
+      { type: 'tool_use', callId: 'ss1', name: 'mcp__otto-tools__screenshot', input: {} },
+      { type: 'tool_result', callId: 'ss1', result: shot('shot1'), isError: false },
+      { type: 'text', text: 'Here is the first monitor.' },
+      { type: 'tool_use', callId: 'ss2', name: 'mcp__otto-tools__screenshot', input: {} },
+      { type: 'tool_result', callId: 'ss2', result: shot('shot2'), isError: false },
+    ]);
+    render(<MessageView message={m} />);
+    expect(screen.queryByTestId('film-strip')).not.toBeInTheDocument();
+  });
+});
+
+describe('MessageView outcome block', () => {
+  it('renders the outcome card outside the activity spine', () => {
+    const m: Message = {
+      ...baseAssistant,
+      content: [
+        { type: 'tool_use', callId: 'c1', name: 'shell_exec', input: { command: 'balooctl suspend' } },
+        { type: 'tool_result', callId: 'c1', result: { stdout: '', exitCode: 0 }, isError: false },
+        {
+          type: 'outcome',
+          title: 'Stopped the frame hitches',
+          durationMs: 12 * 60_000,
+          toolCalls: 9,
+          fix: 'balooctl suspend',
+        },
+        { type: 'text', text: 'All set.' },
+      ],
+    };
+    render(<MessageView message={m} />);
+    expect(screen.getByTestId('outcome-card')).toBeInTheDocument();
+    expect(screen.getByText('Stopped the frame hitches')).toBeInTheDocument();
+    expect(screen.getByText('12 minutes · 9 tool calls')).toBeInTheDocument();
+    expect(screen.getByText('All set.')).toBeInTheDocument();
   });
 });

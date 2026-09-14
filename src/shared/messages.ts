@@ -5,7 +5,16 @@ export type ContentBlock =
   | { type: 'text'; text: string }
   | { type: 'thinking'; text: string }
   | { type: 'tool_use'; callId: string; name: string; input: unknown }
-  | { type: 'tool_result'; callId: string; result: unknown; isError?: boolean }
+  | {
+      type: 'tool_result';
+      callId: string;
+      result: unknown;
+      isError?: boolean;
+      /** Agent-supplied one-liner (annotate_result): what the output revealed. */
+      takeaway?: string;
+      /** Agent-supplied failure explanation: why it failed + what happens next. */
+      why?: string;
+    }
   | {
       type: 'pending_tool_use';
       callId: string;
@@ -44,6 +53,25 @@ export type ContentBlock =
       heuristics: number;
       promoted: number;
       demoted: number;
+    }
+  | {
+      /**
+       * End-of-task summary card. Built by SessionManager from a structured
+       * mark_task_complete call — the agent supplies title/cause/fix/verified,
+       * main computes the stats. Never synthesized renderer-side.
+       */
+      type: 'outcome';
+      title: string;
+      summary?: string;
+      durationMs: number;
+      toolCalls: number;
+      approvals?: number;
+      cause?: string;
+      fix?: string;
+      verified?: string;
+      undoCommand?: string;
+      /** Note the agent saved via knowledge_append during this task. */
+      learnedNote?: string;
     }
   | {
       type: 'image-ref';

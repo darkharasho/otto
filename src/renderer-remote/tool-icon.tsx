@@ -1,13 +1,14 @@
 import type { IconName } from '../shared/tool-presenters';
 import {
   Camera, Terminal, FileEdit, FileText, Search, Globe,
-  MousePointer, Keyboard, GitBranch, Database, Image, Brain, Plug, Wrench,
+  MousePointer, Keyboard, GitBranch, Database, Image, Brain, Plug, Wrench, Activity,
 } from 'lucide-react';
 
 const MAP: Record<IconName, React.ComponentType<{ className?: string }>> = {
   camera: Camera, terminal: Terminal, edit: FileEdit, file: FileText,
   search: Search, globe: Globe, mouse: MousePointer, keyboard: Keyboard,
   github: GitBranch, database: Database, image: Image, brain: Brain, plug: Plug, tool: Wrench,
+  pulse: Activity,
 };
 
 export function ToolIcon({ name, className }: { name: IconName; className?: string }) {

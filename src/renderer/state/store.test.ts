@@ -478,3 +478,113 @@ describe('canProactivelyReset', () => {
     expect(canProactivelyReset({ ...base, private: true })).toBe(false);
   });
 });
+
+describe('store: streamed tool output (tool-call-output)', () => {
+  beforeEach(() => {
+    useOttoStore.getState().beginSession('s1');
+    useOttoStore.getState().applyEvent({ type: 'message-start', sessionId: 's1', messageId: 'm1' });
+    useOttoStore.getState().applyEvent({
+      type: 'tool-call-start', sessionId: 's1', messageId: 'm1',
+      callId: 'c1', name: 'shell_exec', input: { command: 'du -sh /' },
+    });
+  });
+
+  it('buffers stdout and stderr chunks per callId', () => {
+    useOttoStore.getState().applyEvent({ type: 'tool-call-output', sessionId: 's1', messageId: 'm1', callId: 'c1', stream: 'stdout', data: '12G\t/home\n' });
+    useOttoStore.getState().applyEvent({ type: 'tool-call-output', sessionId: 's1', messageId: 'm1', callId: 'c1', stream: 'stdout', data: '3G\t/var\n' });
+    useOttoStore.getState().applyEvent({ type: 'tool-call-output', sessionId: 's1', messageId: 'm1', callId: 'c1', stream: 'stderr', data: 'du: cannot read\n' });
+    const out = useOttoStore.getState().activeSession!.toolOutput!['c1']!;
+    expect(out.stdout).toBe('12G\t/home\n3G\t/var\n');
+    expect(out.stderr).toBe('du: cannot read\n');
+  });
+
+  it('drops the partial buffer once the tool result lands', () => {
+    useOttoStore.getState().applyEvent({ type: 'tool-call-output', sessionId: 's1', messageId: 'm1', callId: 'c1', stream: 'stdout', data: 'partial' });
+    useOttoStore.getState().applyEvent({
+      type: 'tool-call-result', sessionId: 's1', messageId: 'm1',
+      callId: 'c1', result: { stdout: 'partial-and-more', exitCode: 0 }, isError: false,
+    });
+    expect(useOttoStore.getState().activeSession!.toolOutput?.['c1']).toBeUndefined();
+  });
+
+  it('keeps only the tail of oversized streamed output', () => {
+    useOttoStore.getState().applyEvent({ type: 'tool-call-output', sessionId: 's1', messageId: 'm1', callId: 'c1', stream: 'stdout', data: 'x'.repeat(70_000) });
+    useOttoStore.getState().applyEvent({ type: 'tool-call-output', sessionId: 's1', messageId: 'm1', callId: 'c1', stream: 'stdout', data: 'END' });
+    const out = useOttoStore.getState().activeSession!.toolOutput!['c1']!;
+    expect(out.stdout.length).toBeLessThanOrEqual(64_000);
+    expect(out.stdout.endsWith('END')).toBe(true);
+  });
+});
+
+describe('store: watch snapshots (tool-call-snapshot)', () => {
+  beforeEach(() => {
+    useOttoStore.getState().beginSession('s1');
+    useOttoStore.getState().applyEvent({ type: 'message-start', sessionId: 's1', messageId: 'm1' });
+    useOttoStore.getState().applyEvent({
+      type: 'tool-call-start', sessionId: 's1', messageId: 'm1',
+      callId: 'c1', name: 'observe', input: { label: 'load', command: 'cat /proc/loadavg', unit: '%' },
+    });
+  });
+
+  it('keeps only the latest snapshot per callId', () => {
+    useOttoStore.getState().applyEvent({
+      type: 'tool-call-snapshot', sessionId: 's1', messageId: 'm1', callId: 'c1',
+      snapshot: { kind: 'observe', label: 'load', unit: '%', startedAt: 1, series: [3] },
+    });
+    useOttoStore.getState().applyEvent({
+      type: 'tool-call-snapshot', sessionId: 's1', messageId: 'm1', callId: 'c1',
+      snapshot: { kind: 'observe', label: 'load', unit: '%', startedAt: 1, series: [3, 4] },
+    });
+    const snap = useOttoStore.getState().activeSession!.toolSnapshot!['c1'] as { series: number[] };
+    expect(snap.series).toEqual([3, 4]);
+  });
+
+  it('drops the snapshot once the tool result lands', () => {
+    useOttoStore.getState().applyEvent({
+      type: 'tool-call-snapshot', sessionId: 's1', messageId: 'm1', callId: 'c1',
+      snapshot: { kind: 'observe', label: 'load', unit: '%', startedAt: 1, series: [3] },
+    });
+    useOttoStore.getState().applyEvent({
+      type: 'tool-call-result', sessionId: 's1', messageId: 'm1',
+      callId: 'c1', result: { kind: 'observe', label: 'load', unit: '%', startedAt: 1, endedAt: 9, series: [3, 4] }, isError: false,
+    });
+    expect(useOttoStore.getState().activeSession!.toolSnapshot?.['c1']).toBeUndefined();
+  });
+});
+
+describe('store: outcome event', () => {
+  it('appends the outcome block to the streaming assistant message', () => {
+    useOttoStore.getState().beginSession('s1');
+    useOttoStore.getState().applyEvent({ type: 'message-start', sessionId: 's1', messageId: 'm1' });
+    useOttoStore.getState().applyEvent({
+      type: 'outcome', sessionId: 's1', messageId: 'm1',
+      block: { type: 'outcome', title: 'Stopped the frame hitches', durationMs: 720_000, toolCalls: 9, fix: 'balooctl suspend' },
+    });
+    const msg = useOttoStore.getState().activeSession!.messages[0]!;
+    expect(msg.content[msg.content.length - 1]).toMatchObject({
+      type: 'outcome', title: 'Stopped the frame hitches', toolCalls: 9,
+    });
+  });
+});
+
+describe('store: tool-result-annotated', () => {
+  it('merges takeaway/why into the matching tool_result block', () => {
+    useOttoStore.getState().beginSession('s1');
+    useOttoStore.getState().applyEvent({ type: 'message-start', sessionId: 's1', messageId: 'm1' });
+    useOttoStore.getState().applyEvent({
+      type: 'tool-call-start', sessionId: 's1', messageId: 'm1',
+      callId: 'c1', name: 'shell_exec', input: { command: 'iostat' },
+    });
+    useOttoStore.getState().applyEvent({
+      type: 'tool-call-result', sessionId: 's1', messageId: 'm1',
+      callId: 'c1', result: { stdout: 'x', exitCode: 0 }, isError: false,
+    });
+    useOttoStore.getState().applyEvent({
+      type: 'tool-result-annotated', sessionId: 's1', messageId: 'm1',
+      callId: 'c1', takeaway: 'disk saturated during the hitch',
+    });
+    const msg = useOttoStore.getState().activeSession!.messages[0]!;
+    const tr = msg.content.find((b) => b.type === 'tool_result');
+    expect(tr).toMatchObject({ callId: 'c1', takeaway: 'disk saturated during the hitch' });
+  });
+});

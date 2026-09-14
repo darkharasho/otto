@@ -3,9 +3,10 @@ import { createSessionStream, type QueryFactory } from './session-stream';
 import type { SDKMessage, SDKUserMessage, Options, Query } from '@anthropic-ai/claude-agent-sdk';
 import {
   buildInputTools, buildKnowledgeTool, buildScreenshotTool, buildShellTools, stubTools,
-  buildRecallTool, buildMarkTaskCompleteTool,
+  buildRecallTool, buildMarkTaskCompleteTool, buildAnnotateTool, buildObserveTool,
   type OttoTool,
 } from './tools';
+import type { SessionEvent } from '@shared/ipc-contract';
 import { exec as execInput, type InputAction } from '../input/executor';
 import type { DecisionBroker } from '../autonomy/decision-broker';
 import type { SudoBroker } from '../autonomy/sudo-broker';
@@ -201,8 +202,12 @@ function buildSystemPrompt(): string {
     '- WebFetch(url, prompt): fetch a URL and extract readable content based on the prompt.',
     '- knowledge_append(note): save a durable fact or preference to Otto\'s memory. Stable preferences are prioritized for inclusion in future prompts. Use sparingly.',
     '- recall(query, kinds?, limit?): search Otto\'s durable memory from prior sessions on this machine. Returns matching facts and structured artifacts (playbooks, anti-patterns, heuristics) with provenance (learned_at, last_used_at, times_used, sessions_seen) — weigh trust accordingly. Call this at the START of any task that resembles past work before deciding on an approach.',
-    '- mark_task_complete(summary): call ONCE when you believe the user\'s request is fully addressed. Triggers a background reflection pass that surfaces a memory-update card in the chat. Do not call between sub-steps.',
+    '- annotate_result(takeaway?, why?, call_id?): attach a one-line annotation to the most recent finished tool call (or a specific call_id). It renders inline on that tool\'s card in the chat.',
+    '- observe(label, command, unit, interval_s?, duration_s?, threshold?, alert_when?): watch a numeric metric — samples `command` every interval_s (default 2s) for duration_s (default 60s), reading the FIRST number in its stdout. threshold + alert_when flag spikes. Blocks until done; the chat shows a live chart and the result concludes with a verdict. Use it for intermittent problems (frame hitches, IO bursts, CPU spikes) instead of repeated shell_exec polling. To verify a fix, run a watch AFTER applying it and compare against the before-watch.',
+    '- mark_task_complete(summary, title?, cause?, fix?, verified?, undo_command?): call ONCE when you believe the user\'s request is fully addressed. Triggers a background reflection pass. When the task fixed a concrete problem, include the structured fields — title (one line, what got fixed), cause, fix (exact command/change), verified (how you know it worked), undo_command (only if cleanly reversible) — they render an outcome card in the chat. Do not call between sub-steps.',
     '- echo(msg), fake-mutate(target), fake-wipe(target): test stubs; ignore unless explicitly asked.',
+    '',
+    'ANNOTATIONS: after a tool result that yields a real finding, call annotate_result with `takeaway` — ONE plain-language sentence (≤90 chars) stating what the output revealed ("indexer reading 212 MB/s during the hitch"), never a restatement of the command or a bare status. After a FAILED command, call it with `why` — why it failed and what you will do next. Skip routine successes (listing files, simple checks) and never annotate the same call twice.',
     '',
     'INLINE IMAGES: you can embed images in your responses with `![alt](url)`. Use this only when a visual materially helps the user — a screenshot from a guide, an in-game map, a diagram, a UI reference. Never decorative. The URL must come from a WebSearch/WebFetch result (or another tool that returned an image URL); do not invent URLs. Otto downloads, validates, and caches every image locally before rendering, so dead or non-image URLs fail silently.',
     '',
@@ -256,6 +261,9 @@ export interface RealSdkClientDeps {
   onMarkTaskComplete(sessionId: string, summary: string): void;
   /** Whether to request summarized reasoning ("Show reasoning" setting). */
   showReasoning?: () => boolean;
+  /** Fan-out emitter for events produced mid-tool-run (streamed stdout). Same
+   *  channel the SessionManager and ProcessRegistry publish on. */
+  emit?: (event: SessionEvent) => void;
 }
 
 interface ToolCtx {
@@ -276,6 +284,7 @@ interface ToolCtx {
   bumpFactUse: RealSdkClientDeps['bumpFactUse'];
   appendKnowledge: RealSdkClientDeps['appendKnowledge'];
   onMarkTaskComplete: RealSdkClientDeps['onMarkTaskComplete'];
+  emit?: (event: SessionEvent) => void;
 }
 
 /**
@@ -375,6 +384,8 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
     buildKnowledgeTool(),
     buildRecallTool(),
     buildMarkTaskCompleteTool(),
+    buildAnnotateTool(),
+    buildObserveTool(),
   ];
   const sdkTools = allTools.map((t) => {
     const shape = (t.schema as unknown as { shape?: Record<string, unknown> }).shape;
@@ -592,7 +603,32 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
           return { content: [{ type: 'text' as const, text: 'noted' }] };
         }
 
-        const result = await t.run(args);
+        const result = await t.run(args, {
+          // Streamed stdout (P2): running blocking tools (shell_exec) publish
+          // incremental output straight to the renderer, keyed by callId —
+          // the same fan-out ProcessRegistry uses for spawned processes.
+          emitOutput: (stream, data) => {
+            ctx.emit?.({
+              type: 'tool-call-output',
+              sessionId: ctx.sessionId,
+              messageId: ctx.getMessageId(),
+              callId,
+              stream,
+              data,
+            });
+          },
+          // Partial-result snapshots (P3): a running observe publishes its
+          // series/events so the chart card fills live. Throttled at source.
+          emitSnapshot: (snapshot) => {
+            ctx.emit?.({
+              type: 'tool-call-snapshot',
+              sessionId: ctx.sessionId,
+              messageId: ctx.getMessageId(),
+              callId,
+              snapshot,
+            });
+          },
+        });
         return {
           content: [
             {
@@ -811,6 +847,8 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
     buildKnowledgeTool(),
     buildRecallTool(),
     buildMarkTaskCompleteTool(),
+    buildAnnotateTool(),
+    buildObserveTool(),
   ];
   const allowedTools = [
     ...allToolsForAllow.map((t) => `mcp__otto-tools__${t.name}`),
@@ -865,6 +903,7 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
             bumpFactUse: deps.bumpFactUse,
             appendKnowledge: deps.appendKnowledge,
             onMarkTaskComplete: deps.onMarkTaskComplete,
+            emit: deps.emit,
           });
           inner = sdkModule.query({
             prompt: prompt as AsyncIterable<SDKUserMessage>,

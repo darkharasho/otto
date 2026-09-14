@@ -115,7 +115,8 @@ export function TerminalCard({ view, compact }: { view: View; compact?: boolean 
           {exit !== 0 && (
             <div className="mt-1.5 rounded-[7px] border border-danger/30 bg-danger/[0.07] px-2.5 py-1.5 text-[10.5px]">
               <span className="text-danger font-medium">Why: </span>
-              <span className="text-text/85">{whyFailed(view.stderr, exit)}</span>
+              {/* Agent-supplied explanation (annotate_result `why`) beats the stderr heuristic. */}
+              <span className="text-text/85">{view.why ?? whyFailed(view.stderr, exit)}</span>
             </div>
           )}
         </>
