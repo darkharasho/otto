@@ -1,7 +1,11 @@
 import type { Config } from 'tailwindcss';
 
 export default {
-  content: ['src/renderer/**/*.{ts,tsx,html}', 'src/renderer-remote/**/*.{ts,tsx,html}'],
+  content: [
+    'src/renderer/**/*.{ts,tsx,html}',
+    'src/renderer-remote/**/*.{ts,tsx,html}',
+    'src/renderer-shared/**/*.{ts,tsx}',
+  ],
   theme: {
     extend: {
       colors: {
@@ -13,6 +17,9 @@ export default {
         accent: '#7c7dff',
         accent2: '#6e6fff',
         danger: '#ef4444',
+        term: '#0a0a0c',
+        warn: '#f5a04b',
+        good: '#3cdc82',
       },
       fontFamily: {
         sans: ['"Plus Jakarta Sans"', 'Inter', 'system-ui', 'sans-serif'],

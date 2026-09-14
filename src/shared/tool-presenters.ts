@@ -7,6 +7,8 @@ export interface ToolDescriptor {
   label: string;
   group?: string;
   icon: IconName;
+  /** Low-signal tool: skip the expanded phase, render as a one-line receipt immediately. */
+  quiet?: boolean;
 }
 
 const BUILTIN: Record<string, ToolDescriptor> = {
@@ -19,11 +21,13 @@ const BUILTIN: Record<string, ToolDescriptor> = {
   type:              { label: 'Type text', group: 'Input', icon: 'keyboard' },
   key:               { label: 'Press key', group: 'Input', icon: 'keyboard' },
   knowledge_append:  { label: 'Append knowledge', group: 'Memory', icon: 'brain' },
-  knowledge_search:  { label: 'Search knowledge', group: 'Memory', icon: 'brain' },
-  memory_save:       { label: 'Memory updated', group: 'Memory', icon: 'brain' },
-  memory_noop:       { label: 'Memory checked — nothing new', group: 'Memory', icon: 'brain' },
+  knowledge_search:  { label: 'Search knowledge', group: 'Memory', icon: 'brain', quiet: true },
+  memory_save:       { label: 'Memory updated', group: 'Memory', icon: 'brain', quiet: true },
+  memory_noop:       { label: 'Memory checked — nothing new', group: 'Memory', icon: 'brain', quiet: true },
   web_search:        { label: 'Search', group: 'Web', icon: 'search' },
   web_fetch:         { label: 'Fetch page', group: 'Web', icon: 'globe' },
+  Read:              { label: 'Read file', group: 'Files', icon: 'file', quiet: true },
+  Glob:              { label: 'Find files', group: 'Files', icon: 'search', quiet: true },
 };
 
 const GROUP_OVERRIDES: Record<string, string> = {
@@ -151,6 +155,8 @@ const SUMMARIZERS: Record<string, Summarizer> = {
     if (!u) return null;
     try { return new URL(u).hostname; } catch { return u; }
   },
+  Read:         (o, m) => { const p = asString(o['file_path']); return p ? truncate(p, m) : null; },
+  Glob:         (o, m) => { const p = asString(o['pattern']);   return p ? truncate(p, m) : null; },
 };
 
 function mcpSummary(tool: string, o: Record<string, unknown>, max: number): string | null {
@@ -196,7 +202,7 @@ export interface Hunk {
 
 export type ResultView =
   | { kind: 'image';    src: string; alt?: string; meta?: string; width?: number; height?: number; monitors?: number; path?: string }
-  | { kind: 'terminal'; command?: string; stdout?: string; stderr?: string; exitCode?: number; durationMs?: number; streaming?: boolean }
+  | { kind: 'terminal'; command?: string; stdout?: string; stderr?: string; exitCode?: number; durationMs?: number; streaming?: boolean; takeaway?: string }
   | { kind: 'markdown'; text: string }
   | { kind: 'kv';       entries: Array<[string, string]> }
   | { kind: 'error';    text: string; suggestion?: string }

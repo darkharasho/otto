@@ -3,6 +3,7 @@ import { Sparkles } from 'lucide-react';
 import { ChatTitlebar } from './ChatTitlebar';
 import { ConversationSidebar } from './ConversationSidebar';
 import { MessageList } from './MessageList';
+import { NowStrip } from './NowStrip';
 import { CommandBar } from './CommandBar';
 import { UpdateBanner } from './UpdateBanner';
 import { ipc } from '../ipc';
@@ -140,11 +141,16 @@ export function ChatWindow({
               </div>
             </div>
           ) : (
-            <MessageList
-              sessionId={activeSession?.id ?? null}
-              messages={activeSession?.messages ?? []}
-              streaming={activeSession?.currentTurnActive ?? false}
-            />
+            <>
+              <MessageList
+                sessionId={activeSession?.id ?? null}
+                messages={activeSession?.messages ?? []}
+                streaming={activeSession?.currentTurnActive ?? false}
+              />
+              <div className="px-4 pb-2">
+                <NowStrip onStop={onStop} />
+              </div>
+            </>
           )}
           <div className="px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
             <UpdateBanner className="mb-2" />

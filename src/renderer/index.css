@@ -307,6 +307,71 @@ button {
   pointer-events: none;
 }
 
+/* ── Activity stream (docs/design/activity-stream.md) ──────────────────── */
+
+/* 2px running-progress hairline under a card header: violet shimmer sweep. */
+@keyframes otto-hairline-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+.otto-hairline {
+  position: relative;
+  height: 2px;
+  overflow: hidden;
+  background: rgba(124, 125, 255, 0.12);
+}
+.otto-hairline::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: linear-gradient(90deg, transparent, rgba(124, 125, 255, 0.75), transparent);
+  animation: otto-hairline-sweep 1.6s ease-in-out infinite;
+}
+
+/* One-line settled row for a finished tool call. */
+.otto-receipt {
+  background: rgba(23, 24, 26, 0.5);
+  border: 1px solid rgba(42, 43, 46, 0.6);
+  border-radius: 8px;
+}
+
+/* Streaming stdout tail: bottom-anchored, quiet lines fade out at the top. */
+.otto-live-tail {
+  max-height: 132px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 28px);
+          mask-image: linear-gradient(180deg, transparent 0, #000 28px);
+}
+
+/* Screenshot capturing placeholder: slow vertical scan sweep. */
+@keyframes otto-scan-sweep {
+  0%   { transform: translateY(-100%); }
+  100% { transform: translateY(400%); }
+}
+.otto-scan {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 34%;
+  background: linear-gradient(180deg, transparent, rgba(124, 125, 255, 0.10), transparent);
+  animation: otto-scan-sweep 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .otto-hairline::after,
+  .otto-scan,
+  .otto-blink,
+  .otto-pulse,
+  .otto-pulse-dot,
+  .otto-shimmer,
+  .otto-caret {
+    animation: none;
+  }
+}
+
 /* ── Voice mic button animations ───────────────────────────────────────── */
 
 /* 'starting' state: opacity pulse while Kokoro + whisper-server boot up. */

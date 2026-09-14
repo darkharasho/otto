@@ -12,7 +12,7 @@ describe('ToolResultRenderer', () => {
   it('renders stdout and exit code for terminal kind', () => {
     render(<ToolResultRenderer view={{ kind: 'terminal', stdout: 'hello', exitCode: 0 }} />);
     expect(screen.getByText('hello')).toBeInTheDocument();
-    expect(screen.getByText(/exited 0/i)).toBeInTheDocument();
+    expect(screen.getByText(/exit 0/i)).toBeInTheDocument();
   });
 
   it('renders kv entries as a definition list', () => {

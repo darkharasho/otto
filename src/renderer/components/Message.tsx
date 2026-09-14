@@ -212,6 +212,33 @@ export function MessageView({ message, isStreamingTarget = false }: Props) {
 }
 
 
+// Activity-group spine: consecutive tool blocks share a left rail — one
+// investigation reads as one sequence. Items draw their own state dot at
+// -left-[19px]; the rail line runs through the dot centers.
+function SpineGroup({ children }: { children: React.ReactNode[] }) {
+  if (children.length < 2) return <>{children}</>;
+  return (
+    <div className="relative pl-[26px]">
+      <span
+        aria-hidden
+        className="absolute left-[10px] top-3 bottom-3 w-px bg-gradient-to-b from-accent/40 via-border to-border"
+      />
+      {children}
+    </div>
+  );
+}
+
+function SpineDot({ active }: { active?: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={`absolute -left-[19px] top-[13px] w-[7px] h-[7px] rounded-full ${
+        active ? 'bg-accent otto-pulse-dot' : 'bg-[#3f4046]'
+      }`}
+    />
+  );
+}
+
 function renderBlocks(content: ContentBlock[], streamingTarget: boolean) {
   const elements: React.ReactNode[] = [];
   const toolResults = new Map<string, { result: unknown; isError: boolean }>();
@@ -239,6 +266,18 @@ function renderBlocks(content: ContentBlock[], streamingTarget: boolean) {
 
   let textBuffer = '';
   let textBufferStartIdx = -1;
+
+  // Consecutive activity blocks buffer up and flush as one spine group; only
+  // groups of 2+ get the rail (a lone call doesn't need sequence chrome).
+  let activityBuf: Array<(inSpine: boolean) => React.ReactNode> = [];
+  function flushActivity() {
+    if (activityBuf.length === 0) return;
+    const inSpine = activityBuf.length >= 2;
+    const kids = activityBuf.map((make) => make(inSpine));
+    elements.push(<SpineGroup key={`spine-${elements.length}`}>{kids}</SpineGroup>);
+    activityBuf = [];
+  }
+
   for (let i = 0; i < content.length; i += 1) {
     const b = content[i]!;
     if (b.type === 'text') {
@@ -247,44 +286,65 @@ function renderBlocks(content: ContentBlock[], streamingTarget: boolean) {
       continue;
     }
     if (textBuffer) {
+      flushActivity();
       flushText(textBuffer, `t-${textBufferStartIdx}`);
       textBuffer = '';
       textBufferStartIdx = -1;
     }
     if (b.type === 'thinking') {
+      flushActivity();
       // "Streaming" while this is the trailing block of the active message —
       // that's when new reasoning tokens are still landing here.
       const streaming = streamingTarget && i === content.length - 1;
       elements.push(<ReasoningBlock key={`think-${i}`} text={b.text} streaming={streaming} />);
     } else if (b.type === 'tool_use') {
       const res = toolResults.get(b.callId);
-      elements.push(
-        <ToolCallCard
-          key={b.callId}
-          name={b.name}
-          input={b.input}
-          result={res?.result}
-          isError={res?.isError ?? false}
-        />
-      );
-    } else if (b.type === 'pending_tool_use') {
-      elements.push(<ApprovalCard key={b.callId} block={b} />);
-    } else if (b.type === 'sudo_prompt') {
-      elements.push(<SudoPromptCard key={b.callId} block={b} />);
-    } else if (b.type === 'process_output') {
-      elements.push(<ProcessCard key={b.handle} block={b} />);
-    } else if (b.type === 'tool_denied') {
-      elements.push(
-        <div
-          key={b.callId}
-          className="my-2 rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm"
-        >
-          <div className="font-medium text-danger">{b.name} — denied</div>
-          <div className="text-xs text-muted mt-1">{b.reason}</div>
+      activityBuf.push((inSpine) => (
+        <div key={b.callId} id={`activity-${b.callId}`}>
+          <ToolCallCard
+            name={b.name}
+            input={b.input}
+            result={res?.result}
+            isError={res?.isError ?? false}
+            turnActive={streamingTarget}
+            inSpine={inSpine}
+          />
         </div>
-      );
+      ));
+    } else if (b.type === 'pending_tool_use') {
+      activityBuf.push((inSpine) => (
+        <div key={b.callId} id={`activity-${b.callId}`} className="relative">
+          {inSpine && <SpineDot active={b.decision === 'pending'} />}
+          <ApprovalCard block={b} />
+        </div>
+      ));
+    } else if (b.type === 'sudo_prompt') {
+      activityBuf.push((inSpine) => (
+        <div key={b.callId} className="relative">
+          {inSpine && <SpineDot active={b.status === 'pending'} />}
+          <SudoPromptCard block={b} />
+        </div>
+      ));
+    } else if (b.type === 'process_output') {
+      activityBuf.push((inSpine) => (
+        <div key={b.handle} id={`activity-${b.handle}`} className="relative">
+          {inSpine && <SpineDot active={b.status === 'running'} />}
+          <ProcessCard block={b} />
+        </div>
+      ));
+    } else if (b.type === 'tool_denied') {
+      activityBuf.push((inSpine) => (
+        <div key={b.callId} className="relative">
+          {inSpine && <SpineDot />}
+          <div className="my-2 rounded-lg border border-danger/40 bg-danger/10 p-3 text-sm">
+            <div className="font-medium text-danger">{b.name} — denied</div>
+            <div className="text-xs text-muted mt-1">{b.reason}</div>
+          </div>
+        </div>
+      ));
     }
   }
+  flushActivity();
   if (textBuffer) {
     const caretHere = streamingTarget && textBufferStartIdx <= lastTextIndex;
     flushText(textBuffer, 't-tail', caretHere);

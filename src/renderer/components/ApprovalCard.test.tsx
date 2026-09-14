@@ -10,7 +10,7 @@ describe('ApprovalCard', () => {
     decisionId: 'd1',
     name: 'fake-mutate',
     input: { target: 'thing' },
-    actionClass: 'destructive' as const,
+    actionClass: 'reversible' as const,
     reason: 'mode=balanced',
     decision: 'pending' as const,
   };
@@ -21,16 +21,16 @@ describe('ApprovalCard', () => {
     (window as unknown as { otto: { invoke: typeof invoke } }).otto = { invoke } as never;
   });
 
-  it('renders tool name, action class, and input summary', () => {
+  it('renders the verb header, action class badge, and exact input', () => {
     render(<ApprovalCard block={block} />);
-    expect(screen.getByText('fake-mutate')).toBeInTheDocument();
-    expect(screen.getByText(/destructive/i)).toBeInTheDocument();
+    expect(screen.getByText(/fake-mutate/)).toBeInTheDocument();
+    expect(screen.getByText(/reversible/i)).toBeInTheDocument();
     expect(screen.getByText(/thing/)).toBeInTheDocument();
   });
 
-  it('Approve sends autonomy.decide with approve', async () => {
+  it('reversible: Approve & run sends approve in one click', async () => {
     render(<ApprovalCard block={block} />);
-    await userEvent.click(screen.getByRole('button', { name: /^approve$/i }));
+    await userEvent.click(screen.getByRole('button', { name: /approve & run/i }));
     expect(invoke).toHaveBeenCalledWith('autonomy.decide', { decisionId: 'd1', decision: 'approve' });
   });
 
@@ -46,18 +46,38 @@ describe('ApprovalCard', () => {
     expect(invoke).toHaveBeenCalledWith('autonomy.decide', { decisionId: 'd1', decision: 'deny' });
   });
 
-  it('catastrophic block hides Approve for session but keeps Approve and Deny', () => {
-    render(<ApprovalCard block={{ ...block, actionClass: 'irreversible', catastrophic: true }} />);
+  it('destructive: approval is gated behind reviewing the command', async () => {
+    render(<ApprovalCard block={{ ...block, actionClass: 'destructive' }} />);
+    const approve = screen.getByRole('button', { name: /approve & run/i });
+    expect(approve).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: /review the full command/i }));
+    expect(screen.getByRole('button', { name: /approve & run/i })).toBeEnabled();
+  });
+
+  it('irreversible: approval arms only after typing the confirmation word', async () => {
+    render(<ApprovalCard block={{ ...block, actionClass: 'irreversible' }} />);
+    const approve = screen.getByRole('button', { name: /approve & run/i });
+    expect(approve).toBeDisabled();
     expect(screen.queryByRole('button', { name: /session/i })).toBeNull();
-    expect(screen.getByRole('button', { name: /^approve$/i })).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText('Confirmation word'), 'confirm');
+    expect(screen.getByRole('button', { name: /approve & run/i })).toBeEnabled();
+  });
+
+  it('catastrophic block hides Approve for session but keeps Approve and Deny', () => {
+    render(<ApprovalCard block={{ ...block, actionClass: 'destructive', catastrophic: true }} />);
+    expect(screen.queryByRole('button', { name: /session/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /approve & run/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^deny$/i })).toBeInTheDocument();
   });
 
-  it('post-decision: buttons disabled, badge visible', () => {
+  it('post-decision: settles to a receipt with attribution', () => {
     render(<ApprovalCard block={{ ...block, decision: 'approved' }} />);
-    expect(screen.getByText(/approved/i)).toBeInTheDocument();
-    for (const btn of screen.getAllByRole('button')) {
-      expect(btn).toBeDisabled();
-    }
+    expect(screen.getByText(/approved by you/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /approve & run/i })).toBeNull();
+  });
+
+  it('denied receipt says denied', () => {
+    render(<ApprovalCard block={{ ...block, decision: 'denied' }} />);
+    expect(screen.getByText(/denied by you/i)).toBeInTheDocument();
   });
 });
