@@ -127,6 +127,7 @@ export type IpcRequest =
   | { channel: 'settings.setPinnedSessionIds'; args: { ids: string[] }; result: void }
   | { channel: 'settings.open'; args: void; result: void }
   | { channel: 'shell.kill'; args: { handle: string }; result: { killed: boolean } }
+  | { channel: 'shell.killToolCall'; args: { callId: string }; result: { killed: boolean } }
   | { channel: 'shortcut.info'; args: void; result: ShortcutInfoView }
   | { channel: 'shortcut.openKeyboardSettings'; args: void; result: { launched: boolean } }
   | { channel: 'app.info'; args: void; result: AppInfo }

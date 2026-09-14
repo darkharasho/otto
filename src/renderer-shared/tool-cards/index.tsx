@@ -49,7 +49,10 @@ const RENDERERS: Record<ResultView['kind'], AnyCard> = {
   observe:  ObserveCard,
 };
 
-export function ToolCardBody({ view, compact }: { view: ResultView; compact?: boolean }) {
+export function ToolCardBody({ view, compact, onStop }: { view: ResultView; compact?: boolean; onStop?: () => void }) {
+  // Terminal is the one card with an action of its own (Stop on a streaming
+  // command) — hand it through without widening every renderer's props.
+  if (view.kind === 'terminal') return <TerminalCard view={view} compact={compact} onStop={onStop} />;
   const Card = RENDERERS[view.kind];
   return Card ? <Card view={view} compact={compact} /> : null;
 }

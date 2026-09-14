@@ -2,6 +2,9 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ToolCallCard } from './ToolCallCard';
+import { ipc } from '../ipc';
+
+vi.mock('../ipc', () => ({ ipc: { invoke: vi.fn(async () => ({ killed: true })) } }));
 
 afterEach(() => {
   vi.useRealTimers();
@@ -131,6 +134,22 @@ describe('ToolCallCard — agent annotations', () => {
     expect(screen.getByText(/freeing space, then retrying/)).toBeInTheDocument();
   });
 
+  it('renders the agent takeaway as an action note under the capture', async () => {
+    render(
+      <ToolCallCard
+        name="screenshot"
+        input={{}}
+        result={{ path: '/tmp/a.png', width: 1920, height: 1080 }}
+        isError={false}
+        takeaway="Clicked the indexer tray icon to check its status"
+      />
+    );
+    await userEvent.click(screen.getAllByRole('button')[0]!);
+    expect(screen.getByTestId('image-action-note')).toHaveTextContent(
+      'Clicked the indexer tray icon to check its status'
+    );
+  });
+
   it('draws click markers on a merged capture', async () => {
     const result = {
       content: [
@@ -150,6 +169,36 @@ describe('ToolCallCard — agent annotations', () => {
     await userEvent.click(screen.getByRole('button'));
     expect(screen.getByTestId('image-marker')).toBeInTheDocument();
     expect(screen.getByText('click · 40, 60')).toBeInTheDocument();
+  });
+});
+
+describe('ToolCallCard — stop control', () => {
+  it('stops a streaming command through the kill IPC', async () => {
+    render(
+      <ToolCallCard
+        name="shell_exec"
+        input={{ command: 'sleep 600' }}
+        result={undefined}
+        isError={false}
+        callId="call-9"
+        partialOutput={{ stdout: 'tick\n', stderr: '' }}
+      />
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'Stop' }));
+    expect(vi.mocked(ipc.invoke)).toHaveBeenCalledWith('shell.killToolCall', { callId: 'call-9' });
+  });
+
+  it('offers no Stop without a callId to kill', () => {
+    render(
+      <ToolCallCard
+        name="shell_exec"
+        input={{ command: 'sleep 600' }}
+        result={undefined}
+        isError={false}
+        partialOutput={{ stdout: 'tick\n', stderr: '' }}
+      />
+    );
+    expect(screen.queryByRole('button', { name: 'Stop' })).not.toBeInTheDocument();
   });
 });
 

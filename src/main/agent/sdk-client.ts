@@ -64,6 +64,19 @@ export function __setScreenshotRefsForTest(callId: string, refs: import('@shared
   setScreenshotRefs(callId, refs);
 }
 
+// Kill switches for in-flight blocking tool calls (shell_exec). The renderer's
+// Stop button resolves here via the `shell.killToolCall` IPC channel; entries
+// are registered when the child spawns and removed when the call settles.
+const killsByCall = new Map<string, () => void>();
+
+/** Kill the child behind a running tool call. Returns false when the call is unknown or already settled. */
+export function killToolCall(callId: string): boolean {
+  const kill = killsByCall.get(callId);
+  if (!kill) return false;
+  kill();
+  return true;
+}
+
 /**
  * Since SDK 0.3.x the CLI is a native `claude` binary shipped in a per-platform
  * optional package (@anthropic-ai/claude-agent-sdk-<platform>-<arch>), not a
@@ -603,32 +616,38 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
           return { content: [{ type: 'text' as const, text: 'noted' }] };
         }
 
-        const result = await t.run(args, {
-          // Streamed stdout (P2): running blocking tools (shell_exec) publish
-          // incremental output straight to the renderer, keyed by callId —
-          // the same fan-out ProcessRegistry uses for spawned processes.
-          emitOutput: (stream, data) => {
-            ctx.emit?.({
-              type: 'tool-call-output',
-              sessionId: ctx.sessionId,
-              messageId: ctx.getMessageId(),
-              callId,
-              stream,
-              data,
-            });
-          },
-          // Partial-result snapshots (P3): a running observe publishes its
-          // series/events so the chart card fills live. Throttled at source.
-          emitSnapshot: (snapshot) => {
-            ctx.emit?.({
-              type: 'tool-call-snapshot',
-              sessionId: ctx.sessionId,
-              messageId: ctx.getMessageId(),
-              callId,
-              snapshot,
-            });
-          },
-        });
+        let result: unknown;
+        try {
+          result = await t.run(args, {
+            // Streamed stdout (P2): running blocking tools (shell_exec) publish
+            // incremental output straight to the renderer, keyed by callId —
+            // the same fan-out ProcessRegistry uses for spawned processes.
+            emitOutput: (stream, data) => {
+              ctx.emit?.({
+                type: 'tool-call-output',
+                sessionId: ctx.sessionId,
+                messageId: ctx.getMessageId(),
+                callId,
+                stream,
+                data,
+              });
+            },
+            // Partial-result snapshots (P3): a running observe publishes its
+            // series/events so the chart card fills live. Throttled at source.
+            emitSnapshot: (snapshot) => {
+              ctx.emit?.({
+                type: 'tool-call-snapshot',
+                sessionId: ctx.sessionId,
+                messageId: ctx.getMessageId(),
+                callId,
+                snapshot,
+              });
+            },
+            registerKill: (kill) => killsByCall.set(callId, kill),
+          });
+        } finally {
+          killsByCall.delete(callId);
+        }
         return {
           content: [
             {

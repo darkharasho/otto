@@ -50,7 +50,7 @@ async function startElectron(): Promise<void> {
   const { getPlatformAdapter } = await import('./platform');
   const { SessionManager } = await import('./agent/session');
   const { ConversationPolicy } = await import('./agent/conversation-policy');
-  const { createRealSdkClient } = await import('./agent/sdk-client');
+  const { createRealSdkClient, killToolCall } = await import('./agent/sdk-client');
   const { registerIpcHandlers } = await import('./ipc/handlers');
   const { setupUpdaterIpc, disposeUpdater } = await import('./ipc/updater');
   const { emitSessionEvent } = await import('./ipc/events');
@@ -235,7 +235,15 @@ async function startElectron(): Promise<void> {
     }
   };
 
-  const broker = new DecisionBroker(settings.getMode(), emitWithNotify);
+  const broker = new DecisionBroker(settings.getMode(), (event) => {
+    // Outcome-card stat (spec §8): count user-granted approvals per session.
+    // `sessions` is constructed later in this function; decisions can only
+    // resolve once a session is running, well after it exists.
+    if (event.type === 'tool-call-decided' && event.decision !== 'deny') {
+      sessions.noteApproval(event.sessionId);
+    }
+    emitWithNotify(event);
+  });
   const sudoSession = new SudoSession({ logger });
   const sudoBroker = new SudoBroker(sudoSession, emitWithNotify);
 
@@ -571,6 +579,7 @@ async function startElectron(): Promise<void> {
     factRepo,
     memorySearch,
     configDir: ottoConfigDir,
+    killToolCall,
     applyStartAtLogin,
     openLogsDir: () => {
       void shell.openPath(ottoConfigDir);

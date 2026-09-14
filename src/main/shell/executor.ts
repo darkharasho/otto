@@ -6,6 +6,8 @@ export interface ExecOptions {
   timeoutMs: number;
   /** Incremental output as it arrives (before the buffered result returns). Stops after the 1MB cap trips. */
   onChunk?: (stream: 'stdout' | 'stderr', data: string) => void;
+  /** Receives a kill switch for the spawned child (the Stop button on a streaming card). */
+  onSpawn?: (proc: { kill: () => void }) => void;
 }
 
 export interface ExecResult {
@@ -23,6 +25,12 @@ const KILL_GRACE_MS = 2_000;
 export async function exec(opts: ExecOptions, adapter: PlatformAdapter): Promise<ExecResult> {
   const startedAt = Date.now();
   const child = adapter.shell.spawnShell(opts.command, opts.cwd);
+  opts.onSpawn?.({
+    kill: () => {
+      child.kill('SIGTERM');
+      setTimeout(() => child.kill('SIGKILL'), KILL_GRACE_MS).unref();
+    },
+  });
 
   let stdout = '';
   let stderr = '';

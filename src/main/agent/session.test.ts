@@ -240,6 +240,34 @@ describe('SessionManager', () => {
     expect(events.find((e) => e.type === 'outcome')).toBeUndefined();
   });
 
+  it('counts user approvals into the outcome and resets the counter afterwards', async () => {
+    const markScript = (callId: string, title: string): Script =>
+      async function* () {
+        yield { type: 'tool-call-start', callId, name: 'mcp__otto-tools__mark_task_complete', input: { summary: 'done', title } };
+        yield { type: 'tool-call-result', callId, result: 'noted', isError: false };
+        yield { type: 'message-end' };
+        yield { type: 'done' };
+      };
+    const { openStream } = makeFakeOpenStream([markScript('m1', 'Task one'), markScript('m2', 'Task two')]);
+    fakeSdk.openStream = openStream;
+    const { sessionId } = await manager.start({});
+
+    manager.noteApproval(sessionId);
+    manager.noteApproval(sessionId);
+    await manager.send({ sessionId, text: 'do the thing' });
+
+    // No approvals between the tasks — the second outcome must not inherit the count.
+    await manager.send({ sessionId, text: 'and the other thing' });
+
+    const outcomes = events.filter(
+      (e): e is Extract<SessionEvent, { type: 'outcome' }> => e.type === 'outcome'
+    );
+    expect(outcomes).toHaveLength(2);
+    expect(outcomes[0]!.block).toMatchObject({ title: 'Task one', approvals: 2 });
+    expect(outcomes[1]!.block.title).toBe('Task two');
+    expect('approvals' in outcomes[1]!.block).toBe(false);
+  });
+
   it('records reasoning as a thinking block ahead of the answer text and emits reasoning events', async () => {
     const { openStream } = makeFakeOpenStream(async function* () {
       yield { type: 'reasoning', text: 'let me ' };

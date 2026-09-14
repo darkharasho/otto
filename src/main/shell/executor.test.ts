@@ -71,6 +71,26 @@ describe('exec', () => {
     expect(stderr).toBe('err1');
   });
 
+  it('onSpawn hands out a kill switch that stops the running command', async () => {
+    const killRef: { fn: (() => void) | null } = { fn: null };
+    const started = Date.now();
+    const pending = exec(
+      {
+        command: 'sleep 10',
+        cwd: tmpdir(),
+        timeoutMs: 30_000,
+        onSpawn: (proc) => { killRef.fn = proc.kill; },
+      },
+      adapter
+    );
+    expect(killRef.fn).not.toBeNull();
+    killRef.fn!();
+    const res = await pending;
+    expect(Date.now() - started).toBeLessThan(8_000);
+    expect(res.exitCode).not.toBe(0);
+    expect(res.timedOut).toBe(false);
+  }, 10_000);
+
   it('onChunk totals match the capped buffer when output is truncated', async () => {
     let streamed = '';
     const res = await exec(

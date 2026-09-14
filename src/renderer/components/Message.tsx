@@ -429,6 +429,7 @@ function renderBlocks(
             input={b.input}
             result={res?.result}
             isError={res?.isError ?? false}
+            callId={b.callId}
             turnActive={streamingTarget}
             inSpine={inSpine}
             takeaway={res?.takeaway}

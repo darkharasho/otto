@@ -141,6 +141,14 @@ export function ImageCard({ view, compact }: { view: View; compact?: boolean }) 
             <span className="text-muted/60">· click to zoom · right-click to copy</span>
           </div>
         )}
+        {view.note && (
+          <div
+            data-testid="image-action-note"
+            className="mt-1.5 rounded-[7px] border border-accent/25 bg-accent/10 px-2.5 py-1.5 text-[10.5px] text-text/85"
+          >
+            {view.note}
+          </div>
+        )}
         {toast && (
           <div className="absolute top-2 right-2 px-2 py-1 rounded bg-accent text-bg text-[10.5px] font-medium shadow pointer-events-none z-10">
             {toast}

@@ -60,6 +60,8 @@ export function registerIpcHandlers(deps: {
   factRepo: FactRepo;
   memorySearch: MemorySearch;
   configDir: string;
+  /** Kill the child behind a running blocking tool call (Stop on a streaming card). */
+  killToolCall(callId: string): boolean;
   applyStartAtLogin(enabled: boolean): void;
   openLogsDir(): void;
   openSettingsWindow(): void;
@@ -229,6 +231,13 @@ export function registerIpcHandlers(deps: {
     async (_e, args: { handle: string }): Promise<{ killed: boolean }> => {
       const killed = registry.kill(args.handle);
       return { killed };
+    }
+  );
+
+  ipcMain.handle(
+    'shell.killToolCall',
+    async (_e, args: { callId: string }): Promise<{ killed: boolean }> => {
+      return { killed: deps.killToolCall(args.callId) };
     }
   );
 

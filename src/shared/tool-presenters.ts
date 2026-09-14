@@ -215,7 +215,9 @@ export type ResultView =
       /** Virtual-desktop coords of the capture's top-left (from the meta tiles); anchors click markers. */
       originX?: number; originY?: number;
       /** Click reticles drawn over the capture, in virtual-desktop coords. */
-      markers?: Array<{ x: number; y: number; label?: string }> }
+      markers?: Array<{ x: number; y: number; label?: string }>;
+      /** Agent's action note (annotate_result takeaway): what the click/capture did. */
+      note?: string }
   | { kind: 'terminal'; command?: string; stdout?: string; stderr?: string; exitCode?: number; durationMs?: number; streaming?: boolean; takeaway?: string; why?: string }
   | { kind: 'markdown'; text: string }
   | { kind: 'kv';       entries: Array<[string, string]> }

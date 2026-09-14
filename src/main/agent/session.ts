@@ -88,6 +88,8 @@ export class SessionManager {
   // Highest persisted seq covered by the previous outcome card, per session —
   // the next outcome's stats only span messages after it.
   private readonly lastOutcomeSeq = new Map<string, number>();
+  // User-granted approvals since the previous outcome card, per session.
+  private readonly approvalsSince = new Map<string, number>();
   private activeSessionId: string | null = null;
   private readonly doneListeners: Array<(sessionId: string) => void> = [];
   private readonly userActiveListeners: Array<(sessionId: string) => void> = [];
@@ -416,12 +418,14 @@ export class SessionManager {
       }
     }
     const startAt = (slice.find((m) => m.role === 'user') ?? slice[0])?.createdAt ?? row.message.createdAt;
+    const approvals = this.approvalsSince.get(sessionId) ?? 0;
 
     const block: Extract<ContentBlock, { type: 'outcome' }> = {
       type: 'outcome',
       title,
       durationMs: Math.max(0, Date.now() - startAt),
       toolCalls,
+      ...(approvals > 0 ? { approvals } : {}),
       ...(str(a['summary']) !== undefined ? { summary: str(a['summary'])! } : {}),
       ...(str(a['cause']) !== undefined ? { cause: str(a['cause'])! } : {}),
       ...(str(a['fix']) !== undefined ? { fix: str(a['fix'])! } : {}),
@@ -435,6 +439,12 @@ export class SessionManager {
     // doesn't re-count this turn's tool calls.
     const maxSeq = persisted.length > 0 ? persisted[persisted.length - 1]!.seq : 0;
     this.lastOutcomeSeq.set(sessionId, maxSeq + 1);
+    this.approvalsSince.delete(sessionId);
+  }
+
+  /** Count a user-granted approval toward the next outcome card's stats. */
+  noteApproval(sessionId: string): void {
+    this.approvalsSince.set(sessionId, (this.approvalsSince.get(sessionId) ?? 0) + 1);
   }
 
   private ensureStarted(sessionId: string, row: ActiveAssistant): void {

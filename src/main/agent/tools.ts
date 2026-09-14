@@ -11,6 +11,8 @@ export interface ToolRunIO {
   emitOutput?(stream: 'stdout' | 'stderr', data: string): void;
   /** Publish a partial-result snapshot (observe tool) so the running card fills live. */
   emitSnapshot?(snapshot: unknown): void;
+  /** Expose a kill switch for the in-flight call (Stop button on the streaming card). */
+  registerKill?(kill: () => void): void;
 }
 
 export interface OttoTool {
@@ -106,6 +108,9 @@ export function buildShellTools(getRegistry: () => ProcessRegistry): OttoTool[] 
             cwd,
             timeoutMs: args.timeout_ms ?? 60_000,
             ...(io?.emitOutput ? { onChunk: io.emitOutput } : {}),
+            ...(io?.registerKill
+              ? { onSpawn: (proc: { kill: () => void }) => io.registerKill!(proc.kill) }
+              : {}),
           },
           getPlatformAdapter()
         );

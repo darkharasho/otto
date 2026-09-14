@@ -3,12 +3,15 @@ import { describeTool, summarizeInput, classifyResult } from '@shared/tool-prese
 import type { ResultView } from '@shared/tool-presenters';
 import { ToolIcon } from './ToolIcon';
 import { ToolResultRenderer } from './ToolResultRenderer';
+import { ipc } from '../ipc';
 
 interface Props {
   name: string;
   input: unknown;
   result: unknown;
   isError: boolean;
+  /** Tool-call id — lets the Stop button on a streaming command reach its child process. */
+  callId?: string;
   /** True while the surrounding assistant turn is still streaming. Settle-to-receipt fires when it flips false. */
   turnActive?: boolean;
   /** Rendered inside an activity-group spine — draw the state dot on the left rail. */
@@ -59,7 +62,7 @@ function receiptNote(view: ResultView | null, takeaway?: string): { text: string
   return null;
 }
 
-export function ToolCallCard({ name, input, result, isError, turnActive, inSpine, takeaway, why, markers, partialOutput, partialSnapshot }: Props) {
+export function ToolCallCard({ name, input, result, isError, callId, turnActive, inSpine, takeaway, why, markers, partialOutput, partialSnapshot }: Props) {
   const status: 'running' | 'done' | 'error' =
     result === undefined ? 'running' : isError ? 'error' : 'done';
 
@@ -79,6 +82,10 @@ export function ToolCallCard({ name, input, result, isError, turnActive, inSpine
   }
   if (view?.kind === 'image' && markers && markers.length > 0) {
     view = { ...view, markers };
+  }
+  // Action note (spec §3): what the click/capture did, under the thumbnail.
+  if (view?.kind === 'image' && takeaway !== undefined) {
+    view = { ...view, note: takeaway };
   }
 
   // Cards restored from history (result already present at mount) and quiet
@@ -252,18 +259,30 @@ export function ToolCallCard({ name, input, result, isError, turnActive, inSpine
           </span>
         </button>
         {status === 'running' && <div className="otto-hairline" aria-hidden />}
-        <CardBody input={input} view={view} status={status} icon={desc.icon} partialOutput={partialOutput} />
+        <CardBody
+          input={input}
+          view={view}
+          status={status}
+          icon={desc.icon}
+          partialOutput={partialOutput}
+          onStop={
+            callId !== undefined && status === 'running'
+              ? () => { void ipc.invoke('shell.killToolCall', { callId }); }
+              : undefined
+          }
+        />
       </div>
     </div>
   );
 }
 
-function CardBody({ input, view, status, icon, partialOutput }: {
+function CardBody({ input, view, status, icon, partialOutput, onStop }: {
   input: unknown;
   view: ResultView | null;
   status: 'running' | 'done' | 'error';
   icon: string;
   partialOutput?: { stdout: string; stderr: string };
+  onStop?: () => void;
 }) {
   const inputIsEmpty =
     input === undefined ||
@@ -321,7 +340,7 @@ function CardBody({ input, view, status, icon, partialOutput }: {
           {showInput && (
             <div className="text-muted mb-1 text-[10px] uppercase tracking-wide">Result</div>
           )}
-          <ToolResultRenderer view={body} />
+          <ToolResultRenderer view={body} onStop={onStop} />
         </div>
       )}
     </div>
