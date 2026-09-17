@@ -1,5 +1,6 @@
 import { LinuxAdapter } from './linux';
 import { DarwinAdapter } from './darwin';
+import { Win32Adapter } from './win32';
 
 export type DisplayServer = 'x11' | 'wayland' | 'unknown';
 
@@ -83,6 +84,10 @@ export function getPlatformAdapter(): PlatformAdapter {
   }
   if (process.platform === 'darwin') {
     cachedAdapter = new DarwinAdapter();
+    return cachedAdapter;
+  }
+  if (process.platform === 'win32') {
+    cachedAdapter = new Win32Adapter();
     return cachedAdapter;
   }
   throw new Error(`Otto does not support this platform (current: ${process.platform})`);

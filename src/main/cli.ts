@@ -9,6 +9,14 @@ import { instanceSuffix, isDevInstance } from './instance';
  */
 export function socketPath(): string {
   const suffix = instanceSuffix();
+  // Windows has no Unix domain sockets; Node's net APIs accept named-pipe
+  // paths (`\\.\pipe\<name>`) as a drop-in replacement. Namespacing by the
+  // logged-in user keeps the dev and prod pipes distinct from other users'
+  // pipes on shared/RDP hosts.
+  if (process.platform === 'win32') {
+    const user = process.env.USERNAME || process.env.USER || 'default';
+    return `\\\\.\\pipe\\otto${suffix}-${user}`;
+  }
   const xdg = process.env.XDG_RUNTIME_DIR;
   if (xdg && xdg.length > 0) {
     return path.join(xdg, `otto${suffix}.sock`);

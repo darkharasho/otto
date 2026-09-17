@@ -19,12 +19,17 @@ export class ToggleServer {
 
   async start(): Promise<void> {
     const sock = socketPath();
-    // Clean up a stale socket file from a previous run (or crashed instance).
-    try {
-      fs.unlinkSync(sock);
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-        logger.warn(`toggle server: could not unlink stale socket at ${sock}: ${(err as Error).message}`);
+    // Windows named pipes are kernel objects, not files — no unlink needed
+    // (and fs.unlinkSync would throw ENOENT/EINVAL). The kernel releases the
+    // pipe name when the owning process exits or closes the server.
+    if (process.platform !== 'win32') {
+      // Clean up a stale socket file from a previous run (or crashed instance).
+      try {
+        fs.unlinkSync(sock);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+          logger.warn(`toggle server: could not unlink stale socket at ${sock}: ${(err as Error).message}`);
+        }
       }
     }
 
@@ -65,11 +70,16 @@ export class ToggleServer {
       });
 
       server.listen(sock, () => {
-        // Restrict access to the owning user.
-        try {
-          fs.chmodSync(sock, 0o600);
-        } catch (err) {
-          logger.warn(`toggle server: could not chmod socket: ${(err as Error).message}`);
+        // Restrict access to the owning user. Named pipes on Windows don't
+        // use POSIX file modes; access is scoped via a security descriptor at
+        // pipe-creation time (Node's default is "current user only" — good
+        // enough here). chmod on the pipe path returns EPERM.
+        if (process.platform !== 'win32') {
+          try {
+            fs.chmodSync(sock, 0o600);
+          } catch (err) {
+            logger.warn(`toggle server: could not chmod socket: ${(err as Error).message}`);
+          }
         }
         this.server = server;
         this.boundPath = sock;
@@ -88,7 +98,7 @@ export class ToggleServer {
     await new Promise<void>((resolve) => {
       server.close(() => resolve());
     });
-    if (sock) {
+    if (sock && process.platform !== 'win32') {
       try {
         fs.unlinkSync(sock);
       } catch {

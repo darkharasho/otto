@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { getPlatformAdapter } from './index';
 import { LinuxAdapter } from './linux';
+import { Win32Adapter } from './win32';
 
 describe('getPlatformAdapter', () => {
   beforeEach(() => {
@@ -11,6 +12,15 @@ describe('getPlatformAdapter', () => {
     Object.defineProperty(process, 'platform', { value: 'linux' });
     const adapter = getPlatformAdapter();
     expect(adapter).toBeInstanceOf(LinuxAdapter);
+  });
+});
+
+describe('Win32Adapter', () => {
+  it('constructs and reports its identity', () => {
+    const a = new Win32Adapter();
+    expect(a.name).toBe('win32');
+    expect(a.detectDisplayServer()).toBe('unknown');
+    expect(a.defaultHotkey()).toMatch(/Space$/);
   });
 });
 

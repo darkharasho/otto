@@ -13,8 +13,17 @@ if (isToggleInvocation()) {
       process.exit(1);
     });
 } else {
-  // Defer the rest of bootstrap to keep this branch obvious.
-  void startElectron();
+  // A rejection here escaping to the top level used to just print a Node
+  // warning and leave the Electron process alive as a zombie holding the
+  // single-instance lock — new launches would see the lock held and exit
+  // with "another Otto instance is already running", so the user saw
+  // "opening does nothing" forever. Route any startup failure through an
+  // exit path instead.
+  startElectron().catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error('Otto startup failed:', err);
+    process.exit(1);
+  });
 }
 
 async function startElectron(): Promise<void> {
@@ -22,6 +31,21 @@ async function startElectron(): Promise<void> {
   const path = await import('node:path');
   const { logger, ottoConfigDir } = await import('./logger');
   const { isDevInstance, instanceDisplayName } = await import('./instance');
+
+  // Belt-and-suspenders: anything that throws or rejects during bootstrap
+  // (an unimplemented platform adapter, a native-module load failure, an
+  // unresolved promise deep in an `await import(...)` chain) should log
+  // and exit rather than leaving Electron running invisibly. The .catch on
+  // startElectron() catches the awaited chain; these catch anything that
+  // detaches from the chain via fire-and-forget or event handlers.
+  process.on('uncaughtException', (err) => {
+    logger.error('uncaughtException — exiting', err);
+    try { app.exit(1); } catch { process.exit(1); }
+  });
+  process.on('unhandledRejection', (reason) => {
+    logger.error('unhandledRejection — exiting', reason);
+    try { app.exit(1); } catch { process.exit(1); }
+  });
 
   // Give the dev build its own identity so it doesn't clobber the installed
   // prod build's userData (Chromium profile, IndexedDB, cookies, etc.).

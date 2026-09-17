@@ -1,3 +1,9 @@
+Version v0.15.1
+
+Fixes:
+- **Otto now launches on Windows.** Previous installers built and ran the installer fine, but the app itself threw `Otto does not support this platform (current: win32)` before creating a window and left orphaned `Otto.exe` processes holding the single-instance lock — so every subsequent launch would silently exit with "another Otto instance is already running". A full Win32 platform adapter is now implemented (shell, screenshot with cursor overlay, mouse + keyboard input via SendInput with Unicode support, window geometry, `Ctrl+Shift+Space` global hotkey). Startup also gained an `unhandledRejection` / `uncaughtException` safety net that logs and exits cleanly, so a future startup failure surfaces as a real log entry instead of a silent zombie.
+- **`otto toggle` works on Windows.** The IPC socket now uses a Windows named pipe (`\\.\pipe\otto[-dev]-<user>`) instead of a Unix domain socket, which was rejected with `EACCES` on Windows.
+
 Version v0.10.19
 
 Changes:
