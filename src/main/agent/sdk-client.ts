@@ -20,14 +20,13 @@ import { capture } from '../screenshot/executor';
 import { withSelfHidden } from '../screenshot/self-mask';
 import { tileIfNeeded, toJpeg } from '../screenshot/processor';
 import { captureVerifyCrop } from '../screenshot/verify-crop';
-import { noteImagesSent } from './image-budget';
 
 // Tile edge cap for what we send to the model. Smaller = more screenshots fit
 // in conversation history before tripping Anthropic's ~32MB request cap.
 // 1280 keeps UI text legible while shrinking each tile ~2.3× vs. 1920.
 const MAX_SCREENSHOT_EDGE = 1280;
 // Hard ceiling on tiles per capture: prevents an absurd capture (e.g., 8000px+
-// across, 4+ stacked monitors) from blowing up the per-turn image budget.
+// across, 4+ stacked monitors) from blowing up the per-turn request payload.
 const MAX_SCREENSHOT_TILES = 8;
 // JPEG quality for API-bound tiles. 70 is the sweet spot for screenshot legibility
 // vs. payload size — a typical 1280px tile shrinks ~8× from PNG.
@@ -502,7 +501,6 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
                 mimeType: 'image/png' as const,
                 source: 'screenshot' as const,
               }]);
-              noteImagesSent(ctx.sessionId, 1);
               return {
                 content: [
                   {
@@ -573,7 +571,6 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
             source: 'screenshot' as const,
           }));
           setScreenshotRefs(callId, refs);
-          noteImagesSent(ctx.sessionId, tiled.tiles.length);
           // Bytes for the current turn's API call. Re-encode as JPEG to keep the
           // payload small enough that history doesn't blow Anthropic's request cap
           // after a handful of screenshots.

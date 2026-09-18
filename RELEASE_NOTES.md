@@ -1,3 +1,8 @@
+Version v0.16.0
+
+Changes:
+- **New conversations are now fully manual.** Otto no longer starts a fresh conversation on its own — the idle-timeout rollover (and its "New conversations" settings section) and the per-session screenshot budget rollover are both gone. A conversation only rolls over when you ask for it (the `/n` prefix or the new-conversation button). Existing settings migrate automatically. One tradeoff: a very long screenshot-heavy conversation now keeps its full history until you start a new one, so per-turn cost and memory can grow — start a fresh conversation when a session gets huge.
+
 Version v0.15.1
 
 Fixes:

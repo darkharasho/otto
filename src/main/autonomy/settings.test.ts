@@ -1,8 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
-import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import os from 'node:os';
 import path from 'node:path';
 import { Settings } from './settings';
 
@@ -26,7 +24,7 @@ describe('Settings.load', () => {
     await s.load();
     expect(s.getMode()).toBe('balanced');
     const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
-    expect(written.version).toBe(8);
+    expect(written.version).toBe(9);
     expect(written.autonomy).toEqual({ mode: 'balanced' });
     expect(written.notifications).toEqual({ turnComplete: true, approval: true, sound: false });
     expect(written.startAtLogin).toBe(false);
@@ -57,7 +55,7 @@ describe('Settings.load', () => {
     await s.load();
     expect(s.getDisplayTarget()).toBe('cursor');
     const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
-    expect(written.version).toBe(8);
+    expect(written.version).toBe(9);
     expect(written.displayTarget).toBe('cursor');
   });
 
@@ -109,21 +107,12 @@ describe('Settings.setMode', () => {
   });
 });
 
-describe('Settings — newConversation', () => {
-  it('defaults idleTimeoutMinutes to 60 on fresh install', async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'otto-settings-nc-'));
-    const s = new Settings(path.join(dir, 'settings.json'));
-    await s.load();
-    expect(s.getNewConversationIdleTimeoutMinutes()).toBe(60);
-  });
-
-  it('migrates a v3 file by adding the default idleTimeoutMinutes=60', async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'otto-settings-nc-'));
-    const file = path.join(dir, 'settings.json');
-    await fs.writeFile(
-      file,
+describe('Settings — v8→v9 migration (idle new-conversation removal)', () => {
+  it('migrates a v8 file and drops the newConversation field', async () => {
+    writeFileSync(
+      settingsPath(),
       JSON.stringify({
-        version: 3,
+        version: 8,
         autonomy: { mode: 'balanced' },
         notifications: { turnComplete: true, approval: true, sound: false },
         startAtLogin: false,
@@ -131,31 +120,20 @@ describe('Settings — newConversation', () => {
         displayTarget: 'cursor',
         autoDeleteDays: 0,
         hideOnBlur: false,
-      }),
+        showReasoning: true,
+        newConversation: { idleTimeoutMinutes: 60 },
+        chatBounds: null,
+        lastVisibleMode: 'bar',
+        pinnedSessionIds: [],
+        voice: { ttsVoice: 'af_heart', speed: 1.05, whisperModel: 'small.en', endpointMs: 650 },
+      })
     );
-    const s = new Settings(file);
+    const s = new Settings(settingsPath());
     await s.load();
-    expect(s.getNewConversationIdleTimeoutMinutes()).toBe(60);
-    const raw = JSON.parse(await fs.readFile(file, 'utf8'));
-    expect(raw.version).toBe(8);
-    expect(raw.newConversation).toEqual({ idleTimeoutMinutes: 60 });
-  });
-
-  it('setNewConversationIdleTimeoutMinutes persists and rejects negatives', async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'otto-settings-nc-'));
-    const s = new Settings(path.join(dir, 'settings.json'));
-    await s.load();
-    await s.setNewConversationIdleTimeoutMinutes(120);
-    expect(s.getNewConversationIdleTimeoutMinutes()).toBe(120);
-    await expect(s.setNewConversationIdleTimeoutMinutes(-1)).rejects.toThrow();
-  });
-
-  it('accepts 0 to disable idle-based new conversations', async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'otto-settings-nc-'));
-    const s = new Settings(path.join(dir, 'settings.json'));
-    await s.load();
-    await s.setNewConversationIdleTimeoutMinutes(0);
-    expect(s.getNewConversationIdleTimeoutMinutes()).toBe(0);
+    expect(s.getMode()).toBe('balanced');
+    const raw = JSON.parse(readFileSync(settingsPath(), 'utf8'));
+    expect(raw.version).toBe(9);
+    expect('newConversation' in raw).toBe(false);
   });
 });
 
@@ -165,7 +143,7 @@ describe('Settings — voice prefs (v5→v6 migration)', () => {
     await s.load();
     expect(s.getVoicePrefs()).toEqual({ ttsVoice: 'af_heart', speed: 1.05, whisperModel: 'small.en', endpointMs: 650 });
     const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
-    expect(written.version).toBe(8);
+    expect(written.version).toBe(9);
     expect(written.voice).toEqual({ ttsVoice: 'af_heart', speed: 1.05, whisperModel: 'small.en', endpointMs: 650 });
   });
 
@@ -192,7 +170,7 @@ describe('Settings — voice prefs (v5→v6 migration)', () => {
     await s.load();
     expect(s.getVoicePrefs()).toEqual({ ttsVoice: 'af_heart', speed: 1.05, whisperModel: 'small.en', endpointMs: 650 });
     const written = JSON.parse(readFileSync(settingsPath(), 'utf8'));
-    expect(written.version).toBe(8);
+    expect(written.version).toBe(9);
   });
 
   it('setVoicePrefs persists partial update', async () => {
@@ -232,7 +210,7 @@ describe('Settings — v7→v8 migration (topic-shift removal)', () => {
     await s.load();
     expect(s.getMode()).toBe('balanced');
     const raw = JSON.parse(readFileSync(settingsPath(), 'utf8'));
-    expect(raw.version).toBe(8);
+    expect(raw.version).toBe(9);
     expect('topicShiftSensitivity' in raw).toBe(false);
   });
 });

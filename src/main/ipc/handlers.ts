@@ -1,8 +1,6 @@
 import { ipcMain } from 'electron';
 import type { PrivacyAwareRepo } from '../db/privacy-aware-repo';
 import type { SessionManager } from '../agent/session';
-import type { ConversationPolicy } from '../agent/conversation-policy';
-import { overImageBudget, clearImageBudget } from '../agent/image-budget';
 import type { WindowManager } from '../window';
 import type { DecisionBroker } from '../autonomy/decision-broker';
 import type { SudoBroker } from '../autonomy/sudo-broker';
@@ -52,7 +50,6 @@ export function registerIpcHandlers(deps: {
   sudoSession: SudoSession;
   settings: Settings;
   registry: ProcessRegistry;
-  conversationPolicy: ConversationPolicy;
   appVersion: string;
   recommendedChord: string;
   hotkey: HotkeyManager;
@@ -72,7 +69,7 @@ export function registerIpcHandlers(deps: {
     applyRemoteCeiling?: (c: RemoteCeilingChoice) => void;
   };
 }): void {
-  const { repo, sessions, window, broker, sudoBroker, sudoSession, settings, registry, conversationPolicy } = deps;
+  const { repo, sessions, window, broker, sudoBroker, sudoSession, settings, registry } = deps;
 
   // Cached once per process — the binary path is stable after app.ready.
   let _voiceAvailable: boolean | null = null;
@@ -84,9 +81,7 @@ export function registerIpcHandlers(deps: {
   }
 
   ipcMain.handle('session.start', async (_e, args: SessionStartArgs): Promise<SessionStartResult> => {
-    const result = await sessions.start(args);
-    conversationPolicy.recordActivity();
-    return result;
+    return sessions.start(args);
   });
 
   ipcMain.handle('session.send', async (_e, args: SessionSendArgs): Promise<void> => {
@@ -117,7 +112,6 @@ export function registerIpcHandlers(deps: {
   ipcMain.handle('session.close', async (_e, args: { sessionId: string }): Promise<void> => {
     await sessions.close(args);
     repo.dropPrivate(args.sessionId);
-    clearImageBudget(args.sessionId);
     // Drop any elevated credential held for this session.
     if (sudoSession.isUnlocked(args.sessionId)) sudoSession.clear();
   });
@@ -134,37 +128,11 @@ export function registerIpcHandlers(deps: {
       const current = args.current;
       if (!current) {
         const { sessionId } = await sessions.start({ model: args.model, private: args.private });
-        conversationPolicy.recordActivity();
-        return { sessionId, isNew: true, reason: 'no-session' };
+        return { sessionId, isNew: true };
       }
-      if (conversationPolicy.shouldStartFresh()) {
-        const { sessionId } = await sessions.start({ model: args.model, private: args.private });
-        conversationPolicy.recordActivity();
-        // A fresh session re-requires elevation; drop the prior credential.
-        if (sudoSession.isUnlocked(current)) sudoSession.clear();
-        return { sessionId, isNew: true, reason: 'idle-timeout' };
-      }
-      // The SDK resends the full history (screenshots included) every turn,
-      // so image-heavy conversations compound memory and token cost — roll
-      // over once the session crosses the image budget.
-      if (overImageBudget(current)) {
-        const { sessionId } = await sessions.start({ model: args.model, private: args.private });
-        clearImageBudget(current);
-        conversationPolicy.recordActivity();
-        return { sessionId, isNew: true, reason: 'image-budget' };
-      }
-      conversationPolicy.recordActivity();
-      return { sessionId: current, isNew: false, reason: 'reused' };
+      return { sessionId: current, isNew: false };
     },
   );
-
-  // Read-only probe: would the idle timeout roll the next message into a
-  // fresh session? Lets the renderer proactively show the fresh-start UI on
-  // summon instead of waiting for submit. Deliberately does NOT record
-  // activity — peeking must not keep a conversation alive.
-  ipcMain.handle('session.peekFresh', async (): Promise<{ fresh: boolean }> => {
-    return { fresh: conversationPolicy.shouldStartFresh() };
-  });
 
   ipcMain.handle('session.list', async (): Promise<SessionMeta[]> => {
     return repo.listSessions();
@@ -299,13 +267,6 @@ export function registerIpcHandlers(deps: {
     'settings.setShowReasoning',
     async (_e, args: { enabled: boolean }): Promise<void> => {
       await settings.setShowReasoning(args.enabled);
-    }
-  );
-
-  ipcMain.handle(
-    'settings.setNewConversationIdleTimeoutMinutes',
-    async (_e, args: { minutes: number }): Promise<void> => {
-      await settings.setNewConversationIdleTimeoutMinutes(args.minutes);
     }
   );
 

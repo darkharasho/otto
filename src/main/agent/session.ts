@@ -93,7 +93,6 @@ export class SessionManager {
   private activeSessionId: string | null = null;
   private readonly doneListeners: Array<(sessionId: string) => void> = [];
   private readonly userActiveListeners: Array<(sessionId: string) => void> = [];
-  private readonly activityListeners: Array<() => void> = [];
 
   constructor(
     private readonly repo: Repo,
@@ -113,14 +112,6 @@ export class SessionManager {
 
   onUserActiveListener(cb: (sessionId: string) => void): void {
     this.userActiveListeners.push(cb);
-  }
-
-  onActivityListener(cb: () => void): void {
-    this.activityListeners.push(cb);
-  }
-
-  private notifyActivity(): void {
-    for (const cb of this.activityListeners) cb();
   }
 
   async start(args: { resume?: string; model?: string; private?: boolean }): Promise<{ sessionId: string }> {
@@ -210,7 +201,6 @@ export class SessionManager {
               this.repo.setSdkSessionId(sessionId, ev.id);
               this.seenSdkSessionId.add(sessionId);
             }
-            this.notifyActivity();
             break;
           }
           case 'message-start': {
@@ -224,7 +214,6 @@ export class SessionManager {
             this.ensureStarted(sessionId, row);
             appendText(row.message.content, ev.text);
             this.emit({ type: 'text-delta', sessionId, messageId, text: ev.text });
-            this.notifyActivity();
             break;
           }
           case 'reasoning': {
@@ -233,7 +222,6 @@ export class SessionManager {
             this.ensureStarted(sessionId, row);
             appendThinking(row.message.content, ev.text);
             this.emit({ type: 'reasoning', sessionId, messageId, text: ev.text });
-            this.notifyActivity();
             break;
           }
           case 'tool-call-start': {
@@ -243,13 +231,11 @@ export class SessionManager {
             if (bareToolName(ev.name) === 'annotate_result') {
               this.swallowedCallIds.add(ev.callId);
               this.applyAnnotation(sessionId, messageId, row, ev.input);
-              this.notifyActivity();
               break;
             }
             if (bareToolName(ev.name) === 'mark_task_complete') {
               this.swallowedCallIds.add(ev.callId);
               this.applyOutcome(sessionId, messageId, row, ev.input);
-              this.notifyActivity();
               break;
             }
             row.message.content.push({ type: 'tool_use', callId: ev.callId, name: ev.name, input: ev.input });
@@ -261,7 +247,6 @@ export class SessionManager {
               name: ev.name,
               input: ev.input,
             });
-            this.notifyActivity();
             break;
           }
           case 'tool-call-result': {
@@ -284,7 +269,6 @@ export class SessionManager {
               result: normalizedResult,
               isError: ev.isError,
             });
-            this.notifyActivity();
             break;
           }
           case 'message-end': {
@@ -297,7 +281,6 @@ export class SessionManager {
               pending.delete(messageId);
               if (pending.size === 0) this.cancelling.delete(sessionId);
             }
-            this.notifyActivity();
             this.finalizeMessage(sessionId, messageId, { errored: false, cancelled: wasCancelled });
             break;
           }
@@ -517,7 +500,6 @@ export class SessionManager {
     const sdkText = args.voice ? text + SessionManager.VOICE_SUFFIX : text;
     const user = this.repo.appendMessage({ ...newUserMessage(text, args.attachments ?? []), sessionId });
     this.emit({ type: 'user-message', sessionId, messageId: user.id, text, content: user.content });
-    this.notifyActivity();
     this.repo.setSessionTitleIfMissing(sessionId, text.slice(0, 80));
     this.repo.updateSessionActivity(sessionId, Date.now(), 'active');
 

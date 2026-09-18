@@ -64,14 +64,13 @@ export interface SessionLoadArgs {
 export interface SessionEnsureForSubmitArgs {
   current: string | null;
   model?: string;
-  /** When creating a new session here (current is null / idle timeout), make it private. */
+  /** When creating a new session here (current is null), make it private. */
   private?: boolean;
 }
 
 export interface SessionEnsureForSubmitResult {
   sessionId: string;
   isNew: boolean;
-  reason: 'reused' | 'idle-timeout' | 'manual' | 'no-session' | 'image-budget';
 }
 
 export type IpcRequest =
@@ -87,7 +86,6 @@ export type IpcRequest =
       args: SessionEnsureForSubmitArgs;
       result: SessionEnsureForSubmitResult;
     }
-  | { channel: 'session.peekFresh'; args: void; result: { fresh: boolean } }
   | { channel: 'window.setMode'; args: { mode: WindowMode }; result: void }
   | { channel: 'window.hide'; args: void; result: void }
   | { channel: 'window.minimize'; args: void; result: void }
@@ -121,7 +119,6 @@ export type IpcRequest =
   | { channel: 'settings.setAutoDeleteDays'; args: { days: number }; result: void }
   | { channel: 'settings.setHideOnBlur'; args: { enabled: boolean }; result: void }
   | { channel: 'settings.setShowReasoning'; args: { enabled: boolean }; result: void }
-  | { channel: 'settings.setNewConversationIdleTimeoutMinutes'; args: { minutes: number }; result: void }
   | { channel: 'settings.openLogsDir'; args: void; result: void }
   | { channel: 'settings.resetAllSessions'; args: void; result: { deleted: number } }
   | { channel: 'settings.setPinnedSessionIds'; args: { ids: string[] }; result: void }
@@ -239,7 +236,6 @@ export interface SettingsView {
   autoDeleteDays: number;
   hideOnBlur: boolean;
   showReasoning: boolean;
-  newConversation: { idleTimeoutMinutes: number };
   version: string;
   chatBounds: ChatBounds | null;
   lastVisibleMode: WindowMode;

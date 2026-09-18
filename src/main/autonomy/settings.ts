@@ -4,7 +4,7 @@ import type { AutonomyMode } from '@shared/messages';
 import type { ChatBounds, WindowMode } from '@shared/ipc-contract';
 import { DEFAULT_TTS_VOICE, DEFAULT_TTS_SPEED } from '@shared/voice-catalog';
 
-const CURRENT_VERSION = 8;
+const CURRENT_VERSION = 9;
 const DEFAULT_MODE: AutonomyMode = 'balanced';
 const VALID_MODES: AutonomyMode[] = ['strict', 'balanced', 'full-allow'];
 
@@ -18,10 +18,6 @@ export interface NotificationPrefs {
   turnComplete: boolean;
   approval: boolean;
   sound: boolean;
-}
-
-export interface NewConversationPrefs {
-  idleTimeoutMinutes: number; // 0 disables
 }
 
 export type WhisperModel = 'base.en' | 'small.en';
@@ -43,7 +39,6 @@ export interface SettingsSnapshot {
   autoDeleteDays: number;
   hideOnBlur: boolean;
   showReasoning: boolean;
-  newConversation: NewConversationPrefs;
   chatBounds: ChatBounds | null;
   lastVisibleMode: WindowMode;
   pinnedSessionIds: string[];
@@ -81,8 +76,15 @@ interface SettingsFileV7 extends SettingsSnapshot {
   version: 7;
 }
 
+// v8 (and earlier back to v2) carried newConversation.idleTimeoutMinutes; the
+// idle auto-new-conversation policy was removed and v9 drops the field on
+// migration.
 interface SettingsFileV8 extends SettingsSnapshot {
   version: 8;
+}
+
+interface SettingsFileV9 extends SettingsSnapshot {
+  version: 9;
 }
 
 type SettingsFile =
@@ -93,7 +95,8 @@ type SettingsFile =
   | SettingsFileV5
   | SettingsFileV6
   | SettingsFileV7
-  | SettingsFileV8;
+  | SettingsFileV8
+  | SettingsFileV9;
 
 const DEFAULTS: SettingsSnapshot = {
   autonomy: { mode: DEFAULT_MODE },
@@ -104,7 +107,6 @@ const DEFAULTS: SettingsSnapshot = {
   autoDeleteDays: 0,
   hideOnBlur: false,
   showReasoning: true,
-  newConversation: { idleTimeoutMinutes: 60 },
   chatBounds: null,
   lastVisibleMode: 'bar',
   pinnedSessionIds: [],
@@ -167,9 +169,6 @@ export class Settings {
   getShowReasoning(): boolean {
     return this.state.showReasoning;
   }
-  getNewConversationIdleTimeoutMinutes(): number {
-    return this.state.newConversation.idleTimeoutMinutes;
-  }
   snapshot(): SettingsSnapshot {
     return {
       autonomy: { ...this.state.autonomy },
@@ -180,7 +179,6 @@ export class Settings {
       autoDeleteDays: this.state.autoDeleteDays,
       hideOnBlur: this.state.hideOnBlur,
       showReasoning: this.state.showReasoning,
-      newConversation: { ...this.state.newConversation },
       chatBounds: this.state.chatBounds ? { ...this.state.chatBounds } : null,
       lastVisibleMode: this.state.lastVisibleMode,
       pinnedSessionIds: [...this.state.pinnedSessionIds],
@@ -229,14 +227,6 @@ export class Settings {
 
   async setShowReasoning(enabled: boolean): Promise<void> {
     this.state.showReasoning = !!enabled;
-    await this.persist();
-  }
-
-  async setNewConversationIdleTimeoutMinutes(minutes: number): Promise<void> {
-    if (!Number.isFinite(minutes) || minutes < 0) {
-      throw new Error(`invalid idleTimeoutMinutes: ${minutes}`);
-    }
-    this.state.newConversation = { idleTimeoutMinutes: Math.floor(minutes) };
     await this.persist();
   }
 
@@ -312,13 +302,13 @@ export class Settings {
       version === 5 ||
       version === 6 ||
       version === 7 ||
+      version === 8 ||
       version === CURRENT_VERSION
     ) {
       const o = obj as Omit<SettingsFileV2, 'version'> &
-        Partial<Omit<SettingsFileV8, 'version'>>;
+        Partial<Omit<SettingsFileV9, 'version'>>;
       const m = o.autonomy?.mode;
       if (!m || !VALID_MODES.includes(m)) return false;
-      const idle = o.newConversation?.idleTimeoutMinutes;
       const cb = (o as { chatBounds?: unknown }).chatBounds;
       const chatBounds: ChatBounds | null =
         cb && typeof cb === 'object' &&
@@ -376,12 +366,6 @@ export class Settings {
         hideOnBlur: typeof o.hideOnBlur === 'boolean' ? o.hideOnBlur : DEFAULTS.hideOnBlur,
         showReasoning:
           typeof o.showReasoning === 'boolean' ? o.showReasoning : DEFAULTS.showReasoning,
-        newConversation: {
-          idleTimeoutMinutes:
-            Number.isFinite(idle) && (idle as number) >= 0
-              ? Math.floor(idle as number)
-              : DEFAULTS.newConversation.idleTimeoutMinutes,
-        },
         chatBounds,
         lastVisibleMode,
         pinnedSessionIds,
@@ -401,7 +385,7 @@ export class Settings {
     const dir = path.dirname(this.filePath);
     await fs.mkdir(dir, { recursive: true });
     const tmp = `${this.filePath}.tmp`;
-    const payload: SettingsFileV8 = { version: CURRENT_VERSION, ...this.snapshot() };
+    const payload: SettingsFileV9 = { version: CURRENT_VERSION, ...this.snapshot() };
     await fs.writeFile(tmp, JSON.stringify(payload, null, 2));
     await fs.rename(tmp, this.filePath);
   }
