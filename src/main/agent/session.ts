@@ -504,10 +504,12 @@ export class SessionManager {
   /**
    * Origin governing tool calls in this session right now. Fails closed: any
    * remote-origin message not yet finalized makes the whole session 'remote'.
+   * Otherwise it is the origin of the session's last finalized message, so a
+   * desktop turn that follows a remote one keeps the remote ceiling until it
+   * finalizes. A session that has never finalized a message is 'desktop'.
    */
   originForSession(sessionId: string): 'desktop' | 'remote' {
     if ((this.pendingRemote.get(sessionId)?.size ?? 0) > 0) return 'remote';
-    if ((this.assistants.get(sessionId)?.size ?? 0) > 0) return 'desktop';
     return this.lastOrigin.get(sessionId) ?? 'desktop';
   }
 
@@ -550,13 +552,24 @@ export class SessionManager {
       }
       pending.add(assistantId);
     }
-    const stream = this.ensureStream(sessionId);
-    // Track ahead-of-time so events can find the row even if they arrive before
-    // we'd otherwise getOrCreate. We also keep a handle on the done promise so
-    // send() can await per-message completion (preserving the previous
-    // per-turn await semantics).
-    const row = this.getOrCreateAssistant(sessionId, assistantId);
-    if (!row) throw new Error(`assistantId ${assistantId} unexpectedly collided with a finalized message`);
+    let stream: SessionStreamHandle;
+    let row: ActiveAssistant;
+    try {
+      stream = this.ensureStream(sessionId);
+      // Track ahead-of-time so events can find the row even if they arrive before
+      // we'd otherwise getOrCreate. We also keep a handle on the done promise so
+      // send() can await per-message completion (preserving the previous
+      // per-turn await semantics).
+      const created = this.getOrCreateAssistant(sessionId, assistantId);
+      if (!created) throw new Error(`assistantId ${assistantId} unexpectedly collided with a finalized message`);
+      row = created;
+    } catch (err) {
+      // Never enqueued: don't leave the id pinning the session to 'remote'.
+      this.origins.delete(assistantId);
+      this.dropPendingRemote(sessionId, assistantId);
+      this.assistants.get(sessionId)?.delete(assistantId);
+      throw err;
+    }
 
     // Session-level abort controller still exists so cancel() can tear down
     // the underlying query. Tasks 5/6 will revisit semantics.
@@ -568,7 +581,9 @@ export class SessionManager {
       try { cb(sessionId); } catch (err) { logger.warn(`userActive listener threw: ${err instanceof Error ? err.message : err}`); }
     }
 
-    this.onAssistantMessageId(assistantId);
+    // The current message id moves when this message's turn actually starts
+    // (onPerMessageContext from the stream pump), not here: a message queued
+    // behind a running turn must not take over that turn's approval cards.
 
     // Emit user-message-queued BEFORE enqueue so the renderer sees it before
     // any user-message-consumed that fires synchronously from a waiting SDK
@@ -623,17 +638,20 @@ export class SessionManager {
     // here — that is reserved for hard-shutdown (session close / app quit).
     const stream = this.streams.get(args.sessionId);
     if (!stream) return;
-    // Mark all in-flight assistant rows as pending-cancel; the consumer
-    // loop's message-end case will route them through the cancellation
-    // finalize path so unmatched tool calls get synthetic results.
-    const perSession = this.assistants.get(args.sessionId);
-    if (perSession && perSession.size > 0) {
+    // Mark the in-flight turn as pending-cancel; the consumer loop's
+    // message-end case will route it through the cancellation finalize path
+    // so unmatched tool calls get synthetic results.
+    // Only the turn being processed is cancelled. The SDK runs queued
+    // messages in order, so that is the oldest unfinalized one; messages
+    // queued behind it still run after the interrupt and finalize normally.
+    const current = this.assistants.get(args.sessionId)?.keys().next().value;
+    if (current !== undefined) {
       let pending = this.cancelling.get(args.sessionId);
       if (!pending) {
         pending = new Set<string>();
         this.cancelling.set(args.sessionId, pending);
       }
-      for (const id of perSession.keys()) pending.add(id);
+      pending.add(current);
     }
     await stream.interrupt();
   }

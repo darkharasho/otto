@@ -79,11 +79,45 @@ export function createSessionStream(args: {
   onPerMessageContext?: (messageId: string) => void | Promise<void>;
 }): SessionStream {
   const inbox = createMessageQueue<EnqueuedMessage>();
-  let currentMessageId: string | null = null;
+  // Message ids handed to the SDK whose turn hasn't produced its `result` yet,
+  // oldest first. Stream events belong to the head: the SDK runs one user turn
+  // at a time, in order, and closes each with exactly one `result` (interrupted
+  // turns included — the CLI ends them with an error_during_execution result).
+  const turns: string[] = [];
+  // Label for events seen while no turn is in flight (e.g. trailing status
+  // messages after a result). Points at the last finished turn so SessionManager
+  // drops them as late events rather than inventing a row.
+  let lastTurnId = '';
+  let closed = false;
+  let turnSettled: (() => void) | null = null;
+
+  function settleTurn(): void {
+    const w = turnSettled;
+    turnSettled = null;
+    w?.();
+  }
+
+  // Wait until no turn is in flight. Query.streamInput pulls the prompt
+  // iterable eagerly, and the bundled CLI does NOT keep queued prompts as
+  // separate turns: in SDK mode it drains 'next'-priority queued prompts into
+  // the running turn between tool rounds, and batches consecutive queued
+  // prompts into one turn at turn end — either way one `result` for several
+  // messages, which would shift every later label. Handing the SDK one message
+  // at a time keeps one message == one turn == one result.
+  function waitForIdle(): Promise<void> {
+    if (turns.length === 0 || closed) return Promise.resolve();
+    return new Promise((resolve) => { turnSettled = resolve; });
+  }
 
   async function* promptIterable(): AsyncIterable<SDKUserMessage> {
-    for await (const m of inbox.iterable) {
-      currentMessageId = m.messageId;
+    const it = inbox.iterable[Symbol.asyncIterator]();
+    while (true) {
+      await waitForIdle();
+      if (closed) return;
+      const next = await it.next();
+      if (next.done) return;
+      const m = next.value;
+      turns.push(m.messageId);
       if (args.onPerMessageContext) {
         await args.onPerMessageContext(m.messageId);
       }
@@ -117,9 +151,21 @@ export function createSessionStream(args: {
   });
 
   async function* events(): AsyncIterable<SessionStreamEvent> {
-    for await (const raw of q) {
-      const type = mapType(raw);
-      yield { messageId: currentMessageId ?? '', type, raw };
+    try {
+      for await (const raw of q) {
+        const type = mapType(raw);
+        const messageId = turns[0] ?? lastTurnId;
+        if (type === 'result' && turns.length > 0) {
+          // This turn is over: the next event belongs to the next queued message.
+          lastTurnId = turns.shift()!;
+          if (turns.length === 0) settleTurn();
+        }
+        yield { messageId, type, raw };
+      }
+    } finally {
+      // Stream ended or failed: no result is coming, so stop holding the prompt pump.
+      closed = true;
+      settleTurn();
     }
   }
 
@@ -127,7 +173,11 @@ export function createSessionStream(args: {
     enqueueUserMessage(msg) { inbox.push(msg); },
     interrupt: () => q.interrupt(),
     events,
-    close() { inbox.close(); },
+    close() {
+      closed = true;
+      inbox.close();
+      settleTurn();
+    },
     queueDepth: () => inbox.depth(),
   };
 }

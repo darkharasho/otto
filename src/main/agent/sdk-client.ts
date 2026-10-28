@@ -1,5 +1,5 @@
 import type { SdkClient, SdkStreamEvent, SessionStreamHandle, TaggedSdkStreamEvent } from './session';
-import { createSessionStream, type QueryFactory } from './session-stream';
+import { createSessionStream, type QueryFactory, type SessionStream } from './session-stream';
 import type { SDKMessage, SDKUserMessage, Options, Query } from '@anthropic-ai/claude-agent-sdk';
 import {
   buildInputTools, buildKnowledgeTool, buildScreenshotTool, buildShellTools, stubTools,
@@ -1012,39 +1012,46 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
         },
       });
 
-      // Adapt the SessionStream into the SessionStreamHandle protocol expected
-      // by SessionManager. We re-map raw SDK messages into the fine-grained
-      // SdkStreamEvent stream (text-delta, tool-call-start, ...), then tag
-      // each event with the active messageId.
-      async function* eventsTagged(): AsyncIterable<TaggedSdkStreamEvent> {
-        for await (const se of stream.events()) {
-          const mapped = mapSdkMessage(se.raw);
-          for (const ev of mapped) {
-            yield { ...ev, messageId: se.messageId } as TaggedSdkStreamEvent;
-          }
-          if (se.type === 'result') {
-            // End-of-turn marker for this messageId.
-            yield { type: 'message-end', messageId: se.messageId };
-            yield { type: 'done', messageId: se.messageId };
-          }
-        }
-      }
-
-      return {
-        enqueue(args) {
-          // Persist attachments via the createSessionStream path (it handles
-          // reading bytes off disk and inlining base64).
-          stream.enqueueUserMessage(args);
-        },
-        interrupt: () => stream.interrupt(),
-        events: eventsTagged,
-        close: () => {
-          abortController.abort();
-          stream.close();
-        },
-        queueDepth: () => stream.queueDepth(),
-      };
+      return toSessionStreamHandle(stream, () => abortController.abort());
     },
+  };
+}
+
+/**
+ * Adapt a {@link SessionStream} into the SessionStreamHandle protocol expected
+ * by SessionManager. Raw SDK messages are re-mapped into the fine-grained
+ * SdkStreamEvent stream (text-delta, tool-call-start, ...), each tagged with
+ * the messageId of the turn that produced it; a `result` closes that turn with
+ * message-end + done.
+ */
+export function toSessionStreamHandle(stream: SessionStream, onClose: () => void = () => {}): SessionStreamHandle {
+  async function* eventsTagged(): AsyncIterable<TaggedSdkStreamEvent> {
+    for await (const se of stream.events()) {
+      const mapped = mapSdkMessage(se.raw);
+      for (const ev of mapped) {
+        yield { ...ev, messageId: se.messageId } as TaggedSdkStreamEvent;
+      }
+      if (se.type === 'result') {
+        // End-of-turn marker for this messageId.
+        yield { type: 'message-end', messageId: se.messageId };
+        yield { type: 'done', messageId: se.messageId };
+      }
+    }
+  }
+
+  return {
+    enqueue(args) {
+      // Persist attachments via the createSessionStream path (it handles
+      // reading bytes off disk and inlining base64).
+      stream.enqueueUserMessage(args);
+    },
+    interrupt: () => stream.interrupt(),
+    events: eventsTagged,
+    close: () => {
+      onClose();
+      stream.close();
+    },
+    queueDepth: () => stream.queueDepth(),
   };
 }
 

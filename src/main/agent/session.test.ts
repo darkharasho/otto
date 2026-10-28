@@ -8,7 +8,8 @@ import { SessionManager, type SdkClient, type SdkStreamEvent, type SessionStream
 import type { SessionEvent } from '@shared/ipc-contract';
 import type { ContentBlock } from '@shared/messages';
 import { SessionBus, type RemoteOutbound } from '../remote/session-bus';
-import { __setScreenshotRefsForTest, buildOttoMcpServer } from './sdk-client';
+import { __setScreenshotRefsForTest, buildOttoMcpServer, toSessionStreamHandle } from './sdk-client';
+import { createSessionStream, type QueryFactory } from './session-stream';
 
 let dir: string;
 let repo: Repo;
@@ -69,6 +70,64 @@ function makeFakeOpenStream(scriptByCall: Script[] | Script) {
   });
 
   return { openStream, calls };
+}
+
+/**
+ * Eager mode: the real createSessionStream + sdk-client tagging in front of a
+ * query fake that reads the prompt iterable as fast as it yields, the way
+ * Query.streamInput does, and runs one turn per pulled prompt, each closed by
+ * a `result` (error_during_execution when the turn was interrupted). `turn`
+ * scripts the raw SDK messages for a pulled prompt.
+ */
+type EagerTurn = (args: { text: string; signal: AbortSignal }) => AsyncGenerator<unknown>;
+
+function makeEagerOpenStream(turn: EagerTurn) {
+  const pulled: string[] = [];
+  const openStream = vi.fn((sessionId: string, _resumeId: string | undefined, hooks: { onPerMessageContext: (messageId: string) => void | Promise<void> }): SessionStreamHandle => {
+    const queryFactory: QueryFactory = ({ prompt }) => {
+      const cliQueue: string[] = [];
+      let wake = null as (() => void) | null;
+      let inputDone = false;
+      void (async () => {
+        for await (const m of prompt) {
+          pulled.push(m.message.content as string);
+          cliQueue.push(m.message.content as string);
+          wake?.();
+        }
+        inputDone = true;
+        wake?.();
+      })();
+      let turnAbort = new AbortController();
+      return {
+        async *[Symbol.asyncIterator]() {
+          while (true) {
+            if (cliQueue.length === 0) {
+              if (inputDone) return;
+              await new Promise<void>((r) => { wake = r; });
+              wake = null;
+              continue;
+            }
+            const text = cliQueue.shift()!;
+            turnAbort = new AbortController();
+            yield* turn({ text, signal: turnAbort.signal });
+            yield { type: 'result', subtype: turnAbort.signal.aborted ? 'error_during_execution' : 'success' };
+          }
+        },
+        interrupt: async () => { turnAbort.abort(); },
+      } as unknown as ReturnType<QueryFactory>;
+    };
+    const stream = createSessionStream({ sessionId, queryFactory, onPerMessageContext: (id) => hooks.onPerMessageContext(id) });
+    return toSessionStreamHandle(stream);
+  });
+  return { openStream, pulled };
+}
+
+async function waitFor(pred: () => boolean, ms = 1000): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (!pred()) {
+    if (Date.now() > deadline) throw new Error('waitFor timed out');
+    await new Promise((r) => setTimeout(r, 2));
+  }
 }
 
 beforeEach(() => {
@@ -628,14 +687,23 @@ describe('SessionManager origin tracking', () => {
     expect(manager.originForSession('nope')).toBe('desktop');
   });
 
-  it('a desktop turn after a finished remote turn runs as desktop', async () => {
+  it('a desktop turn after a finished remote turn keeps the remote origin until it finalizes', async () => {
     const { release } = gatedManager();
     const { sessionId } = await manager.start({});
     release();
     await manager.send({ sessionId, text: 'r', origin: 'remote' });
     const p = manager.send({ sessionId, text: 'd' });
-    expect(manager.originForSession(sessionId)).toBe('desktop');
+    expect(manager.originForSession(sessionId)).toBe('remote');
     await p;
+    expect(manager.originForSession(sessionId)).toBe('desktop');
+  });
+
+  it('a send that throws before enqueueing does not leave the session pinned to remote', async () => {
+    fakeSdk.openStream = vi.fn(() => { throw new Error('spawn failed'); });
+    const { sessionId } = await manager.start({});
+    await expect(manager.send({ sessionId, text: 'r', origin: 'remote' })).rejects.toThrow('spawn failed');
+    expect(manager.originForSession(sessionId)).toBe('desktop');
+    expect(manager.hasActiveTurn(sessionId)).toBe(false);
   });
 
   it('stays remote after close drops an unfinalized remote message', async () => {
@@ -676,5 +744,137 @@ describe('SessionManager origin tracking', () => {
     } as never);
     await handlers.get('shell_exec')!({ command: 'ls' }, {});
     expect(decide).toHaveBeenCalledWith(expect.objectContaining({ sessionId: B, origin: 'remote' }));
+  });
+});
+
+describe('SessionManager turn labelling with an eagerly-pulling SDK', () => {
+  const ids = () => events.filter((e) => e.type === 'user-message-queued').map((e) => (e as { messageId: string }).messageId);
+  const ended = () => events.filter((e) => e.type === 'message-end').map((e) => (e as { messageId: string }).messageId);
+  const cancelled = () => events.filter((e) => e.type === 'message-cancelled').map((e) => (e as { messageId: string }).messageId);
+
+  function toolHarness(sessionId: string, m: SessionManager, peers?: unknown) {
+    const handlers = new Map<string, (args: unknown, extra: unknown) => Promise<unknown>>();
+    const sdk = {
+      tool: (name: string, _d: string, _s: unknown, h: (args: unknown, extra: unknown) => Promise<unknown>) => { handlers.set(name, h); return { name }; },
+      createSdkMcpServer: (o: unknown) => o,
+    };
+    const decide = vi.fn(async () => 'deny');
+    buildOttoMcpServer(sdk as never, {
+      broker: { decide } as never,
+      sudo: {} as never,
+      sessionId,
+      getMessageId: () => '',
+      getOrigin: (sid: string) => m.originForSession(sid),
+      getRegistry: () => ({}) as never,
+      getConfigDir: () => '/tmp',
+      peers,
+    } as never);
+    return { handlers, decide };
+  }
+
+  it('a remote prompt queued behind a running desktop turn keeps its origin for its own tool calls', async () => {
+    let releaseD!: () => void;
+    const gateD = new Promise<void>((r) => { releaseD = r; });
+    let harness: ReturnType<typeof toolHarness> | null = null;
+    const toolResults: unknown[] = [];
+    const { openStream } = makeEagerOpenStream(async function* ({ text }) {
+      if (text === 'desktop task') {
+        yield { type: 'assistant', message: { content: [{ type: 'text', text: 'd-started' }] } };
+        await gateD;
+        yield { type: 'assistant', message: { content: [{ type: 'text', text: 'd-done' }] } };
+        return;
+      }
+      yield { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'c1', name: 'mcp__otto-tools__shell_exec', input: { command: 'rm -rf ~/x' } }] } };
+      toolResults.push(await harness!.handlers.get('shell_exec')!({ command: 'rm -rf ~/x' }, { toolUseId: 'c1' }));
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'r-done' }] } };
+    });
+    fakeSdk.openStream = openStream;
+    const { sessionId } = await manager.start({});
+    harness = toolHarness(sessionId, manager);
+
+    const pD = manager.send({ sessionId, text: 'desktop task' });
+    await waitFor(() => events.some((e) => e.type === 'text-delta' && (e as { text: string }).text === 'd-started'));
+    const pR = manager.send({ sessionId, text: 'remote task', origin: 'remote' });
+    await new Promise((r) => setTimeout(r, 5));
+    releaseD();
+    await waitFor(() => harness!.decide.mock.calls.length > 0);
+    expect(harness.decide).toHaveBeenCalledWith(expect.objectContaining({ sessionId, origin: 'remote' }));
+
+    await Promise.all([pD, pR]);
+    const [D, R] = ids();
+    expect(ended()).toEqual([D, R]);
+    const assistants = repo.loadMessages(sessionId).filter((msg) => msg.role === 'assistant');
+    expect(assistants.map((a) => a.id)).toEqual([D, R]);
+    expect(assistants[0]!.content).toEqual([{ type: 'text', text: 'd-startedd-done' }]);
+    expect(assistants[1]!.content.some((b) => b.type === 'tool_use' && b.callId === 'c1')).toBe(true);
+    expect(manager.originForSession(sessionId)).toBe('remote');
+  });
+
+  it('refuses onward delegation in a remote prompt queued behind a running desktop turn', async () => {
+    let releaseD!: () => void;
+    const gateD = new Promise<void>((r) => { releaseD = r; });
+    let harness: ReturnType<typeof toolHarness> | null = null;
+    const run = vi.fn(async () => 'ran');
+    const wait = vi.fn(async () => 'waited');
+    const outs: Array<{ isError?: boolean; content: Array<{ text: string }> }> = [];
+    const { openStream } = makeEagerOpenStream(async function* ({ text }) {
+      if (text === 'desktop task') {
+        yield { type: 'assistant', message: { content: [{ type: 'text', text: 'd-started' }] } };
+        await gateD;
+        return;
+      }
+      for (const name of ['delegate_to_machine', 'wait_for_machine']) {
+        outs.push(await harness!.handlers.get(name)!({ machine: 'Desk', task: 'do it' }, {}) as typeof outs[number]);
+      }
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'r-done' }] } };
+    });
+    fakeSdk.openStream = openStream;
+    const { sessionId } = await manager.start({});
+    harness = toolHarness(sessionId, manager, { machineNames: () => ['Desk'], run, wait });
+
+    const pD = manager.send({ sessionId, text: 'desktop task' });
+    await waitFor(() => events.some((e) => e.type === 'text-delta'));
+    const pR = manager.send({ sessionId, text: 'remote task', origin: 'remote' });
+    await new Promise((r) => setTimeout(r, 5));
+    releaseD();
+    await waitFor(() => outs.length === 2);
+    for (const out of outs) {
+      expect(out.isError).toBe(true);
+      expect(out.content[0]!.text).toBe("Delegation isn't available for tasks that came from another machine.");
+    }
+    expect(run).not.toHaveBeenCalled();
+    expect(wait).not.toHaveBeenCalled();
+    await Promise.all([pD, pR]);
+  });
+
+  it('an interrupt with a queued message cancels only the running turn and the queued one finalizes as its own', async () => {
+    const { openStream } = makeEagerOpenStream(async function* ({ text, signal }) {
+      if (text === 'desktop task') {
+        yield { type: 'assistant', message: { content: [{ type: 'text', text: 'd-part' }] } };
+        if (!signal.aborted) await new Promise<void>((r) => signal.addEventListener('abort', () => r()));
+        return;
+      }
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'r-text' }] } };
+    });
+    fakeSdk.openStream = openStream;
+    const { sessionId } = await manager.start({});
+    const pD = manager.send({ sessionId, text: 'desktop task' });
+    await waitFor(() => events.some((e) => e.type === 'text-delta'));
+    const pR = manager.send({ sessionId, text: 'remote task', origin: 'remote' });
+    await new Promise((r) => setTimeout(r, 5));
+    await manager.interrupt({ sessionId });
+    await Promise.all([pD, pR]);
+
+    const [D, R] = ids();
+    expect(cancelled()).toEqual([D]);
+    expect(ended()).toEqual([R]);
+    const assistants = repo.loadMessages(sessionId).filter((msg) => msg.role === 'assistant');
+    const d = assistants.find((a) => a.id === D)!;
+    const r = assistants.find((a) => a.id === R)!;
+    expect(d.content).toEqual([{ type: 'text', text: 'd-part' }]);
+    expect('cancelled' in d && d.cancelled).toBe(true);
+    expect(r.content).toEqual([{ type: 'text', text: 'r-text' }]);
+    expect('cancelled' in r && r.cancelled).toBeFalsy();
+    expect(manager.originForSession(sessionId)).toBe('remote');
   });
 });
