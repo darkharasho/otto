@@ -51,7 +51,7 @@ Steps:
 3. [ ] On the Mac, approve that step.
 
 Expected:
-- [ ] The approval card appears in the Mac's delegation card, not on Bazzite's screen.
+- [ ] The approval card appears in the Mac's delegation card (it also shows on Bazzite's own screen — first answer wins).
 - [ ] Approving on the Mac runs the step on Bazzite.
 - [ ] The delegation card returns to `Working` and the investigation continues to a final result.
 
