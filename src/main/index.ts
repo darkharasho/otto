@@ -494,6 +494,30 @@ async function startElectron(): Promise<void> {
       imageCache,
       activeSessionId: () => sessions.getActiveSessionId(),
       resolveApproval: (id, choice) => { broker.resolve(id, choice, 'remote'); return true; },
+      isBusy: () => sessions.hasActiveTurn(),
+      startDelegation: async ({ text, sessionId, interruptFirst }) => {
+        if (interruptFirst) {
+          const active = sessions.getActiveSessionId();
+          if (active && sessions.hasActiveTurn(active)) {
+            await sessions.interrupt({ sessionId: active });
+            // Bounded wait for the interrupted turn to finalize before starting.
+            const deadline = Date.now() + 10_000;
+            while (sessions.hasActiveTurn() && Date.now() < deadline) {
+              await new Promise((r) => setTimeout(r, 50));
+            }
+          }
+        }
+        const started = await sessions.start(sessionId ? { resume: sessionId } : {});
+        const sid = started.sessionId;
+        // sessions.send resolves only at turn end; report failures via the bus like sendPrompt.
+        void sessions.send({ sessionId: sid, text, origin: 'remote' }).catch((err) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          logger.error(`remote delegation send failed: ${msg}`);
+          sessionBus.publish(sid, { type: 'event', kind: 'done', sessionId: sid } as unknown as import('./remote/session-bus').RemoteOutbound);
+          sessionBus.publish(sid, { type: 'error', code: 'send-failed', message: msg, fatal: false });
+        });
+        return { sessionId: sid };
+      },
       resolveSudo: (promptId, password) => { sudoBroker.resolveSudo(promptId, password); return true; },
       configDir: ottoConfigDir,
       sendPrompt: async (text, origin, attachments) => {

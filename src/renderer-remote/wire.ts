@@ -10,12 +10,13 @@ export type WsOutboundFrame =
   | { v: 1; type: 'auth'; token: string }
   | { v: 1; type: 'prompt'; sessionId: string; text: string; attachmentIds?: string[] }
   | { v: 1; type: 'attach'; sessionId: string; mimeType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'; bytesBase64: string; clientCorrelationId: string }
-  | { v: 1; type: 'approval'; decisionId: string; decision: 'approve' | 'deny' }
+  | { v: 1; type: 'approval'; decisionId: string; decision: 'approve' | 'approve-session' | 'deny' }
   | { v: 1; type: 'sudo'; promptId: string; password: string | null }
   | { v: 1; type: 'interrupt'; sessionId?: string }
   | { v: 1; type: 'ping' }
   | { v: 1; type: 'switch_session'; sessionId: string }
-  | { v: 1; type: 'new_session' };
+  | { v: 1; type: 'new_session' }
+  | { v: 1; type: 'delegate'; text: string; correlationId: string; sessionId?: string; ifBusy?: 'reject' | 'interrupt' };
 
 /** Frames the bridge server sends to the PWA over WS. */
 export type WsInboundFrame =
@@ -24,6 +25,9 @@ export type WsInboundFrame =
   | { v: 1; type: 'session_switched'; sessionId: string }
   | { v: 1; type: 'attach_ok'; clientCorrelationId: string; ref: ImageRef }
   | { v: 1; type: 'attach_err'; clientCorrelationId: string; message: string }
+  | { v: 1; type: 'delegate_started'; correlationId: string; sessionId: string }
+  | { v: 1; type: 'delegate_busy'; correlationId: string; activeSessionId: string | null }
+  | { v: 1; type: 'delegate_err'; correlationId: string; message: string }
   | { v: 1; type: string; [k: string]: unknown };
 
 export interface PairResult {

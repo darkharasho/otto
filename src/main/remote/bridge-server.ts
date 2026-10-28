@@ -81,7 +81,10 @@ export interface BridgeServerOpts {
   loadScreenshot: (id: string) => Promise<Buffer | null>;
   /** Optional image cache for inline-image markdown. When unset, /image returns 404. */
   imageCache?: { get(url: string): Promise<{ path: string; contentType: string }> };
-  resolveApproval?: (decisionId: string, choice: 'approve' | 'deny') => boolean;
+  resolveApproval?: (decisionId: string, choice: 'approve' | 'approve-session' | 'deny') => boolean;
+  isBusy?: () => boolean;
+  /** Starts (or resumes, when sessionId is given) a session and kicks off the turn without awaiting its completion. */
+  startDelegation?: (args: { text: string; sessionId?: string; interruptFirst: boolean }) => Promise<{ sessionId: string }>;
   resolveSudo?: (promptId: string, password: string | null) => boolean;
   sendPrompt?: (text: string, origin: 'desktop' | 'remote', attachments: ImageRef[]) => Promise<void>;
   interruptTurn?: (sessionId?: string) => void;
@@ -282,13 +285,35 @@ export class BridgeServer {
         void this.opts.sendPrompt?.(msg.text, 'remote', attachments);
         return;
       }
+      if (msg.type === 'delegate' && typeof msg.text === 'string' && typeof msg.correlationId === 'string') {
+        const correlationId = msg.correlationId;
+        const sessionId = typeof msg.sessionId === 'string' ? msg.sessionId : undefined;
+        const interruptFirst = msg.ifBusy === 'interrupt';
+        const reply = (frame: Record<string, unknown>) => {
+          try { ws.send(JSON.stringify({ v: 1, ...frame })); } catch { /* ws may be closed */ }
+        };
+        if (!interruptFirst && this.opts.isBusy?.()) {
+          reply({ type: 'delegate_busy', correlationId, activeSessionId: this.opts.activeSessionId?.() ?? null });
+          return;
+        }
+        if (!this.opts.startDelegation) {
+          reply({ type: 'delegate_err', correlationId, message: 'delegation not supported' });
+          return;
+        }
+        this.opts.startDelegation({ text: msg.text, sessionId, interruptFirst }).then((r) => {
+          reply({ type: 'delegate_started', correlationId, sessionId: r.sessionId });
+        }).catch((err) => {
+          reply({ type: 'delegate_err', correlationId, message: err instanceof Error ? err.message : String(err) });
+        });
+        return;
+      }
       if (msg.type === 'interrupt') {
         const sid = typeof msg.sessionId === 'string' ? msg.sessionId : undefined;
         this.opts.interruptTurn?.(sid);
         return;
       }
       if (msg.type === 'ping') { ws.send(JSON.stringify({ v: 1, type: 'pong' })); return; }
-      if (msg.type === 'approval' && typeof msg.decisionId === 'string' && (msg.decision === 'approve' || msg.decision === 'deny')) {
+      if (msg.type === 'approval' && typeof msg.decisionId === 'string' && (msg.decision === 'approve' || msg.decision === 'approve-session' || msg.decision === 'deny')) {
         this.opts.resolveApproval?.(msg.decisionId, msg.decision);
         return;
       }

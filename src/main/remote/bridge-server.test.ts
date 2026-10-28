@@ -793,3 +793,102 @@ describe('BridgeServer stagedAttachments integration (real WS flow)', () => {
     expect(attachedRefId).toBeTruthy();
   });
 });
+
+describe('BridgeServer delegate frame', () => {
+  type StartArgs = { text: string; sessionId?: string; interruptFirst: boolean };
+  async function run(
+    opts: {
+      isBusy?: () => boolean;
+      startDelegation?: (a: StartArgs) => Promise<{ sessionId: string }>;
+      sendPrompt?: (text: string, origin: 'desktop' | 'remote', att: unknown[]) => Promise<void>;
+      resolveApproval?: (id: string, c: 'approve' | 'approve-session' | 'deny') => boolean;
+    },
+    frame: Record<string, unknown>,
+  ): Promise<Array<Record<string, unknown>>> {
+    const pairing = makeStore();
+    server = new BridgeServer({
+      tailnetIp: '127.0.0.1', pairing, bus: new SessionBus(), pwaDir: null,
+      screenshotSecret: 'x', loadScreenshot: async () => null,
+      activeSessionId: () => 'active',
+      ...opts,
+      plainHttp: true,
+    } as ConstructorParameters<typeof BridgeServer>[0]);
+    const { port } = await server.start();
+    const { token } = await pairing.issue('peer');
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+    const got: Array<Record<string, unknown>> = [];
+    await new Promise<void>((resolve) => {
+      ws.on('open', () => ws.send(JSON.stringify({ v: 1, type: 'auth', token })));
+      ws.on('message', (data) => {
+        const m = JSON.parse(data.toString());
+        got.push(m);
+        if (m.type === 'auth_ok') {
+          ws.send(JSON.stringify({ v: 1, ...frame }));
+          setTimeout(resolve, 80);
+        }
+      });
+    });
+    ws.close();
+    return got;
+  }
+
+  it('delegate frame starts a new session even when an idle session is active', async () => {
+    const calls: StartArgs[] = [];
+    const got = await run({
+      isBusy: () => false,
+      startDelegation: async (a) => { calls.push(a); return { sessionId: 'new-1' }; },
+    }, { type: 'delegate', text: 'do it', correlationId: 'c1' });
+    expect(calls).toEqual([{ text: 'do it', sessionId: undefined, interruptFirst: false }]);
+    expect(got).toContainEqual({ v: 1, type: 'delegate_started', correlationId: 'c1', sessionId: 'new-1' });
+  });
+
+  it('delegate frame replies delegate_busy when isBusy() and ifBusy is reject', async () => {
+    const calls: StartArgs[] = [];
+    const got = await run({
+      isBusy: () => true,
+      startDelegation: async (a) => { calls.push(a); return { sessionId: 'x' }; },
+    }, { type: 'delegate', text: 'do it', correlationId: 'c2' });
+    expect(calls).toEqual([]);
+    expect(got).toContainEqual({ v: 1, type: 'delegate_busy', correlationId: 'c2', activeSessionId: 'active' });
+  });
+
+  it('delegate with ifBusy interrupt calls startDelegation with interruptFirst true', async () => {
+    const calls: StartArgs[] = [];
+    await run({
+      isBusy: () => true,
+      startDelegation: async (a) => { calls.push(a); return { sessionId: 'n' }; },
+    }, { type: 'delegate', text: 't', correlationId: 'c3', ifBusy: 'interrupt' });
+    expect(calls).toEqual([{ text: 't', sessionId: undefined, interruptFirst: true }]);
+  });
+
+  it('delegate follow-up passes sessionId through', async () => {
+    const calls: StartArgs[] = [];
+    const got = await run({
+      isBusy: () => false,
+      startDelegation: async (a) => { calls.push(a); return { sessionId: a.sessionId! }; },
+    }, { type: 'delegate', text: 'more', correlationId: 'c4', sessionId: 'old' });
+    expect(calls).toEqual([{ text: 'more', sessionId: 'old', interruptFirst: false }]);
+    expect(got).toContainEqual({ v: 1, type: 'delegate_started', correlationId: 'c4', sessionId: 'old' });
+  });
+
+  it('delegate replies delegate_err when startDelegation throws', async () => {
+    const got = await run({
+      startDelegation: async () => { throw new Error('boom'); },
+    }, { type: 'delegate', text: 't', correlationId: 'c5' });
+    expect(got).toContainEqual({ v: 1, type: 'delegate_err', correlationId: 'c5', message: 'boom' });
+  });
+
+  it('approval frame forwards approve-session', async () => {
+    const seen: Array<[string, string]> = [];
+    await run({ resolveApproval: (id, c) => { seen.push([id, c]); return true; } },
+      { type: 'approval', decisionId: 'd9', decision: 'approve-session' });
+    expect(seen).toEqual([['d9', 'approve-session']]);
+  });
+
+  it('prompt frame still targets the active session', async () => {
+    const seen: string[] = [];
+    await run({ sendPrompt: async (text) => { seen.push(text); } },
+      { type: 'prompt', sessionId: 'other', text: 'hi' });
+    expect(seen).toEqual(['hi']);
+  });
+});
