@@ -40,6 +40,8 @@ export async function pairWithPeer(baseUrl: string, code: string, deviceLabel: s
 
 const BUS_FRAME_TYPES = new Set(['event', 'approval_pending', 'approval_resolved', 'session_state', 'error']);
 const MAX_BUFFERED = 1000;
+const MAX_UNCLAIMED_SESSIONS = 8;
+const MAX_UNCLAIMED_FRAMES = 200;
 
 interface SessionState {
   /** Highest bridge history seq reflected in what we have received. */
@@ -70,6 +72,8 @@ export class PeerClient {
   private readonly stateListeners = new Set<(s: ConnectionState) => void>();
   private readonly sessions = new Map<string, SessionState>();
   private readonly pending = new Map<string, Pending>();
+  /** Frames for sessions we have no entry for yet (the bridge publishes before it replies delegate_started). */
+  private readonly unclaimed = new Map<string, RemoteEvent[]>();
   private reconnectTimer: NodeJS.Timeout | null = null;
 
   constructor(opts: PeerClientOpts) {
@@ -179,18 +183,39 @@ export class PeerClient {
       const p = this.pending.get(id);
       if (!p) return;
       this.pending.delete(id);
+      if (type === 'delegate_started') this.claim(m.sessionId as string);
       if (type === 'delegate_started') p.resolve({ kind: 'started', sessionId: m.sessionId as string });
       else if (type === 'delegate_busy') p.resolve({ kind: 'busy', activeSessionId: (m.activeSessionId as string | null) ?? null });
       else p.reject(new Error(typeof m.message === 'string' ? m.message : 'delegation failed'));
       return;
     }
     if (!BUS_FRAME_TYPES.has(type) || typeof m.sessionId !== 'string') return;
-    const st = this.sessions.get(m.sessionId);
-    if (!st) return;
     const frame = m as RemoteEvent;
+    const st = this.sessions.get(m.sessionId);
+    if (!st) { this.stash(m.sessionId, frame); return; }
     if (st.syncing) { st.held.push(frame); return; }
     st.liveSinceSeq++;
     this.deliver(st, frame);
+  }
+
+  private stash(sessionId: string, frame: RemoteEvent): void {
+    let arr = this.unclaimed.get(sessionId);
+    if (!arr) {
+      arr = [];
+      this.unclaimed.set(sessionId, arr);
+      if (this.unclaimed.size > MAX_UNCLAIMED_SESSIONS) this.unclaimed.delete(this.unclaimed.keys().next().value as string);
+    }
+    arr.push(frame);
+    if (arr.length > MAX_UNCLAIMED_FRAMES) arr.shift();
+  }
+
+  /** On delegate_started: create the entry synchronously and hold pre-start frames until the baseline lands. */
+  private claim(sessionId: string): void {
+    const st = this.session(sessionId);
+    st.syncing = true;
+    const early = this.unclaimed.get(sessionId);
+    this.unclaimed.delete(sessionId);
+    if (early) st.held.unshift(...early);
   }
 
   private deliver(st: SessionState, e: RemoteEvent): void {
@@ -293,6 +318,10 @@ export class PeerClient {
     });
   }
 
+  /**
+   * For a session that was never delegated through this client the entry starts at lastSeq 0,
+   * so a reconnect replays the remote's ring for it. Acceptable: such a listener asked for that session's stream.
+   */
   onEvent(sessionId: string, cb: (e: RemoteEvent) => void): () => void {
     const st = this.session(sessionId);
     st.listeners.add(cb);

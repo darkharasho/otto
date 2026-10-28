@@ -108,9 +108,7 @@ describe('PeerClient', () => {
     const { port } = await s.start();
     const { client } = await pairedClient(s, port);
     await client.connect();
-    const states: string[] = [];
-    client.onConnectionChange((st) => states.push(st));
-    expect(states).toEqual([]);
+    expect(await client.delegate({ text: 'ping' })).toEqual({ kind: 'started', sessionId: 'sess-1' });
   });
 
   it('connect rejects unreachable within the timeout', async () => {
@@ -159,6 +157,34 @@ describe('PeerClient', () => {
     await waitFor(() => got.some((e) => e.kind === 'done'));
     expect(got.map((e) => e.kind)).toEqual(['text-delta', 'done']);
     expect(hooks.delegations[0]).toEqual({ text: 'do it', sessionId: undefined, interruptFirst: false });
+  });
+
+  it('delivers frames published synchronously at start exactly once, including across a reconnect', async () => {
+    const port = await freePort();
+    const { makeServer, bus, hooks } = setup(port);
+    hooks.onStart = (sid) => {
+      bus.publish(sid, { type: 'event', kind: 'user-message', text: 'first' });
+      bus.publish(sid, { type: 'event', kind: 'text-delta', text: 'second' });
+    };
+    let s = makeServer();
+    await s.start();
+    const { client } = await pairedClient(s, port, { reconnectWindowMs: 5000 });
+    await client.connect();
+    await client.delegate({ text: 'go' });
+    const got: RemoteEvent[] = [];
+    client.onEvent('sess-1', (e) => got.push(e));
+    expect(got.map((e) => e.text)).toEqual(['first', 'second']);
+
+    const states: string[] = [];
+    client.onConnectionChange((st) => states.push(st));
+    await stopServer(s);
+    await waitFor(() => states.includes('reconnecting'));
+    bus.publish('sess-1', { type: 'event', kind: 'text-delta', text: 'third' });
+    s = makeServer();
+    await s.start();
+    await waitFor(() => got.length >= 3);
+    await new Promise((r) => setTimeout(r, 100));
+    expect(got.map((e) => e.text)).toEqual(['first', 'second', 'third']);
   });
 
   it('delegate returns busy', async () => {
