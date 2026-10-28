@@ -583,3 +583,46 @@ describe('SessionManager + SessionBus fan-out', () => {
     });
   });
 });
+
+describe('SessionManager origin tracking', () => {
+  function gatedManager() {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const { openStream } = makeFakeOpenStream(async function* () {
+      await gate;
+      yield { type: 'text-delta', text: 'ok' };
+      yield { type: 'message-end' };
+      yield { type: 'done' };
+    });
+    fakeSdk.openStream = openStream;
+    return { release };
+  }
+  const queuedId = () => (events.find((e) => e.type === 'user-message-queued') as { messageId: string }).messageId;
+
+  it('records remote origin for the assistant message created by send', async () => {
+    const { release } = gatedManager();
+    const { sessionId } = await manager.start({});
+    const p = manager.send({ sessionId, text: 'hi', origin: 'remote' });
+    expect(manager.originForMessage(queuedId())).toBe('remote');
+    expect(manager.hasActiveTurn(sessionId)).toBe(true);
+    expect(manager.hasActiveTurn()).toBe(true);
+    expect(manager.hasActiveTurn('other')).toBe(false);
+    release();
+    await p;
+    expect(manager.hasActiveTurn(sessionId)).toBe(false);
+    expect(manager.originForMessage(queuedId())).toBe('desktop');
+  });
+
+  it('defaults origin to desktop', async () => {
+    const { release } = gatedManager();
+    const { sessionId } = await manager.start({});
+    const p = manager.send({ sessionId, text: 'hi' });
+    expect(manager.originForMessage(queuedId())).toBe('desktop');
+    release();
+    await p;
+  });
+
+  it('returns desktop for unknown message ids', () => {
+    expect(manager.originForMessage('nope')).toBe('desktop');
+  });
+});

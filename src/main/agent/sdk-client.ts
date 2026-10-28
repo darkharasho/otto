@@ -241,6 +241,8 @@ export interface RealSdkClientDeps {
   sudo: SudoBroker;
   /** Returns the messageId of the assistant message being authored for the current turn. */
   currentMessageId: () => string;
+  /** Origin ('desktop' | 'remote') of the prompt that started the given assistant message. */
+  originForMessage?: (messageId: string) => 'desktop' | 'remote';
   getRegistry: () => ProcessRegistry;
   getConfigDir: () => string;
   recall(args: {
@@ -289,6 +291,7 @@ interface ToolCtx {
   // pending event arrived with a messageId the renderer couldn't match and the
   // ApprovalCard never rendered.
   getMessageId: () => string;
+  getOrigin: (messageId: string) => 'desktop' | 'remote';
   getRegistry: () => ProcessRegistry;
   getConfigDir: () => string;
   recall: RealSdkClientDeps['recall'];
@@ -386,7 +389,7 @@ function verifyTargetFor(action: InputAction): { x: number; y: number } | null {
   }
 }
 
-function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
+export function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
   const { createSdkMcpServer, tool } = sdk;
   const allTools: OttoTool[] = [
     ...stubTools,
@@ -419,6 +422,7 @@ function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
         const outcome = await ctx.broker.decide({
           sessionId: ctx.sessionId,
           messageId,
+          origin: ctx.getOrigin(messageId),
           callId,
           toolName: t.name,
           actionClass: cls,
@@ -912,6 +916,7 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
             sudo: deps.sudo,
             sessionId,
             getMessageId: deps.currentMessageId,
+            getOrigin: (id) => deps.originForMessage?.(id) ?? 'desktop',
             getRegistry: deps.getRegistry,
             getConfigDir: deps.getConfigDir,
             recall: deps.recall,

@@ -80,6 +80,7 @@ export class SessionManager {
   private readonly assistants = new Map<string, Map<string, ActiveAssistant>>(); // sessionId -> (messageId -> active)
   private readonly cancelling = new Map<string, Set<string>>(); // sessionId -> set of messageIds awaiting cancelled-finalize
   private readonly finalizedMessages = new Map<string, Set<string>>(); // sessionId -> messageIds already persisted
+  private readonly origins = new Map<string, 'desktop' | 'remote'>(); // assistant messageId -> prompt origin, dropped on finalize
   private readonly seenSdkSessionId = new Set<string>();
   // callIds of annotate_result / mark_task_complete invocations: their
   // tool_use/tool_result never become content blocks — the annotation folds
@@ -445,6 +446,7 @@ export class SessionManager {
     const row = perSession?.get(messageId);
     if (!row) return;
     perSession!.delete(messageId);
+    this.origins.delete(messageId);
     if (flags.cancelled) {
       // Close out any in-flight tool calls so the renderer stops spinning
       // their cards forever. Unmatched tool_use blocks get a synthetic
@@ -495,7 +497,18 @@ export class SessionManager {
   static readonly VOICE_SUFFIX =
     '\n\n[This is a spoken voice conversation — your reply will be read aloud by TTS. Respond conversationally and briefly: plain prose, no markdown formatting, no bullet lists, no headings, and no code blocks unless the user explicitly asks for code. Prefer one to three short sentences unless the user asks for depth. Numbers, paths, and commands should be phrased the way a person would say them aloud.]';
 
-  async send(args: { sessionId: string; text: string; attachments?: Array<Extract<ContentBlock, { type: 'image-ref' }>>; voice?: boolean }): Promise<void> {
+  originForMessage(messageId: string): 'desktop' | 'remote' {
+    return this.origins.get(messageId) ?? 'desktop';
+  }
+
+  /** True while an assistant message is started and not yet finalized/cancelled. */
+  hasActiveTurn(sessionId?: string): boolean {
+    if (sessionId !== undefined) return (this.assistants.get(sessionId)?.size ?? 0) > 0;
+    for (const per of this.assistants.values()) if (per.size > 0) return true;
+    return false;
+  }
+
+  async send(args: { sessionId: string; text: string; attachments?: Array<Extract<ContentBlock, { type: 'image-ref' }>>; voice?: boolean; origin?: 'desktop' | 'remote' }): Promise<void> {
     const { sessionId, text } = args;
     const sdkText = args.voice ? text + SessionManager.VOICE_SUFFIX : text;
     const user = this.repo.appendMessage({ ...newUserMessage(text, args.attachments ?? []), sessionId });
@@ -506,6 +519,7 @@ export class SessionManager {
     // Pre-create the assistant row with a stable id we can use to tag the
     // enqueued message. The stream consumer will populate it as events arrive.
     const assistantId = newAssistantMessage().id;
+    this.origins.set(assistantId, args.origin ?? 'desktop');
     const stream = this.ensureStream(sessionId);
     // Track ahead-of-time so events can find the row even if they arrive before
     // we'd otherwise getOrCreate. We also keep a handle on the done promise so
@@ -561,6 +575,7 @@ export class SessionManager {
       abort.abort();
       this.aborts.delete(args.sessionId);
     }
+    for (const id of this.assistants.get(args.sessionId)?.keys() ?? []) this.origins.delete(id);
     this.assistants.delete(args.sessionId);
     this.cancelling.delete(args.sessionId);
     this.finalizedMessages.delete(args.sessionId);

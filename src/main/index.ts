@@ -390,6 +390,7 @@ async function startElectron(): Promise<void> {
     broker,
     sudo: sudoBroker,
     currentMessageId: () => currentMessageId ?? '',
+    originForMessage: (id) => sessions.originForMessage(id),
     getRegistry: () => registry,
     getConfigDir: () => ottoConfigDir,
     recall: async (args) => {
@@ -495,7 +496,7 @@ async function startElectron(): Promise<void> {
       resolveApproval: (id, choice) => { broker.resolve(id, choice, 'remote'); return true; },
       resolveSudo: (promptId, password) => { sudoBroker.resolveSudo(promptId, password); return true; },
       configDir: ottoConfigDir,
-      sendPrompt: async (text, _origin, attachments) => {
+      sendPrompt: async (text, origin, attachments) => {
         // Errors here used to be swallowed by the bridge's fire-and-forget
         // `void sendPrompt(...)`. The PWA had already optimistically flipped
         // streaming=true and would wait forever for a 'done' event that never
@@ -507,7 +508,7 @@ async function startElectron(): Promise<void> {
             const started = await sessions.start({});
             sid = started.sessionId;
           }
-          await sessions.send({ sessionId: sid, text, attachments: attachments.length > 0 ? attachments : undefined });
+          await sessions.send({ sessionId: sid, text, origin, attachments: attachments.length > 0 ? attachments : undefined });
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           logger.error(`remote sendPrompt failed: ${msg}`);
