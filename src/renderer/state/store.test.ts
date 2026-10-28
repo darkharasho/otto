@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useOttoStore } from './store';
+import { useOttoStore, isSessionBusy } from './store';
 
 beforeEach(() => {
   useOttoStore.getState().reset();
@@ -189,6 +189,29 @@ describe('useOttoStore', () => {
     expect(useOttoStore.getState().activeSession?.queueDepth).toBe(2);
     s.applyEvent({ type: 'user-message-consumed', sessionId: 'sess', messageId: 'm1', queueDepth: 1 });
     expect(useOttoStore.getState().activeSession?.queueDepth).toBe(1);
+  });
+
+  describe.each([
+    ['done before consumed', true],
+    ['consumed before done', false],
+  ])('queued turn stays busy (%s)', (_name, doneFirst) => {
+    it('isSessionBusy is true until the queued turn finishes', () => {
+      const s = useOttoStore.getState();
+      const ev = (e: Parameters<typeof s.applyEvent>[0]) => useOttoStore.getState().applyEvent(e);
+      const busy = () => isSessionBusy(useOttoStore.getState().activeSession);
+      s.beginSession('s');
+      ev({ type: 'message-start', sessionId: 's', messageId: 'A' });
+      ev({ type: 'user-message-queued', sessionId: 's', messageId: 'B', queueDepth: 1 });
+      ev({ type: 'message-start', sessionId: 's', messageId: 'B' });
+      const done = () => ev({ type: 'done', sessionId: 's' });
+      const consumed = () => ev({ type: 'user-message-consumed', sessionId: 's', messageId: 'B', queueDepth: 0 });
+      if (doneFirst) { done(); consumed(); } else { consumed(); done(); }
+      expect(useOttoStore.getState().activeSession!.queueDepth).toBe(0);
+      expect(busy()).toBe(true);
+      expect(useOttoStore.getState().activeSession!.currentTurnActive).toBe(true);
+      done();
+      expect(busy()).toBe(false);
+    });
   });
 });
 

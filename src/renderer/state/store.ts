@@ -9,6 +9,8 @@ export interface ActiveSessionState {
   id: string;
   messages: Message[];
   currentTurnActive: boolean;
+  /** message-start events not yet matched by a done. A queued message's message-start fires at queue time, so this can exceed 1 while an earlier turn runs. */
+  openTurns?: number;
   queueDepth: number;
   error: StructuredError | null;
   /** True for a private (/p) conversation: never persisted, learned, or saved. */
@@ -276,6 +278,7 @@ export const useOttoStore = create<OttoState>((set, get) => ({
             ...session,
             messages: [...session.messages, placeholder],
             currentTurnActive: true,
+            openTurns: (session.openTurns ?? 0) + 1,
           },
         });
         return;
@@ -583,17 +586,23 @@ export const useOttoStore = create<OttoState>((set, get) => ({
         return;
       case 'message-cancelled': {
         const next = updateAssistant(session, event.messageId, (m) => ({ ...m, cancelled: true }));
-        set({ activeSession: { ...next, currentTurnActive: false } });
+        // Finalization emits `done` right after this, which settles the turn count.
+        set({ activeSession: next });
         return;
       }
       case 'error': {
         set({
-          activeSession: { ...session, error: event.error, currentTurnActive: false },
+          activeSession: { ...session, error: event.error, currentTurnActive: false, openTurns: 0 },
         });
         return;
       }
       case 'done': {
-        set({ activeSession: { ...session, currentTurnActive: false } });
+        // Each turn ends with one done. A queued turn already has its
+        // message-start (emitted at queue time), so stay active while any
+        // remain; this is independent of whether the next turn's
+        // user-message-consumed lands before or after this done.
+        const open = Math.max(0, (session.openTurns ?? 1) - 1);
+        set({ activeSession: { ...session, openTurns: open, currentTurnActive: open > 0 } });
         return;
       }
       case 'user-message-queued': {
