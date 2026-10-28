@@ -366,6 +366,112 @@ describe('DelegationManager.run', () => {
   });
 });
 
+describe('DelegationManager fix round 1', () => {
+  it("a 'not connected' rejection (reconnecting) does not close the shared client or strand live delegations", async () => {
+    const { mgr, prime } = setup();
+    const c = prime(new FakeClient());
+    const p1 = mgr.run(runArgs().args);
+    await flush();
+    c.delegateImpl = async () => { throw new Error('not connected'); };
+    expect(await mgr.run(runArgs({ localSessionId: 'L2' }).args)).toBe("Desk's Otto isn't reachable — is it on and is Remote enabled in its settings?");
+    expect(c.closed).toBe(false);
+    c.emit('r1', 'text-delta', { text: 'ok' });
+    c.emit('r1', 'done');
+    expect(await p1).toBe('Desk: done. ok');
+  });
+
+  it('a lost client ends every live delegation on it as lost', async () => {
+    const { mgr, clients } = setup();
+    let n = 0;
+    const p1 = mgr.run(runArgs().args);
+    await flush();
+    clients[0]!.delegateImpl = async () => ({ kind: 'started', sessionId: `r${++n + 1}` });
+    const p2 = mgr.run(runArgs({ localSessionId: 'L2' }).args);
+    await flush();
+    clients[0]!.setState('lost');
+    expect(await p1).toBe('Lost connection to Desk; the task may still be running there.');
+    expect(await p2).toBe('Lost connection to Desk; the task may still be running there.');
+  });
+
+  it('follow-up reads the latest delegation after busy polling', async () => {
+    const { mgr, prime } = setup();
+    const c = prime(new FakeClient());
+    let followCalls = 0;
+    c.delegateImpl = async (a) => {
+      if (a.text === 'follow' && ++followCalls === 1) return { kind: 'busy', activeSessionId: 'x' };
+      return { kind: 'started', sessionId: a.sessionId ?? 'r7' };
+    };
+    const pf = mgr.run(runArgs({ task: 'follow', followUp: true, ifBusy: 'wait' }).args);
+    await flush();
+    expect(c.delegateCalls[0]!.sessionId).toBeUndefined();
+    const pOther = mgr.run(runArgs({ task: 'other' }).args);
+    await flush();
+    c.emit('r7', 'done');
+    await pOther;
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(c.delegateCalls[2]).toMatchObject({ text: 'follow', sessionId: 'r7' });
+    c.emit('r7', 'done');
+    await pf;
+  });
+
+  it('a superseded wait gets a final snapshot and no trailing emit', async () => {
+    const { mgr, prime } = setup({ waitCapMs: 1000 });
+    const c = prime(new FakeClient());
+    const p = mgr.run(runArgs().args);
+    await flush();
+    await vi.advanceTimersByTimeAsync(1000);
+    await p;
+    const snaps1: DelegationSnapshot[] = [];
+    const w1 = mgr.wait({ localSessionId: 'L1', machine: 'Desk', emitSnapshot: (s) => snaps1.push(s), registerKill: () => {} });
+    c.emit('r1', 'text-delta', { text: 'a' });
+    c.emit('r1', 'text-delta', { text: 'b' });
+    const w2 = mgr.wait({ localSessionId: 'L1', machine: 'Desk', emitSnapshot: () => {}, registerKill: () => {} });
+    expect(await w1).toBe('Still running on Desk. Call wait_for_machine to keep watching.');
+    expect(snaps1.at(-1)!.finalText).toBe('ab');
+    const len = snaps1.length;
+    await vi.advanceTimersByTimeAsync(500);
+    expect(snaps1.length).toBe(len);
+    c.emit('r1', 'done');
+    await w2;
+  });
+
+  it('a cancel while delegate is in flight beats a busy reply', async () => {
+    const { mgr, prime } = setup();
+    const c = prime(new FakeClient());
+    let reply!: (r: DelegateResult) => void;
+    c.delegateImpl = () => new Promise((r) => { reply = r; });
+    const { args, kills } = runArgs();
+    const p = mgr.run(args);
+    await flush();
+    kills[0]!();
+    reply({ kind: 'busy', activeSessionId: 'x' });
+    expect(await p).toBe('Stopped waiting for Desk.');
+  });
+
+  it('a start that lands after a cancel interrupts it and says so', async () => {
+    const { mgr, prime } = setup();
+    const c = prime(new FakeClient());
+    let reply!: (r: DelegateResult) => void;
+    c.delegateImpl = () => new Promise((r) => { reply = r; });
+    const { args, kills } = runArgs();
+    const p = mgr.run(args);
+    await flush();
+    kills[0]!();
+    reply({ kind: 'started', sessionId: 'r1' });
+    expect(await p).toBe('Stopped the task on Desk.');
+    expect(c.interrupts).toEqual(['r1']);
+  });
+
+  it('an unauthorized connect asks for a re-pair', async () => {
+    const { mgr, prime } = setup();
+    const c = prime(new FakeClient());
+    c.connectError = new Error('unauthorized');
+    const out = await mgr.run(runArgs().args);
+    expect(out).toContain('re-pair Desk in Settings → Other machines');
+    expect(out).not.toContain("isn't reachable");
+  });
+});
+
 describe('delegation tools', () => {
   it('are registered with the right classes', () => {
     const { mgr } = setup();

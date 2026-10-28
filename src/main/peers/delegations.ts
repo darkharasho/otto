@@ -77,6 +77,7 @@ class TokenError extends Error {}
 const msg = {
   none: () => 'No machines are paired. Pair one in Settings → Other machines.',
   unknown: (x: string, names: string[]) => `Unknown machine "${x}". Paired machines: ${names.join(', ')}.`,
+  revoked: (m: string) => `${m} no longer accepts this machine's credentials. Ask the user to re-pair ${m} in Settings → Other machines.`,
   repair: (m: string) => `Couldn't read the saved credentials for ${m}. Ask the user to re-pair ${m} in Settings → Other machines.`,
   unreachable: (m: string) => `${m}'s Otto isn't reachable — is it on and is Remote enabled in its settings?`,
   busyAsk: (m: string) =>
@@ -85,6 +86,7 @@ const msg = {
   stillRunning: (m: string) => `Still running on ${m}. Call wait_for_machine to keep watching.`,
   lost: (m: string) => `Lost connection to ${m}; the task may still be running there.`,
   stopped: (m: string) => `Stopped waiting for ${m}.`,
+  stoppedTask: (m: string) => `Stopped the task on ${m}.`,
   startFailed: (m: string, e: string) => `${m} couldn't start the task: ${e}`,
   nothing: (m: string) => `Nothing has been delegated to ${m} in this conversation.`,
 };
@@ -171,40 +173,40 @@ export class DelegationManager {
     try {
       client = await this.getClient(peer);
     } catch (err) {
-      const out = err instanceof TokenError ? msg.repair(name) : msg.unreachable(name);
+      const out = err instanceof TokenError
+        ? msg.repair(name)
+        : errText(err) === 'unauthorized' ? msg.revoked(name) : msg.unreachable(name);
       return end(out, 'error', out);
     }
     if (ctl.cancelled) return end(msg.stopped(name), 'interrupted');
 
     const key = keyOf(a.localSessionId, peer.id);
-    const prev = this.delegations.get(key);
-    const sessionId = a.followUp && prev ? prev.remoteSessionId : undefined;
     const deadline = Date.now() + this.waitCapMs;
     let started: string;
     for (;;) {
       let res: DelegateResult;
+      const sessionId = a.followUp ? this.delegations.get(key)?.remoteSessionId : undefined;
       try {
         res = await client.delegate({ text: a.task, sessionId, ifBusy: a.ifBusy === 'interrupt' ? 'interrupt' : 'reject' });
       } catch (err) {
         const e = errText(err);
         // The frame may have reached the remote before the socket dropped.
         if (e === 'connection lost') return end(msg.lost(name), 'lost');
-        if (e === 'not connected' || e === 'closed') {
-          this.dropClient(peer.id, client);
-          return end(msg.unreachable(name), 'error', msg.unreachable(name));
-        }
+        // Never drop the client here: it may be reconnecting on behalf of other live delegations.
+        if (e === 'not connected' || e === 'closed') return end(msg.unreachable(name), 'error', msg.unreachable(name));
         return end(msg.startFailed(name, e), 'error', e);
       }
       if (res.kind === 'started') {
         if (ctl.cancelled) {
           client.interrupt(res.sessionId);
           client.forget(res.sessionId);
-          return end(msg.stopped(name), 'interrupted');
+          return end(msg.stoppedTask(name), 'interrupted');
         }
         started = res.sessionId;
         break;
       }
       snap = { ...snap, status: 'busy' };
+      if (ctl.cancelled) return end(msg.stopped(name), 'interrupted');
       if (a.ifBusy !== 'wait') return end(msg.busyAsk(name), 'busy');
       if (Date.now() + BUSY_POLL_MS > deadline) return end(msg.busyCap(name), 'busy');
       throttle.push(snap);
@@ -212,6 +214,7 @@ export class DelegationManager {
       if (ctl.cancelled) return end(msg.stopped(name), 'interrupted');
     }
 
+    const prev = this.delegations.get(key);
     if (prev) this.retire(prev, started);
     const d: Delegation = {
       localSessionId: a.localSessionId,
@@ -298,28 +301,32 @@ export class DelegationManager {
     return p;
   }
 
+  /** Uncache and close a client, ending every live delegation on it as lost. */
   private dropClient(peerId: string, c: PeerClient): void {
     if (this.ready.get(peerId) === c) {
       this.ready.delete(peerId);
       this.clients.delete(peerId);
     }
-    c.close();
-  }
-
-  private onClientState(peerId: string, c: PeerClient, s: ConnectionState): void {
-    if (s !== 'lost') return;
-    this.dropClient(peerId, c);
     for (const d of [...this.delegations.values()]) {
       if (d.client !== c || d.result !== null) continue;
       d.snapshot = { ...d.snapshot, status: 'lost', pendingApproval: null, pendingSudo: null };
       this.finish(d);
     }
+    c.close();
+  }
+
+  private onClientState(peerId: string, c: PeerClient, s: ConnectionState): void {
+    if (s === 'lost') this.dropClient(peerId, c);
   }
 
   private attach(d: Delegation, throttle: Throttle, deadline: number): Promise<string> {
     if (d.result !== null) return Promise.resolve(d.result);
     const old = d.attachment;
-    if (old) { d.attachment = null; old.resolve(msg.stillRunning(d.machine)); }
+    if (old) {
+      d.attachment = null;
+      old.throttle.final(d.snapshot);
+      old.resolve(msg.stillRunning(d.machine));
+    }
     return new Promise((resolve) => {
       const att: Attachment = {
         throttle,
@@ -371,7 +378,10 @@ export class DelegationManager {
     if (prev.remoteSessionId !== newRemoteSessionId) prev.client.forget(prev.remoteSessionId);
     const att = prev.attachment;
     prev.attachment = null;
-    att?.resolve(prev.result);
+    if (att) {
+      att.throttle.final(prev.snapshot);
+      att.resolve(prev.result);
+    }
   }
 
   private kill(d: Delegation): void {
