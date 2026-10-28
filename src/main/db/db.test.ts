@@ -21,7 +21,7 @@ describe('openDatabase', () => {
     const dir = freshDir();
     const db = openDatabase(path.join(dir, 'otto.db'));
     const row = db.prepare('SELECT MAX(version) AS v FROM schema_version').get() as { v: number };
-    expect(row.v).toBe(7);
+    expect(row.v).toBe(8);
     db.close();
   });
 
@@ -34,7 +34,16 @@ describe('openDatabase', () => {
       .prepare('SELECT version FROM schema_version ORDER BY version')
       .all() as { version: number }[];
     // Each migration should have been applied exactly once.
-    expect(rows.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(rows.map((r) => r.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    db.close();
+  });
+
+  it('creates the peers table (migration 008)', () => {
+    const db = openDatabase(path.join(freshDir(), 'otto.db'));
+    const cols = db.prepare('PRAGMA table_info(peers)').all() as { name: string }[];
+    expect(cols.map((c) => c.name)).toEqual([
+      'id', 'name', 'base_url', 'token_enc', 'token_is_encrypted', 'device_id', 'paired_at',
+    ]);
     db.close();
   });
 

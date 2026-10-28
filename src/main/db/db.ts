@@ -146,6 +146,18 @@ ALTER TABLE fact ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX IF NOT EXISTS fact_archived_idx ON fact(archived);
 `;
 
+const MIGRATION_008_PEERS = `
+CREATE TABLE IF NOT EXISTS peers (
+  id                 TEXT PRIMARY KEY,
+  name               TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  base_url           TEXT NOT NULL,
+  token_enc          BLOB NOT NULL,
+  token_is_encrypted INTEGER NOT NULL,
+  device_id          TEXT NOT NULL,
+  paired_at          INTEGER NOT NULL
+);
+`;
+
 const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 1, sql: MIGRATION_001_INIT },
   { version: 2, sql: MIGRATION_002_SDK_SESSION_ID },
@@ -154,6 +166,7 @@ const MIGRATIONS: { version: number; sql: string }[] = [
   { version: 5, sql: MIGRATION_005_VEC },
   { version: 6, sql: MIGRATION_006_PAIRED_DEVICES },
   { version: 7, sql: MIGRATION_007_FACT_ARCHIVED },
+  { version: 8, sql: MIGRATION_008_PEERS },
 ];
 
 export function openDatabase(dbPath: string): DB {
