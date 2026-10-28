@@ -1,3 +1,4 @@
+import { interruptAllAndWait } from './remote/interrupt-active';
 import { isToggleInvocation, sendToggle } from './cli';
 import { newSystemMessage } from '@shared/messages';
 
@@ -496,17 +497,7 @@ async function startElectron(): Promise<void> {
       resolveApproval: (id, choice) => { broker.resolve(id, choice, 'remote'); return true; },
       isBusy: () => sessions.hasActiveTurn(),
       startDelegation: async ({ text, sessionId, interruptFirst }) => {
-        if (interruptFirst) {
-          const active = sessions.getActiveSessionId();
-          if (active && sessions.hasActiveTurn(active)) {
-            await sessions.interrupt({ sessionId: active });
-            // Bounded wait for the interrupted turn to finalize before starting.
-            const deadline = Date.now() + 10_000;
-            while (sessions.hasActiveTurn() && Date.now() < deadline) {
-              await new Promise((r) => setTimeout(r, 50));
-            }
-          }
-        }
+        if (interruptFirst) await interruptAllAndWait(sessions);
         const started = await sessions.start(sessionId ? { resume: sessionId } : {});
         const sid = started.sessionId;
         // sessions.send resolves only at turn end; report failures via the bus like sendPrompt.

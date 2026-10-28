@@ -508,6 +508,10 @@ export class SessionManager {
     return false;
   }
 
+  activeTurnSessionIds(): string[] {
+    return [...this.assistants.entries()].filter(([, per]) => per.size > 0).map(([id]) => id);
+  }
+
   async send(args: { sessionId: string; text: string; attachments?: Array<Extract<ContentBlock, { type: 'image-ref' }>>; voice?: boolean; origin?: 'desktop' | 'remote' }): Promise<void> {
     const { sessionId, text } = args;
     const sdkText = args.voice ? text + SessionManager.VOICE_SUFFIX : text;
