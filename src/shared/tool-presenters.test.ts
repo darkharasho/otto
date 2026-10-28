@@ -378,3 +378,16 @@ describe('classifyResult — web + github + tree', () => {
     expect(view.kind).toBe('tree');
   });
 });
+
+describe('delegation tools', () => {
+  const snap = { v: 1, machine: 'desk', remoteSessionId: null, status: 'running', items: [], pendingApproval: null, pendingSudo: null, finalText: '' };
+  it.each(['delegate_to_machine', 'wait_for_machine', 'mcp__otto-tools__wait_for_machine'])('classifies a %s snapshot as delegation', (n) => {
+    expect(classifyResult(n, snap, false)).toEqual({ kind: 'delegation', snapshot: snap });
+  });
+  it('classifies the final string result as markdown', () => {
+    expect(classifyResult('delegate_to_machine', 'desk: done. ok', false)).toEqual({ kind: 'markdown', text: 'desk: done. ok' });
+  });
+  it('titles the call from the machine input', () => {
+    expect(describeTool('delegate_to_machine', { machine: 'desk' }).label).toBe('Working on desk');
+  });
+});

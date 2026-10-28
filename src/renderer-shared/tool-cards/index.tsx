@@ -47,6 +47,10 @@ const RENDERERS: Record<ResultView['kind'], AnyCard> = {
   notebook: NotebookCard,
   tree:     JsonTreeCard,
   observe:  ObserveCard,
+  // The live card (with local approvals) is desktop-only; elsewhere show the outcome text.
+  delegation: ({ view }: { view: Extract<ResultView, { kind: 'delegation' }> }) => (
+    <MarkdownCard view={{ kind: 'markdown', text: view.snapshot.finalText || view.snapshot.error || `${view.snapshot.machine}: ${view.snapshot.status}` }} />
+  ),
 };
 
 export function ToolCardBody({ view, compact, onStop }: { view: ResultView; compact?: boolean; onStop?: () => void }) {

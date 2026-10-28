@@ -66,7 +66,7 @@ export function ToolCallCard({ name, input, result, isError, callId, turnActive,
   const status: 'running' | 'done' | 'error' =
     result === undefined ? 'running' : isError ? 'error' : 'done';
 
-  const desc = describeTool(name);
+  const desc = describeTool(name, input);
   const summary = summarizeInput(name, input);
   // A running watch renders its latest snapshot as the live view.
   let view = result === undefined

@@ -627,6 +627,8 @@ async function startElectron(): Promise<void> {
     configDir: ottoConfigDir,
     killToolCall,
     interruptDelegations: (sessionId) => delegations.interruptAllFor(sessionId),
+    decideDelegation: (machine, decisionId, decision) => delegations.decide(machine, decisionId, decision),
+    sudoDelegation: (machine, promptId, password) => delegations.sudo(machine, promptId, password),
     applyStartAtLogin,
     openLogsDir: () => {
       void shell.openPath(ottoConfigDir);

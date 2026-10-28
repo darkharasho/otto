@@ -1,3 +1,5 @@
+import type { DelegationSnapshot } from './delegation';
+
 export type IconName =
   | 'camera' | 'terminal' | 'edit' | 'file' | 'search' | 'globe'
   | 'mouse' | 'keyboard' | 'github' | 'database' | 'image'
@@ -244,6 +246,7 @@ export type ResultView =
       fixAt?: number }
   | { kind: 'notebook'; path: string; cellIndex?: number; cellType?: 'code' | 'markdown'; language?: string; text: string; op?: 'replace' | 'insert' | 'delete' }
   | { kind: 'tree';     value: unknown }
+  | { kind: 'delegation'; snapshot: DelegationSnapshot }
   | { kind: 'json';     value: unknown };
 
 const DATA_URL_RE = /data:image\/[a-zA-Z+]+;base64,[A-Za-z0-9+/=]+/;
@@ -306,6 +309,14 @@ export function classifyResult(name: string, result: unknown, isError: boolean, 
     if (!innerBlocks || innerBlocks.some(b => !isTextBlock(b))) {
       return classifyResult(name, inner, isError, input);
     }
+  }
+
+  const delegationTool = bareToolName(name);
+  if (delegationTool === 'delegate_to_machine' || delegationTool === 'wait_for_machine') {
+    if (result && typeof result === 'object' && (result as { v?: unknown }).v === 1 && Array.isArray((result as { items?: unknown }).items)) {
+      return { kind: 'delegation', snapshot: result as DelegationSnapshot };
+    }
+    if (typeof result === 'string' && result !== '') return { kind: 'markdown', text: result };
   }
 
   // Input-driven (results are typically empty for these tools)
@@ -651,7 +662,17 @@ export function classifyResult(name: string, result: unknown, isError: boolean, 
   return { kind: 'json', value: result };
 }
 
-export function describeTool(name: string): ToolDescriptor {
+function bareToolName(name: string): string {
+  const parsed = parseMcpName(name);
+  return parsed?.server === 'otto-tools' ? parsed.tool : name;
+}
+
+export function describeTool(name: string, input?: unknown): ToolDescriptor {
+  const bare = bareToolName(name);
+  if (bare === 'delegate_to_machine' || bare === 'wait_for_machine') {
+    const machine = input && typeof input === 'object' ? (input as Record<string, unknown>)['machine'] : undefined;
+    return { label: typeof machine === 'string' && machine ? `Working on ${machine}` : 'Working on another machine', icon: 'globe' };
+  }
   const builtin = BUILTIN[name];
   if (builtin) return builtin;
 

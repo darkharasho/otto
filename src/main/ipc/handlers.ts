@@ -61,6 +61,8 @@ export function registerIpcHandlers(deps: {
   killToolCall(callId: string): boolean;
   /** Stop tasks this conversation delegated to other machines. */
   interruptDelegations?(sessionId: string): void;
+  decideDelegation?(machine: string, decisionId: string, decision: 'approve' | 'approve-session' | 'deny'): void;
+  sudoDelegation?(machine: string, promptId: string, password: string | null): void;
   applyStartAtLogin(enabled: boolean): void;
   openLogsDir(): void;
   openSettingsWindow(): void;
@@ -183,6 +185,20 @@ export function registerIpcHandlers(deps: {
     'autonomy.sudoPassword',
     async (_e, args: { promptId: string; password: string | null }): Promise<void> => {
       sudoBroker.resolveSudo(args.promptId, args.password);
+    }
+  );
+
+  ipcMain.handle(
+    'peers:decide',
+    async (_e, args: { machine: string; decisionId: string; decision: 'approve' | 'approve-session' | 'deny' }): Promise<void> => {
+      deps.decideDelegation?.(args.machine, args.decisionId, args.decision);
+    }
+  );
+
+  ipcMain.handle(
+    'peers:sudo',
+    async (_e, args: { machine: string; promptId: string; password: string | null }): Promise<void> => {
+      deps.sudoDelegation?.(args.machine, args.promptId, args.password);
     }
   );
 

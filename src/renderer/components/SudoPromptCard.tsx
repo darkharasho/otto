@@ -4,9 +4,11 @@ import { ipc } from '../ipc';
 
 interface Props {
   block: Extract<ContentBlock, { type: 'sudo_prompt' }>;
+  /** Replaces the default local sudo IPC (used for prompts owned by a remote Otto). */
+  onSubmit?: (password: string | null) => void | Promise<void>;
 }
 
-export function SudoPromptCard({ block }: Props) {
+export function SudoPromptCard({ block, onSubmit }: Props) {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -23,13 +25,14 @@ export function SudoPromptCard({ block }: Props) {
       if (busy) return;
       setBusy(true);
       try {
-        await ipc.invoke('autonomy.sudoPassword', { promptId: block.promptId, password: pw });
+        if (onSubmit) await onSubmit(pw);
+        else await ipc.invoke('autonomy.sudoPassword', { promptId: block.promptId, password: pw });
         setPassword('');
       } finally {
         setBusy(false);
       }
     },
-    [block.promptId, busy]
+    [block.promptId, busy, onSubmit]
   );
 
   const statusLine = (() => {

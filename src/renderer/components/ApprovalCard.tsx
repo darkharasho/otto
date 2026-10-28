@@ -6,6 +6,10 @@ import { ipc } from '../ipc';
 
 interface Props {
   block: Extract<ContentBlock, { type: 'pending_tool_use' }>;
+  /** Replaces the default local decision IPC (used for approvals owned by a remote Otto). */
+  onDecide?: (decision: 'approve' | 'approve-session' | 'deny') => void | Promise<void>;
+  /** Hide the approve actions so only Deny remains. */
+  denyOnly?: boolean;
 }
 
 const CONFIRM_WORD = 'confirm';
@@ -32,7 +36,7 @@ const CHROME: Record<string, { container: string; badge: string }> = {
   },
 };
 
-export function ApprovalCard({ block }: Props) {
+export function ApprovalCard({ block, onDecide, denyOnly }: Props) {
   const decided = block.decision !== 'pending';
   const [reviewed, setReviewed] = useState(false);
   const [confirmText, setConfirmText] = useState('');
@@ -50,9 +54,10 @@ export function ApprovalCard({ block }: Props) {
 
   const submit = useCallback(
     async (decision: 'approve' | 'approve-session' | 'deny') => {
-      await ipc.invoke('autonomy.decide', { decisionId: block.decisionId, decision });
+      if (onDecide) await onDecide(decision);
+      else await ipc.invoke('autonomy.decide', { decisionId: block.decisionId, decision });
     },
-    [block.decisionId]
+    [block.decisionId, onDecide]
   );
 
   const desc = describeTool(block.name);
@@ -73,7 +78,7 @@ export function ApprovalCard({ block }: Props) {
 
   // ⌘⏎ / Ctrl+⏎ approves one-click classes while pending.
   useEffect(() => {
-    if (decided || (cls !== 'read' && cls !== 'reversible')) return;
+    if (decided || denyOnly || (cls !== 'read' && cls !== 'reversible')) return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault();
@@ -82,7 +87,7 @@ export function ApprovalCard({ block }: Props) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [decided, cls, submit]);
+  }, [decided, denyOnly, cls, submit]);
 
   // Settled receipt once decided: attribution line, click to review the details.
   if (decided && !showDecided) {
@@ -170,7 +175,7 @@ export function ApprovalCard({ block }: Props) {
             Review the full command
           </button>
         ) : null}
-        <button
+        {!denyOnly && <button
           type="button"
           onClick={() => submit('approve')}
           disabled={decided || !armed}
@@ -187,8 +192,8 @@ export function ApprovalCard({ block }: Props) {
           {(cls === 'read' || cls === 'reversible') && !decided && (
             <kbd className="ml-1.5 text-[9px] opacity-70 font-mono">⌘⏎</kbd>
           )}
-        </button>
-        {!block.catastrophic && cls !== 'irreversible' && (
+        </button>}
+        {!denyOnly && !block.catastrophic && cls !== 'irreversible' && (
           <button
             type="button"
             onClick={() => submit('approve-session')}

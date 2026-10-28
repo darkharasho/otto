@@ -97,6 +97,8 @@ export type IpcRequest =
       result: void;
     }
   | { channel: 'autonomy.sudoPassword'; args: { promptId: string; password: string | null }; result: void }
+  | { channel: 'peers:decide'; args: { machine: string; decisionId: string; decision: 'approve' | 'approve-session' | 'deny' }; result: void }
+  | { channel: 'peers:sudo'; args: { machine: string; promptId: string; password: string | null }; result: void }
   | { channel: 'autonomy.getMode'; args: void; result: AutonomyMode }
   | { channel: 'autonomy.setMode'; args: { mode: AutonomyMode }; result: void }
   | { channel: 'settings.get'; args: void; result: SettingsView }
