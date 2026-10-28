@@ -264,6 +264,10 @@ export function Chat(): JSX.Element {
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const [sudos, setSudos] = useState<PendingSudo[]>([]);
   const [streaming, setStreaming] = useState(false);
+  // message-start events not yet matched by a done. A queued message's
+  // message-start fires at queue time, so a queued turn keeps this above 0
+  // after the running turn's done.
+  const openTurnsRef = useRef(0);
   const [queueDepth, setQueueDepth] = useState(0);
   const busy = streaming || queueDepth > 0;
   const [connected, setConnected] = useState(false);
@@ -377,6 +381,7 @@ export function Chat(): JSX.Element {
     sessionIdRef.current = newSid;
     setSessionId(newSid);
     currentTextIdRef.current = null;
+    openTurnsRef.current = 0;
     setStreaming(false);
     clearWatchdog();
     setErrorMsg(null);
@@ -513,6 +518,7 @@ export function Chat(): JSX.Element {
         const id = newId();
         currentTextIdRef.current = id;
         setItems((prev) => [...prev, { kind: 'text', id, text: '', done: false }]);
+        openTurnsRef.current += 1;
         setStreaming(true);
         return;
       }
@@ -608,13 +614,19 @@ export function Chat(): JSX.Element {
       }
       case 'message-end':
       case 'done': {
-        setStreaming(false);
+        // Each turn ends with one done; stay streaming while a queued turn
+        // (whose message-start already arrived) is still open.
+        if (kind === 'done') {
+          openTurnsRef.current = Math.max(0, openTurnsRef.current - 1);
+          setStreaming(openTurnsRef.current > 0);
+        }
         setItems((prev) => prev.map((it) => it.kind === 'text' && !it.done ? { ...it, done: true } : it));
         currentTextIdRef.current = null;
         return;
       }
       case 'error': {
         clearWatchdog();
+        openTurnsRef.current = 0;
         setStreaming(false);
         const errObj = msg.error as { message?: string } | undefined;
         if (errObj && typeof errObj.message === 'string') setErrorMsg(errObj.message);
