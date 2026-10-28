@@ -98,6 +98,13 @@ export class Notifier {
     this.show({ title: 'Otto needs approval', body, urgency: 'critical' });
   }
 
+  /** A task delegated to another machine is waiting on an approval there. */
+  notifyRemoteApproval(machine: string, toolName: string): void {
+    if (!Notification.isSupported()) return;
+    if (!this.deps.shouldNotifyApproval()) return;
+    this.show({ title: `Otto on ${machine} needs approval`, body: toolName, urgency: 'critical' });
+  }
+
   notifyUpdateReady(version: string, onClick: () => void): void {
     if (!Notification.isSupported()) return;
     if (this.deps.silent()) return;

@@ -210,6 +210,22 @@ describe('PeerClient', () => {
     await expect(client.delegate({ text: 'x' })).rejects.toThrow('boom');
   });
 
+  it('forget drops a session\'s listeners and state', async () => {
+    const { makeServer, bus } = setup();
+    const s = makeServer();
+    const { port } = await s.start();
+    const { client } = await pairedClient(s, port);
+    await client.connect();
+    await client.delegate({ text: 'go' });
+    const got: RemoteEvent[] = [];
+    client.onEvent('sess-1', (e) => got.push(e));
+    client.forget('sess-1');
+    expect((client as unknown as { sessions: Map<string, unknown> }).sessions.size).toBe(0);
+    bus.publish('sess-1', { type: 'event', kind: 'text-delta', text: 'late' });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(got).toEqual([]);
+  });
+
   it('decide/sudo/interrupt send the right frames', async () => {
     const { makeServer, hooks } = setup();
     const s = makeServer();

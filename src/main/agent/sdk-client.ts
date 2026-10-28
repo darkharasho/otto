@@ -12,6 +12,7 @@ import type { DecisionBroker } from '../autonomy/decision-broker';
 import type { SudoBroker } from '../autonomy/sudo-broker';
 import type { ProcessRegistry } from '../shell/process-registry';
 import { logger } from '../logger';
+import { buildDelegationTools, DELEGATION_TOOL_NAMES, type DelegationManager } from '../peers/delegations';
 import { classify, denyMatch } from '../shell/command-class';
 import { commandRequiresSudo } from '../shell/sudo-session';
 import { exec } from '../shell/executor';
@@ -236,6 +237,16 @@ function buildSystemPrompt(): string {
   ].join('\n');
 }
 
+function otherMachinesSection(names: string[]): string[] {
+  return [
+    '',
+    `OTHER MACHINES: the user has paired other computers running Otto: ${names.join(', ')}.`,
+    '- delegate_to_machine(machine, task, if_busy?, follow_up?): when the user asks for something on one of those machines, hand it to that machine\'s Otto. Write `task` self-contained in the second person ("Quit the Slack app.") — the other Otto has none of this conversation\'s context. follow_up: true continues the previous task there.',
+    '- wait_for_machine(machine): keep watching a delegated task that was still running when delegate_to_machine returned.',
+    'Relay the result to the user in one or two lines. Never pick if_busy "interrupt" without the user\'s say-so.',
+  ];
+}
+
 export interface RealSdkClientDeps {
   broker: DecisionBroker;
   sudo: SudoBroker;
@@ -278,6 +289,8 @@ export interface RealSdkClientDeps {
   /** Fan-out emitter for events produced mid-tool-run (streamed stdout). Same
    *  channel the SessionManager and ProcessRegistry publish on. */
   emit?: (event: SessionEvent) => void;
+  /** Otto-to-Otto delegation; its tools are registered only while machines are paired. */
+  peers?: DelegationManager;
 }
 
 interface ToolCtx {
@@ -300,6 +313,7 @@ interface ToolCtx {
   appendKnowledge: RealSdkClientDeps['appendKnowledge'];
   onMarkTaskComplete: RealSdkClientDeps['onMarkTaskComplete'];
   emit?: (event: SessionEvent) => void;
+  peers?: DelegationManager;
 }
 
 /**
@@ -401,6 +415,7 @@ export function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
     buildMarkTaskCompleteTool(),
     buildAnnotateTool(),
     buildObserveTool(),
+    ...(ctx.peers && ctx.peers.machineNames().length > 0 ? buildDelegationTools(ctx.peers, ctx.sessionId) : []),
   ];
   const sdkTools = allTools.map((t) => {
     const shape = (t.schema as unknown as { shape?: Record<string, unknown> }).shape;
@@ -872,6 +887,7 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
   ];
   const allowedTools = [
     ...allToolsForAllow.map((t) => `mcp__otto-tools__${t.name}`),
+    ...DELEGATION_TOOL_NAMES.map((n) => `mcp__otto-tools__${n}`),
     'WebSearch',
     'WebFetch',
   ];
@@ -894,7 +910,8 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
       if (pinnedIds.length > 0) deps.bumpFactUse(pinnedIds, sessionId);
       const memCounts = deps.memoryCounts();
       const memLine = `Memory currently holds ${memCounts.factsPinned} pinned facts (of ${memCounts.factsTotal} learned), ${memCounts.playbook} playbooks, ${memCounts.anti_pattern} anti-patterns, ${memCounts.heuristic} heuristics.`;
-      const parts = [buildSystemPrompt(), '', '---', memLine];
+      const machines = deps.peers?.machineNames() ?? [];
+      const parts = [buildSystemPrompt(), ...(machines.length > 0 ? otherMachinesSection(machines) : []), '', '---', memLine];
       if (knowledge.trim().length > 0) {
         parts.push('Known about this machine and user (pinned facts):');
         parts.push(knowledge.trim());
@@ -925,6 +942,7 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
             appendKnowledge: deps.appendKnowledge,
             onMarkTaskComplete: deps.onMarkTaskComplete,
             emit: deps.emit,
+            peers: deps.peers,
           });
           inner = sdkModule.query({
             prompt: prompt as AsyncIterable<SDKUserMessage>,

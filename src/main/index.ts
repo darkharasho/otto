@@ -103,6 +103,9 @@ async function startElectron(): Promise<void> {
   const { RemoteModule } = await import('./remote');
   const { BridgeServer } = await import('./remote/bridge-server');
   const { PairingStore } = await import('./remote/pairing-store');
+  const { PeerStore, safeStorageCipher } = await import('./peers/peer-store');
+  const { PeerClient } = await import('./peers/peer-client');
+  const { DelegationManager } = await import('./peers/delegations');
   const { resolveTailnetEndpoint } = await import('./remote/tailnet');
   const { loadRemoteSettings, saveRemoteSettings } = await import('./remote/settings');
   const { ImageCache } = await import('./image-cache/cache');
@@ -387,6 +390,13 @@ async function startElectron(): Promise<void> {
     },
   });
 
+  const peerStore = new PeerStore(db, safeStorageCipher());
+  const delegations = new DelegationManager({
+    store: peerStore,
+    makeClient: (p, token) => new PeerClient({ baseUrl: p.baseUrl, token }),
+    notifyApproval: (machine, toolName) => notifier.notifyRemoteApproval(machine, toolName),
+  });
+
   const sdk = createRealSdkClient({
     broker,
     sudo: sudoBroker,
@@ -443,6 +453,7 @@ async function startElectron(): Promise<void> {
     },
     showReasoning: () => settings.getShowReasoning(),
     emit: emitWithNotify,
+    peers: delegations,
   });
   const sessions = new SessionManager(
     repo,
@@ -534,7 +545,10 @@ async function startElectron(): Promise<void> {
       },
       interruptTurn: (sid) => {
         const target = sid ?? sessions.getActiveSessionId();
-        if (target) void sessions.interrupt({ sessionId: target });
+        if (target) {
+          delegations.interruptAllFor(target);
+          void sessions.interrupt({ sessionId: target });
+        }
       },
       listSessions: async (limit) => repo.listSessions(limit),
       loadMessages: async (sessionId) => repo.loadMessages(sessionId),
@@ -612,6 +626,7 @@ async function startElectron(): Promise<void> {
     memorySearch,
     configDir: ottoConfigDir,
     killToolCall,
+    interruptDelegations: (sessionId) => delegations.interruptAllFor(sessionId),
     applyStartAtLogin,
     openLogsDir: () => {
       void shell.openPath(ottoConfigDir);

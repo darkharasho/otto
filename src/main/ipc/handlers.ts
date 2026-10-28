@@ -59,6 +59,8 @@ export function registerIpcHandlers(deps: {
   configDir: string;
   /** Kill the child behind a running blocking tool call (Stop on a streaming card). */
   killToolCall(callId: string): boolean;
+  /** Stop tasks this conversation delegated to other machines. */
+  interruptDelegations?(sessionId: string): void;
   applyStartAtLogin(enabled: boolean): void;
   openLogsDir(): void;
   openSettingsWindow(): void;
@@ -102,10 +104,12 @@ export function registerIpcHandlers(deps: {
 
   ipcMain.handle('session.cancel', async (_e, args: SessionCancelArgs): Promise<void> => {
     // Legacy channel kept for compatibility; routes to interrupt().
+    deps.interruptDelegations?.(args.sessionId);
     await sessions.interrupt(args);
   });
 
   ipcMain.handle('session.interrupt', async (_e, args: SessionInterruptArgs): Promise<void> => {
+    deps.interruptDelegations?.(args.sessionId);
     await sessions.interrupt(args);
   });
 

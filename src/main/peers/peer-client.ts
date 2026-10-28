@@ -333,6 +333,12 @@ export class PeerClient {
     return () => { st.listeners.delete(cb); };
   }
 
+  /** Drop all per-session state (listeners, buffers, seq baseline) once a delegation is finished. */
+  forget(sessionId: string): void {
+    this.sessions.delete(sessionId);
+    this.unclaimed.delete(sessionId);
+  }
+
   onConnectionChange(cb: (state: ConnectionState) => void): () => void {
     this.stateListeners.add(cb);
     return () => { this.stateListeners.delete(cb); };
