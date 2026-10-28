@@ -137,7 +137,10 @@ export function reduceDelegation(s: DelegationSnapshot, e: RemoteEvent): Delegat
         return withItems(base, [...base.items, item], { status: liveStatus(base) });
       }
       case 'tool-call-result': {
-        const items = updateTool(base.items, str(e.callId), { status: e.isError ? 'error' : 'done', result: resultToText(e.result) });
+        const callId = str(e.callId);
+        const denied = base.items.some((it) => it.kind === 'tool' && it.callId === callId && it.status === 'denied');
+        const status = denied ? 'denied' : e.isError ? 'error' : 'done';
+        const items = updateTool(base.items, callId, { status, result: resultToText(e.result) });
         return items ? withItems(base, items) : base;
       }
       case 'tool-call-denied': {
@@ -162,10 +165,14 @@ export function reduceDelegation(s: DelegationSnapshot, e: RemoteEvent): Delegat
           },
         };
       }
-      case 'tool-call-decided':
-        return base.pendingApproval && (!e.decisionId || base.pendingApproval.decisionId === e.decisionId)
+      case 'tool-call-decided': {
+        const cleared = base.pendingApproval && (!e.decisionId || base.pendingApproval.decisionId === e.decisionId)
           ? { ...base, pendingApproval: null }
           : base;
+        if (e.decision !== 'deny') return cleared;
+        const items = updateTool(cleared.items, str(e.callId), { status: 'denied' });
+        return items ? withItems(cleared, items) : cleared;
+      }
       case 'sudo-prompt': {
         const promptId = str(e.promptId);
         if (!promptId) return base;

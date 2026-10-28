@@ -41,6 +41,10 @@ export async function listPeers(store: PeerStore): Promise<PeerSummary[]> {
 /** Errors thrown here carry the user-facing copy. */
 export async function addPeer(store: PeerStore, name: string, pairingUrl: string): Promise<{ id: string }> {
   const { baseUrl, code } = parsePairingUrl(pairingUrl);
+  // Before pairing: a rejected name must not leave a paired device behind on the remote.
+  // findByName also prefix-matches, so only an exact (case-insensitive) hit is a duplicate.
+  const existing = store.findByName(name);
+  if (existing && existing.name.toLowerCase() === name.toLowerCase()) throw duplicate(name);
   let paired: { token: string; deviceId: string };
   try {
     paired = await pairWithPeer(baseUrl, code);
@@ -55,8 +59,12 @@ export async function addPeer(store: PeerStore, name: string, pairingUrl: string
     return { id: peer.id };
   } catch (err) {
     if (/is already paired$/.test(err instanceof Error ? err.message : '')) {
-      throw new Error(`You already have a machine called "${name}".`);
+      throw duplicate(name);
     }
     throw err;
   }
+}
+
+function duplicate(name: string): Error {
+  return new Error(`You already have a machine called "${name}".`);
 }

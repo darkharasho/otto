@@ -232,12 +232,12 @@ describe('PeerClient', () => {
     const { port } = await s.start();
     const { client } = await pairedClient(s, port);
     await client.connect();
-    client.decide('d1', 'approve-session');
+    client.decide('d1', 'approve');
     client.sudo('p1', 'pw');
     client.sudo('p2', null);
     client.interrupt('sess-9');
     await waitFor(() => hooks.interrupts.length === 1 && hooks.sudos.length === 2);
-    expect(hooks.approvals).toEqual([{ id: 'd1', choice: 'approve-session' }]);
+    expect(hooks.approvals).toEqual([{ id: 'd1', choice: 'approve' }]);
     expect(hooks.sudos).toEqual([{ id: 'p1', pw: 'pw' }, { id: 'p2', pw: null }]);
     expect(hooks.interrupts).toEqual(['sess-9']);
   });
@@ -284,4 +284,41 @@ describe('PeerClient', () => {
     await waitFor(() => states.includes('lost'), 4000);
     expect(states[0]).toBe('reconnecting');
   });
+
+  it('queues an interrupt sent while reconnecting and delivers it after re-auth', async () => {
+    const port = await freePort();
+    const { makeServer, hooks } = setup(port);
+    let s = makeServer();
+    await s.start();
+    const { client } = await pairedClient(s, port, { reconnectWindowMs: 5000 });
+    await client.connect();
+    const states: string[] = [];
+    client.onConnectionChange((st) => states.push(st));
+    await stopServer(s);
+    await waitFor(() => states.includes('reconnecting'));
+    client.interrupt('sess-7');
+    client.decide('d7', 'deny');
+    s = makeServer();
+    await s.start();
+    await waitFor(() => states.includes('connected'));
+    await waitFor(() => hooks.interrupts.length === 1 && hooks.approvals.length === 1);
+    expect(hooks.interrupts).toEqual(['sess-7']);
+    expect(hooks.approvals).toEqual([{ id: 'd7', choice: 'deny' }]);
+  });
+
+  it('a revoked device\'s live socket closing with 4001 goes straight to lost without reconnecting', async () => {
+    const { makeServer, pairing } = setup();
+    const s = makeServer();
+    const { port } = await s.start();
+    const { client, deviceId } = await pairedClient(s, port, { reconnectWindowMs: 5000 });
+    await client.connect();
+    const states: string[] = [];
+    client.onConnectionChange((st) => states.push(st));
+    pairing.revoke(deviceId);
+    s.disconnectDevice(deviceId);
+    await waitFor(() => states.includes('lost'));
+    expect(states).toEqual(['lost']);
+    expect(client.revoked).toBe(true);
+  });
 });
+

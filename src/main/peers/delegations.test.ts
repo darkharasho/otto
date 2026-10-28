@@ -16,8 +16,13 @@ class FakeClient {
   sudos: Array<[string, string | null]> = [];
   forgotten: string[] = [];
   closed = false;
+  revoked = false;
+  connectGate: Promise<void> | null = null;
 
-  async connect() { if (this.connectError) throw this.connectError; }
+  async connect() {
+    if (this.connectGate) await this.connectGate;
+    if (this.connectError) throw this.connectError;
+  }
   delegate(a: { text: string; sessionId?: string; ifBusy?: 'reject' | 'interrupt' }) {
     this.delegateCalls.push(a);
     return this.delegateImpl(a);
@@ -474,6 +479,31 @@ describe('DelegationManager fix round 1', () => {
     reply({ kind: 'started', sessionId: 'r1' });
     expect(await p).toBe('Stopped the task on Desk.');
     expect(c.interrupts).toEqual(['r1']);
+  });
+
+  it('forgetPeer during the first connect closes the new client and reports the machine was forgotten', async () => {
+    const { mgr, prime } = setup();
+    const c = prime(new FakeClient());
+    let release!: () => void;
+    c.connectGate = new Promise((r) => { release = r; });
+    const p = mgr.run(runArgs().args);
+    await flush();
+    mgr.forgetPeer('p0');
+    release();
+    expect(await p).toBe('Desk was removed from the paired machines while connecting; the task was not sent.');
+    expect(c.closed).toBe(true);
+    expect(c.delegateCalls).toEqual([]);
+  });
+
+  it('a client lost because the device was revoked asks for a re-pair', async () => {
+    const { mgr, clients } = setup();
+    const p = mgr.run(runArgs().args);
+    await flush();
+    clients[0]!.revoked = true;
+    clients[0]!.setState('lost');
+    const out = await p;
+    expect(out).toContain('re-pair Desk in Settings → Other machines');
+    expect(out).not.toContain('Lost connection');
   });
 
   it('an unauthorized connect asks for a re-pair', async () => {

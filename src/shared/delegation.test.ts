@@ -43,6 +43,19 @@ describe('reduceDelegation', () => {
     expect(s.pendingApproval).toBeNull();
   });
 
+  it('a denied decision marks the matching tool item denied, and the later error result keeps it denied', () => {
+    let s = run([
+      ev('tool-call-start', { callId: 'c1', name: 'shell_exec', input: { command: 'rm x' } }),
+      ev('tool-call-pending', { decisionId: 'd1', callId: 'c1', name: 'shell_exec', input: { command: 'rm x' }, actionClass: 'destructive', reason: 'r' }),
+      ev('tool-call-decided', { decisionId: 'd1', callId: 'c1', decision: 'deny' }),
+    ]);
+    expect(s.pendingApproval).toBeNull();
+    expect(s.items[0]).toMatchObject({ callId: 'c1', status: 'denied' });
+    s = reduceDelegation(s, ev('tool-call-result', { callId: 'c1', result: 'Denied by Otto autonomy policy', isError: true }));
+    expect(s.items[0]).toMatchObject({ callId: 'c1', status: 'denied' });
+    expect(summarizeForModel(s)).toContain('Denied tools: shell_exec.');
+  });
+
   it('sets and clears sudo prompt', () => {
     let s = run([ev('sudo-prompt', { callId: 'c', promptId: 'p1', command: 'sudo ls', error: 'bad pw' })]);
     expect(s.pendingSudo).toEqual({ promptId: 'p1', command: 'sudo ls', error: 'bad pw' });

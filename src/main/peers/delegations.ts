@@ -73,6 +73,7 @@ interface RunCtl {
 }
 
 class TokenError extends Error {}
+class ForgottenError extends Error {}
 
 const msg = {
   none: () => 'No machines are paired. Pair one in Settings → Other machines.',
@@ -88,6 +89,7 @@ const msg = {
   stopped: (m: string) => `Stopped waiting for ${m}.`,
   stoppedTask: (m: string) => `Stopped the task on ${m}.`,
   startFailed: (m: string, e: string) => `${m} couldn't start the task: ${e}`,
+  forgotten: (m: string) => `${m} was removed from the paired machines while connecting; the task was not sent.`,
   nothing: (m: string) => `Nothing has been delegated to ${m} in this conversation.`,
 };
 
@@ -175,7 +177,9 @@ export class DelegationManager {
     } catch (err) {
       const out = err instanceof TokenError
         ? msg.repair(name)
-        : errText(err) === 'unauthorized' ? msg.revoked(name) : msg.unreachable(name);
+        : err instanceof ForgottenError
+          ? msg.forgotten(name)
+          : errText(err) === 'unauthorized' ? msg.revoked(name) : msg.unreachable(name);
       return end(out, 'error', out);
     }
     if (ctl.cancelled) return end(msg.stopped(name), 'interrupted');
@@ -191,7 +195,7 @@ export class DelegationManager {
       } catch (err) {
         const e = errText(err);
         // The frame may have reached the remote before the socket dropped.
-        if (e === 'connection lost') return end(msg.lost(name), 'lost');
+        if (e === 'connection lost') return client.revoked ? end(msg.revoked(name), 'lost', msg.revoked(name)) : end(msg.lost(name), 'lost');
         // Never drop the client here: it may be reconnecting on behalf of other live delegations.
         if (e === 'not connected' || e === 'closed') return end(msg.unreachable(name), 'error', msg.unreachable(name));
         return end(msg.startFailed(name, e), 'error', e);
@@ -284,6 +288,7 @@ export class DelegationManager {
   private getClient(peer: Peer): Promise<PeerClient> {
     const cached = this.clients.get(peer.id);
     if (cached) return cached;
+    const self: { p: Promise<PeerClient> | null } = { p: null };
     const p = (async () => {
       let token: string;
       try {
@@ -299,10 +304,16 @@ export class DelegationManager {
         c.close();
         throw err;
       }
+      if (this.clients.get(peer.id) !== self.p) {
+        // forgetPeer ran while we were connecting.
+        c.close();
+        throw new ForgottenError(peer.name);
+      }
       c.onConnectionChange((s) => this.onClientState(peer.id, c, s));
       this.ready.set(peer.id, c);
       return c;
     })();
+    self.p = p;
     this.clients.set(peer.id, p);
     p.catch(() => { if (this.clients.get(peer.id) === p) this.clients.delete(peer.id); });
     return p;
@@ -314,10 +325,17 @@ export class DelegationManager {
       this.ready.delete(peerId);
       this.clients.delete(peerId);
     }
+    const revoked = c.revoked === true;
     for (const d of [...this.delegations.values()]) {
       if (d.client !== c || d.result !== null) continue;
-      d.snapshot = { ...d.snapshot, status: 'lost', pendingApproval: null, pendingSudo: null };
-      this.finish(d);
+      d.snapshot = {
+        ...d.snapshot,
+        status: 'lost',
+        pendingApproval: null,
+        pendingSudo: null,
+        ...(revoked ? { error: msg.revoked(d.machine) } : {}),
+      };
+      this.finish(d, revoked ? msg.revoked(d.machine) : undefined);
     }
     c.close();
   }
@@ -362,9 +380,9 @@ export class DelegationManager {
     else d.attachment?.throttle.push(d.snapshot);
   }
 
-  private finish(d: Delegation): void {
+  private finish(d: Delegation, lostText?: string): void {
     if (d.result !== null) return;
-    d.result = d.snapshot.status === 'lost' ? msg.lost(d.machine) : summarizeForModel(d.snapshot);
+    d.result = d.snapshot.status === 'lost' ? lostText ?? msg.lost(d.machine) : summarizeForModel(d.snapshot);
     d.unsub?.();
     d.unsub = null;
     d.client.forget(d.remoteSessionId);

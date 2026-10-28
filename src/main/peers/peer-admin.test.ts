@@ -40,7 +40,8 @@ describe('listPeers', () => {
 
 describe('addPeer', () => {
   const link = 'http://desk:17829/pair?code=abc';
-  const storeWith = (add: PeerStore['add']) => ({ add }) as unknown as PeerStore;
+  const storeWith = (add: PeerStore['add'], existing: Array<{ name: string }> = []) =>
+    ({ add, findByName: (n: string) => existing.find((p) => p.name.toLowerCase().startsWith(n.toLowerCase())) ?? null }) as unknown as PeerStore;
 
   it('pairs and stores the peer', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ token: 't', deviceId: 'dev' }) })));
@@ -63,5 +64,20 @@ describe('addPeer', () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ token: 't', deviceId: 'dev' }) })));
     const add = vi.fn(() => { throw new Error('A machine named "Desk" is already paired'); });
     await expect(addPeer(storeWith(add as unknown as PeerStore['add']), 'Desk', link)).rejects.toThrow('You already have a machine called "Desk".');
+  });
+
+  it('rejects a duplicate name before pairing, so no device is left on the remote', async () => {
+    const f = vi.fn(async () => ({ ok: true, json: async () => ({ token: 't', deviceId: 'dev' }) }));
+    vi.stubGlobal('fetch', f);
+    const add = vi.fn();
+    await expect(addPeer(storeWith(add as unknown as PeerStore['add'], [{ name: 'desk' }]), 'Desk', link)).rejects.toThrow('You already have a machine called "Desk".');
+    expect(f).not.toHaveBeenCalled();
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('allows a name that is only a prefix of an existing machine', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ token: 't', deviceId: 'dev' }) })));
+    const add = vi.fn(() => ({ id: 'new' }) as ReturnType<PeerStore['add']>);
+    expect(await addPeer(storeWith(add, [{ name: 'Desktop' }]), 'Desk', link)).toEqual({ id: 'new' });
   });
 });

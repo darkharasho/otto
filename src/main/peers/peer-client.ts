@@ -42,6 +42,7 @@ const BUS_FRAME_TYPES = new Set(['event', 'approval_pending', 'approval_resolved
 const MAX_BUFFERED = 1000;
 const MAX_UNCLAIMED_SESSIONS = 8;
 const MAX_UNCLAIMED_FRAMES = 200;
+const MAX_OUTBOX = 100;
 
 interface SessionState {
   /** Highest bridge history seq reflected in what we have received. */
@@ -75,6 +76,9 @@ export class PeerClient {
   /** Frames for sessions we have no entry for yet (the bridge publishes before it replies delegate_started). */
   private readonly unclaimed = new Map<string, RemoteEvent[]>();
   private reconnectTimer: NodeJS.Timeout | null = null;
+  /** Control frames (interrupt, approval, sudo) sent while reconnecting; flushed after re-auth. */
+  private outbox: Array<Record<string, unknown>> = [];
+  private revokedFlag = false;
 
   constructor(opts: PeerClientOpts) {
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '');
@@ -86,6 +90,7 @@ export class PeerClient {
   async connect(): Promise<void> {
     const ws = await this.openSocket();
     this.attach(ws);
+    this.flushOutbox();
     this.setState('connected');
   }
 
@@ -117,17 +122,30 @@ export class PeerClient {
     });
   }
 
+  /** True once the remote rejected this machine's credentials; the client won't reconnect. */
+  get revoked(): boolean {
+    return this.revokedFlag;
+  }
+
   private attach(ws: WebSocket): void {
     this.ws = ws;
     ws.on('message', (data) => this.onMessage(data));
     ws.on('error', () => { /* close follows */ });
-    ws.on('close', () => {
+    ws.on('close', (code) => {
       if (this.ws !== ws) return;
       this.ws = null;
       if (this.closed) return;
       this.rejectPending(new Error('connection lost'));
+      // 4001: the device was revoked; reconnecting would only be refused again.
+      if (code === 4001) { this.giveUp(true); return; }
       void this.reconnect();
     });
+  }
+
+  private giveUp(revoked: boolean): void {
+    if (revoked) this.revokedFlag = true;
+    this.outbox = [];
+    this.setState('lost');
   }
 
   private rejectPending(err: Error): void {
@@ -144,16 +162,20 @@ export class PeerClient {
         const ws = await this.openSocket();
         if (this.closed) { ws.terminate(); return; }
         this.attach(ws);
+        this.flushOutbox();
         await this.resyncAll();
         this.setState('connected');
         return;
       } catch (err) {
-        if (err instanceof Error && err.message === 'unauthorized') break;
+        if (err instanceof Error && err.message === 'unauthorized') {
+          if (!this.closed) this.giveUp(true);
+          return;
+        }
       }
       await this.sleep(Math.min(delay, Math.max(0, deadline - Date.now())));
       delay = Math.min(delay * 1.5, 2000);
     }
-    if (!this.closed) this.setState('lost');
+    if (!this.closed) this.giveUp(false);
   }
 
   private sleep(ms: number): Promise<void> {
@@ -358,14 +380,25 @@ export class PeerClient {
 
   private send(frame: Record<string, unknown>): void {
     const ws = this.ws;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    try { ws.send(JSON.stringify(frame)); } catch { /* socket closing; reconnect handles it */ }
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      try { ws.send(JSON.stringify(frame)); return; } catch { /* socket closing; queue below */ }
+    }
+    if (this.closed || this.state === 'lost') return;
+    this.outbox.push(frame);
+    if (this.outbox.length > MAX_OUTBOX) this.outbox.shift();
+  }
+
+  private flushOutbox(): void {
+    const frames = this.outbox;
+    this.outbox = [];
+    for (const f of frames) this.send(f);
   }
 
   close(): void {
     this.closed = true;
     if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
     this.rejectPending(new Error('closed'));
+    this.outbox = [];
     const ws = this.ws;
     this.ws = null;
     if (ws) { try { ws.close(); } catch { /* already closed */ } }
