@@ -81,6 +81,8 @@ export class SessionManager {
   private readonly cancelling = new Map<string, Set<string>>(); // sessionId -> set of messageIds awaiting cancelled-finalize
   private readonly finalizedMessages = new Map<string, Set<string>>(); // sessionId -> messageIds already persisted
   private readonly origins = new Map<string, 'desktop' | 'remote'>(); // assistant messageId -> prompt origin, dropped on finalize
+  private readonly pendingRemote = new Map<string, Set<string>>(); // sessionId -> remote-origin messageIds not yet finalized
+  private readonly lastOrigin = new Map<string, 'desktop' | 'remote'>(); // sessionId -> origin of the last finalized message
   private readonly seenSdkSessionId = new Set<string>();
   // callIds of annotate_result / mark_task_complete invocations: their
   // tool_use/tool_result never become content blocks — the annotation folds
@@ -446,7 +448,9 @@ export class SessionManager {
     const row = perSession?.get(messageId);
     if (!row) return;
     perSession!.delete(messageId);
+    this.lastOrigin.set(sessionId, this.origins.get(messageId) ?? 'desktop');
     this.origins.delete(messageId);
+    this.dropPendingRemote(sessionId, messageId);
     if (flags.cancelled) {
       // Close out any in-flight tool calls so the renderer stops spinning
       // their cards forever. Unmatched tool_use blocks get a synthetic
@@ -497,8 +501,21 @@ export class SessionManager {
   static readonly VOICE_SUFFIX =
     '\n\n[This is a spoken voice conversation — your reply will be read aloud by TTS. Respond conversationally and briefly: plain prose, no markdown formatting, no bullet lists, no headings, and no code blocks unless the user explicitly asks for code. Prefer one to three short sentences unless the user asks for depth. Numbers, paths, and commands should be phrased the way a person would say them aloud.]';
 
-  originForMessage(messageId: string): 'desktop' | 'remote' {
-    return this.origins.get(messageId) ?? 'desktop';
+  /**
+   * Origin governing tool calls in this session right now. Fails closed: any
+   * remote-origin message not yet finalized makes the whole session 'remote'.
+   */
+  originForSession(sessionId: string): 'desktop' | 'remote' {
+    if ((this.pendingRemote.get(sessionId)?.size ?? 0) > 0) return 'remote';
+    if ((this.assistants.get(sessionId)?.size ?? 0) > 0) return 'desktop';
+    return this.lastOrigin.get(sessionId) ?? 'desktop';
+  }
+
+  private dropPendingRemote(sessionId: string, messageId: string): void {
+    const pending = this.pendingRemote.get(sessionId);
+    if (!pending) return;
+    pending.delete(messageId);
+    if (pending.size === 0) this.pendingRemote.delete(sessionId);
   }
 
   /** True while an assistant message is started and not yet finalized/cancelled. */
@@ -523,7 +540,16 @@ export class SessionManager {
     // Pre-create the assistant row with a stable id we can use to tag the
     // enqueued message. The stream consumer will populate it as events arrive.
     const assistantId = newAssistantMessage().id;
-    this.origins.set(assistantId, args.origin ?? 'desktop');
+    const origin = args.origin ?? 'desktop';
+    this.origins.set(assistantId, origin);
+    if (origin === 'remote') {
+      let pending = this.pendingRemote.get(sessionId);
+      if (!pending) {
+        pending = new Set();
+        this.pendingRemote.set(sessionId, pending);
+      }
+      pending.add(assistantId);
+    }
     const stream = this.ensureStream(sessionId);
     // Track ahead-of-time so events can find the row even if they arrive before
     // we'd otherwise getOrCreate. We also keep a handle on the done promise so
@@ -580,6 +606,8 @@ export class SessionManager {
       this.aborts.delete(args.sessionId);
     }
     for (const id of this.assistants.get(args.sessionId)?.keys() ?? []) this.origins.delete(id);
+    // Never finalized: a straggling tool call from the torn-down stream still counts as remote.
+    if (this.pendingRemote.delete(args.sessionId)) this.lastOrigin.set(args.sessionId, 'remote');
     this.assistants.delete(args.sessionId);
     this.cancelling.delete(args.sessionId);
     this.finalizedMessages.delete(args.sessionId);

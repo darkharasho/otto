@@ -62,9 +62,6 @@ export class DecisionBroker {
     // Catastrophic calls skip the session-allow cache: every one prompts.
     const actionClass: ActionClass = catastrophic ? 'irreversible' : args.actionClass;
 
-    const cacheKey = `${args.sessionId}::${args.toolName}`;
-    if (!catastrophic && this.sessionAllow.has(cacheKey)) return 'allow';
-
     const effectiveMode = (args.origin ?? 'desktop') === 'remote'
       ? clamp(this.mode, this.remoteCeiling)
       : this.mode;
@@ -77,6 +74,8 @@ export class DecisionBroker {
       this.emitDenied(args, reason);
       return 'deny';
     }
+    // Session approvals only skip the prompt; they never lift a policy or ceiling deny.
+    if (!catastrophic && this.sessionAllow.has(`${args.sessionId}::${args.toolName}`)) return 'allow';
 
     const decisionId = randomUUID();
 

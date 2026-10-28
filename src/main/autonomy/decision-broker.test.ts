@@ -294,3 +294,32 @@ describe('DecisionBroker.decide', () => {
     }
   });
 });
+
+describe('DecisionBroker session approvals vs policy', () => {
+  it('approve-session never lifts a ceiling deny for a later irreversible call', async () => {
+    const { broker, events } = makeBroker('full-allow');
+    broker.setRemoteCeiling('balanced');
+    const shell = { toolName: 'shell_exec', origin: 'remote' as const };
+    const a = broker.decide(args({ ...shell, callId: 'a', actionClass: 'destructive' }));
+    const pending = events.find((e) => e.type === 'tool-call-pending');
+    if (!pending || pending.type !== 'tool-call-pending') throw new Error('expected pending');
+    broker.resolve(pending.decisionId, 'approve-session', 'remote');
+    expect(await a).toBe('allow');
+    events.length = 0;
+    const b = await broker.decide(args({ ...shell, callId: 'b', actionClass: 'irreversible' }));
+    expect(b).toBe('deny');
+    expect(events[0]!.type).toBe('tool-call-denied');
+  });
+
+  it('approve-session still skips the prompt for a later confirm-tier call', async () => {
+    const { broker, events } = makeBroker('balanced');
+    const a = broker.decide(args({ toolName: 'shell_exec', callId: 'a', actionClass: 'destructive' }));
+    const pending = events.find((e) => e.type === 'tool-call-pending');
+    if (!pending || pending.type !== 'tool-call-pending') throw new Error('expected pending');
+    broker.resolve(pending.decisionId, 'approve-session');
+    await a;
+    events.length = 0;
+    expect(await broker.decide(args({ toolName: 'shell_exec', callId: 'b', actionClass: 'destructive' }))).toBe('allow');
+    expect(events).toEqual([]);
+  });
+});

@@ -69,6 +69,8 @@ export function __setScreenshotRefsForTest(callId: string, refs: import('@shared
 // are registered when the child spawns and removed when the call settles.
 const killsByCall = new Map<string, () => void>();
 
+export const DELEGATION_FROM_REMOTE_MSG = "Delegation isn't available for tasks that came from another machine.";
+
 /** Kill the child behind a running tool call. Returns false when the call is unknown or already settled. */
 export function killToolCall(callId: string): boolean {
   const kill = killsByCall.get(callId);
@@ -252,8 +254,8 @@ export interface RealSdkClientDeps {
   sudo: SudoBroker;
   /** Returns the messageId of the assistant message being authored for the current turn. */
   currentMessageId: () => string;
-  /** Origin ('desktop' | 'remote') of the prompt that started the given assistant message. */
-  originForMessage?: (messageId: string) => 'desktop' | 'remote';
+  /** Origin ('desktop' | 'remote') governing tool calls in the given session right now. */
+  originForSession?: (sessionId: string) => 'desktop' | 'remote';
   getRegistry: () => ProcessRegistry;
   getConfigDir: () => string;
   recall(args: {
@@ -304,7 +306,7 @@ interface ToolCtx {
   // pending event arrived with a messageId the renderer couldn't match and the
   // ApprovalCard never rendered.
   getMessageId: () => string;
-  getOrigin: (messageId: string) => 'desktop' | 'remote';
+  getOrigin: (sessionId: string) => 'desktop' | 'remote';
   getRegistry: () => ProcessRegistry;
   getConfigDir: () => string;
   recall: RealSdkClientDeps['recall'];
@@ -432,12 +434,20 @@ export function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
             ? String((_extra as { toolUseId?: unknown }).toolUseId ?? '')
             : '') || `${t.name}-${Date.now().toString(36)}`;
 
+        // Read once: the global current message id moves when any session sends.
         const messageId = ctx.getMessageId();
+        const origin = ctx.getOrigin(ctx.sessionId);
+        if (origin === 'remote' && (DELEGATION_TOOL_NAMES as readonly string[]).includes(t.name)) {
+          return {
+            isError: true,
+            content: [{ type: 'text' as const, text: DELEGATION_FROM_REMOTE_MSG }],
+          };
+        }
         const cls = t.actionClassFor ? t.actionClassFor(args) : t.actionClass;
         const outcome = await ctx.broker.decide({
           sessionId: ctx.sessionId,
           messageId,
-          origin: ctx.getOrigin(messageId),
+          origin,
           callId,
           toolName: t.name,
           actionClass: cls,
@@ -642,7 +652,7 @@ export function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
               ctx.emit?.({
                 type: 'tool-call-output',
                 sessionId: ctx.sessionId,
-                messageId: ctx.getMessageId(),
+                messageId,
                 callId,
                 stream,
                 data,
@@ -654,7 +664,7 @@ export function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
               ctx.emit?.({
                 type: 'tool-call-snapshot',
                 sessionId: ctx.sessionId,
-                messageId: ctx.getMessageId(),
+                messageId,
                 callId,
                 snapshot,
               });
@@ -933,7 +943,7 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
             sudo: deps.sudo,
             sessionId,
             getMessageId: deps.currentMessageId,
-            getOrigin: (id) => deps.originForMessage?.(id) ?? 'desktop',
+            getOrigin: (sid) => deps.originForSession?.(sid) ?? 'desktop',
             getRegistry: deps.getRegistry,
             getConfigDir: deps.getConfigDir,
             recall: deps.recall,

@@ -402,7 +402,7 @@ async function startElectron(): Promise<void> {
     broker,
     sudo: sudoBroker,
     currentMessageId: () => currentMessageId ?? '',
-    originForMessage: (id) => sessions.originForMessage(id),
+    originForSession: (sid) => sessions.originForSession(sid),
     getRegistry: () => registry,
     getConfigDir: () => ottoConfigDir,
     recall: async (args) => {

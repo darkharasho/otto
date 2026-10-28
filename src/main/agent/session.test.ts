@@ -8,7 +8,7 @@ import { SessionManager, type SdkClient, type SdkStreamEvent, type SessionStream
 import type { SessionEvent } from '@shared/ipc-contract';
 import type { ContentBlock } from '@shared/messages';
 import { SessionBus, type RemoteOutbound } from '../remote/session-bus';
-import { __setScreenshotRefsForTest } from './sdk-client';
+import { __setScreenshotRefsForTest, buildOttoMcpServer } from './sdk-client';
 
 let dir: string;
 let repo: Repo;
@@ -599,30 +599,82 @@ describe('SessionManager origin tracking', () => {
   }
   const queuedId = () => (events.find((e) => e.type === 'user-message-queued') as { messageId: string }).messageId;
 
-  it('records remote origin for the assistant message created by send', async () => {
+  it('reports remote for the session while its remote-origin message is in flight', async () => {
     const { release } = gatedManager();
     const { sessionId } = await manager.start({});
     const p = manager.send({ sessionId, text: 'hi', origin: 'remote' });
-    expect(manager.originForMessage(queuedId())).toBe('remote');
+    expect(manager.originForSession(sessionId)).toBe('remote');
     expect(manager.hasActiveTurn(sessionId)).toBe(true);
     expect(manager.hasActiveTurn()).toBe(true);
     expect(manager.hasActiveTurn('other')).toBe(false);
     release();
     await p;
     expect(manager.hasActiveTurn(sessionId)).toBe(false);
-    expect(manager.originForMessage(queuedId())).toBe('desktop');
+    // Falls back to the last finalized message's origin.
+    expect(manager.originForSession(sessionId)).toBe('remote');
   });
 
   it('defaults origin to desktop', async () => {
     const { release } = gatedManager();
     const { sessionId } = await manager.start({});
     const p = manager.send({ sessionId, text: 'hi' });
-    expect(manager.originForMessage(queuedId())).toBe('desktop');
+    expect(manager.originForSession(sessionId)).toBe('desktop');
     release();
+    await p;
+    expect(manager.originForSession(sessionId)).toBe('desktop');
+  });
+
+  it('returns desktop for unknown sessions', () => {
+    expect(manager.originForSession('nope')).toBe('desktop');
+  });
+
+  it('a desktop turn after a finished remote turn runs as desktop', async () => {
+    const { release } = gatedManager();
+    const { sessionId } = await manager.start({});
+    release();
+    await manager.send({ sessionId, text: 'r', origin: 'remote' });
+    const p = manager.send({ sessionId, text: 'd' });
+    expect(manager.originForSession(sessionId)).toBe('desktop');
     await p;
   });
 
-  it('returns desktop for unknown message ids', () => {
-    expect(manager.originForMessage('nope')).toBe('desktop');
+  it('stays remote after close drops an unfinalized remote message', async () => {
+    gatedManager();
+    const { sessionId } = await manager.start({});
+    void manager.send({ sessionId, text: 'r', origin: 'remote' });
+    await manager.close({ sessionId });
+    expect(manager.originForSession(sessionId)).toBe('remote');
+  });
+
+  it('a tool call in a session with a pending remote turn decides as remote even after other sends move the current message id', async () => {
+    gatedManager();
+    let currentMessageId = '';
+    const m = new SessionManager(repo, fakeSdk, 'claude-sonnet-4-6', (e) => events.push(e), (id) => { currentMessageId = id; });
+    (fakeSdk.startSession as ReturnType<typeof vi.fn>)
+      .mockResolvedValueOnce({ id: 'sess-B' })
+      .mockResolvedValueOnce({ id: 'sess-A' });
+    const B = (await m.start({})).sessionId;
+    const A = (await m.start({})).sessionId;
+    void m.send({ sessionId: B, text: 'remote task', origin: 'remote' });
+    void m.send({ sessionId: A, text: 'desktop task' });
+    void m.send({ sessionId: B, text: 'queued desktop', origin: 'desktop' });
+
+    const handlers = new Map<string, (args: unknown, extra: unknown) => Promise<unknown>>();
+    const sdk = {
+      tool: (name: string, _d: string, _s: unknown, h: (args: unknown, extra: unknown) => Promise<unknown>) => { handlers.set(name, h); return { name }; },
+      createSdkMcpServer: (o: unknown) => o,
+    };
+    const decide = vi.fn(async () => 'deny');
+    buildOttoMcpServer(sdk as never, {
+      broker: { decide } as never,
+      sudo: {} as never,
+      sessionId: B,
+      getMessageId: () => currentMessageId,
+      getOrigin: (sid: string) => m.originForSession(sid),
+      getRegistry: () => ({}) as never,
+      getConfigDir: () => '/tmp',
+    } as never);
+    await handlers.get('shell_exec')!({ command: 'ls' }, {});
+    expect(decide).toHaveBeenCalledWith(expect.objectContaining({ sessionId: B, origin: 'remote' }));
   });
 });
