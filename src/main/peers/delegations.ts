@@ -256,6 +256,13 @@ export class DelegationManager {
     this.readyClient(machine)?.sudo(promptId, pw);
   }
 
+  /** Drop the cached client for a forgotten peer; live delegations to it end as lost. */
+  forgetPeer(peerId: string): void {
+    const c = this.ready.get(peerId);
+    if (c) this.dropClient(peerId, c);
+    this.clients.delete(peerId);
+  }
+
   interruptAllFor(localSessionId: string): void {
     for (const ctl of [...this.runs]) if (ctl.localSessionId === localSessionId) this.cancelRun(ctl);
     for (const d of [...this.delegations.values()]) if (d.localSessionId === localSessionId) this.kill(d);

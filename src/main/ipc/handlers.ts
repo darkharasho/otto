@@ -63,6 +63,11 @@ export function registerIpcHandlers(deps: {
   interruptDelegations?(sessionId: string): void;
   decideDelegation?(machine: string, decisionId: string, decision: 'approve' | 'approve-session' | 'deny'): void;
   sudoDelegation?(machine: string, promptId: string, password: string | null): void;
+  peers?: {
+    list(): Promise<Array<{ id: string; name: string; baseUrl: string; pairedAt: number; online: boolean }>>;
+    add(name: string, pairingUrl: string): Promise<{ id: string }>;
+    remove(id: string): void;
+  };
   applyStartAtLogin(enabled: boolean): void;
   openLogsDir(): void;
   openSettingsWindow(): void;
@@ -201,6 +206,21 @@ export function registerIpcHandlers(deps: {
       deps.sudoDelegation?.(args.machine, args.promptId, args.password);
     }
   );
+
+  ipcMain.handle('peers:list', async () => (deps.peers ? deps.peers.list() : []));
+
+  ipcMain.handle('peers:add', async (_e, args: { name: string; pairingUrl: string }): Promise<{ id: string }> => {
+    const name = typeof args?.name === 'string' ? args.name.trim() : '';
+    if (!name) throw new Error('Give this machine a name.');
+    if (typeof args.pairingUrl !== 'string' || !args.pairingUrl.trim()) throw new Error('Paste a pairing link.');
+    if (!deps.peers) throw new Error('Pairing is unavailable.');
+    return deps.peers.add(name, args.pairingUrl.trim());
+  });
+
+  ipcMain.handle('peers:remove', async (_e, args: { id: string }): Promise<void> => {
+    if (typeof args?.id !== 'string' || !args.id) return;
+    deps.peers?.remove(args.id);
+  });
 
   ipcMain.handle('autonomy.getMode', async (): Promise<AutonomyMode> => settings.getMode());
 

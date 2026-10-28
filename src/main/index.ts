@@ -106,6 +106,7 @@ async function startElectron(): Promise<void> {
   const { PeerStore, safeStorageCipher } = await import('./peers/peer-store');
   const { PeerClient } = await import('./peers/peer-client');
   const { DelegationManager } = await import('./peers/delegations');
+  const { listPeers, addPeer } = await import('./peers/peer-admin');
   const { resolveTailnetEndpoint } = await import('./remote/tailnet');
   const { loadRemoteSettings, saveRemoteSettings } = await import('./remote/settings');
   const { ImageCache } = await import('./image-cache/cache');
@@ -628,6 +629,14 @@ async function startElectron(): Promise<void> {
     killToolCall,
     interruptDelegations: (sessionId) => delegations.interruptAllFor(sessionId),
     decideDelegation: (machine, decisionId, decision) => delegations.decide(machine, decisionId, decision),
+    peers: {
+      list: () => listPeers(peerStore),
+      add: (name, pairingUrl) => addPeer(peerStore, name, pairingUrl),
+      remove: (id) => {
+        peerStore.remove(id);
+        delegations.forgetPeer(id);
+      },
+    },
     sudoDelegation: (machine, promptId, password) => delegations.sudo(machine, promptId, password),
     applyStartAtLogin,
     openLogsDir: () => {

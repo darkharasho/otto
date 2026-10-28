@@ -99,6 +99,9 @@ export type IpcRequest =
   | { channel: 'autonomy.sudoPassword'; args: { promptId: string; password: string | null }; result: void }
   | { channel: 'peers:decide'; args: { machine: string; decisionId: string; decision: 'approve' | 'approve-session' | 'deny' }; result: void }
   | { channel: 'peers:sudo'; args: { machine: string; promptId: string; password: string | null }; result: void }
+  | { channel: 'peers:list'; args: void; result: Array<{ id: string; name: string; baseUrl: string; pairedAt: number; online: boolean }> }
+  | { channel: 'peers:add'; args: { name: string; pairingUrl: string }; result: { id: string } }
+  | { channel: 'peers:remove'; args: { id: string }; result: void }
   | { channel: 'autonomy.getMode'; args: void; result: AutonomyMode }
   | { channel: 'autonomy.setMode'; args: { mode: AutonomyMode }; result: void }
   | { channel: 'settings.get'; args: void; result: SettingsView }

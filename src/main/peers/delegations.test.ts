@@ -393,6 +393,20 @@ describe('DelegationManager fix round 1', () => {
     expect(await p2).toBe('Lost connection to Desk; the task may still be running there.');
   });
 
+  it('forgetPeer ends live delegations as lost, closes the client and recreates it next time', async () => {
+    const { mgr, clients } = setup();
+    const p = mgr.run(runArgs().args);
+    await flush();
+    mgr.forgetPeer('p0');
+    expect(await p).toBe('Lost connection to Desk; the task may still be running there.');
+    expect(clients[0]!.closed).toBe(true);
+    const p2 = mgr.run(runArgs().args);
+    await flush();
+    expect(clients).toHaveLength(2);
+    clients[1]!.emit('r1', 'done');
+    await p2;
+  });
+
   it('follow-up reads the latest delegation after busy polling', async () => {
     const { mgr, prime } = setup();
     const c = prime(new FakeClient());
