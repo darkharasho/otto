@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { BridgeServer } from './bridge-server';
 import { SessionBus } from './session-bus';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -802,6 +802,7 @@ describe('BridgeServer delegate frame', () => {
       startDelegation?: (a: StartArgs) => Promise<{ sessionId: string }>;
       sendPrompt?: (text: string, origin: 'desktop' | 'remote', att: unknown[]) => Promise<void>;
       resolveApproval?: (id: string, c: 'approve' | 'approve-session' | 'deny') => boolean;
+      approvalSessionId?: (id: string) => string | null;
     },
     frame: Record<string, unknown>,
   ): Promise<Array<Record<string, unknown>>> {
@@ -878,11 +879,13 @@ describe('BridgeServer delegate frame', () => {
     expect(got).toContainEqual({ v: 1, type: 'delegate_err', correlationId: 'c5', message: 'boom' });
   });
 
-  it('approval frame forwards approve-session', async () => {
+  it('approve-session for a session this connection did not delegate is downgraded to approve', async () => {
     const seen: Array<[string, string]> = [];
-    await run({ resolveApproval: (id, c) => { seen.push([id, c]); return true; } },
-      { type: 'approval', decisionId: 'd9', decision: 'approve-session' });
-    expect(seen).toEqual([['d9', 'approve-session']]);
+    await run({
+      resolveApproval: (id, c) => { seen.push([id, c]); return true; },
+      approvalSessionId: () => 'phone-session',
+    }, { type: 'approval', decisionId: 'd9', decision: 'approve-session' });
+    expect(seen).toEqual([['d9', 'approve']]);
   });
 
   it('prompt frame still targets the active session', async () => {
@@ -890,5 +893,70 @@ describe('BridgeServer delegate frame', () => {
     await run({ sendPrompt: async (text) => { seen.push(text); } },
       { type: 'prompt', sessionId: 'other', text: 'hi' });
     expect(seen).toEqual(['hi']);
+  });
+});
+
+async function authedSocket(port: number, token: string): Promise<{ ws: WebSocket; frames: Array<Record<string, unknown>>; closed: Promise<{ code: number; reason: string }> }> {
+  const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+  const frames: Array<Record<string, unknown>> = [];
+  const closed = new Promise<{ code: number; reason: string }>((r) => ws.on('close', (code, reason) => r({ code, reason: reason.toString() })));
+  await new Promise<void>((resolve, reject) => {
+    ws.on('open', () => ws.send(JSON.stringify({ v: 1, type: 'auth', token })));
+    ws.on('message', (data) => {
+      const m = JSON.parse(data.toString());
+      frames.push(m);
+      if (m.type === 'auth_ok') resolve();
+    });
+    ws.on('error', reject);
+  });
+  return { ws, frames, closed };
+}
+
+describe('BridgeServer connection teardown', () => {
+  it('stop() resolves while a client is connected and the client sees the close', async () => {
+    const pairing = makeStore();
+    const s = new BridgeServer({ tailnetIp: '127.0.0.1', pairing, bus: new SessionBus(), pwaDir: null, screenshotSecret: 'x', loadScreenshot: async () => null, plainHttp: true });
+    const { port } = await s.start();
+    const { token } = await pairing.issue('peer');
+    const { closed } = await authedSocket(port, token);
+    const stopped = await Promise.race([s.stop().then(() => 'stopped'), new Promise((r) => setTimeout(() => r('hung'), 2000))]);
+    expect(stopped).toBe('stopped');
+    await closed;
+  });
+
+  it('disconnectDevice closes that device\'s live sockets with 4001 and leaves others open', async () => {
+    const pairing = makeStore();
+    server = new BridgeServer({ tailnetIp: '127.0.0.1', pairing, bus: new SessionBus(), pwaDir: null, screenshotSecret: 'x', loadScreenshot: async () => null, plainHttp: true });
+    const { port } = await server.start();
+    const a = await pairing.issue('peer-a');
+    const b = await pairing.issue('peer-b');
+    const sa = await authedSocket(port, a.token);
+    const sb = await authedSocket(port, b.token);
+    server.disconnectDevice(a.deviceId);
+    expect(await sa.closed).toEqual({ code: 4001, reason: 'revoked' });
+    expect(sb.ws.readyState).toBe(WebSocket.OPEN);
+    sb.ws.close();
+  });
+
+  it('approve-session is honoured for a session this connection delegated', async () => {
+    const pairing = makeStore();
+    const seen: Array<[string, string]> = [];
+    server = new BridgeServer({
+      tailnetIp: '127.0.0.1', pairing, bus: new SessionBus(), pwaDir: null, screenshotSecret: 'x', loadScreenshot: async () => null, plainHttp: true,
+      isBusy: () => false,
+      startDelegation: async () => ({ sessionId: 'deleg-1' }),
+      approvalSessionId: (id) => (id === 'd1' ? 'deleg-1' : 'other'),
+      resolveApproval: (id, c) => { seen.push([id, c]); return true; },
+    });
+    const { port } = await server.start();
+    const { token } = await pairing.issue('peer');
+    const { ws, frames } = await authedSocket(port, token);
+    ws.send(JSON.stringify({ v: 1, type: 'delegate', text: 't', correlationId: 'c1' }));
+    await vi.waitFor(() => expect(frames.some((f) => f.type === 'delegate_started')).toBe(true));
+    ws.send(JSON.stringify({ v: 1, type: 'approval', decisionId: 'd1', decision: 'approve-session' }));
+    ws.send(JSON.stringify({ v: 1, type: 'approval', decisionId: 'd2', decision: 'approve-session' }));
+    await vi.waitFor(() => expect(seen).toHaveLength(2));
+    expect(seen).toEqual([['d1', 'approve-session'], ['d2', 'approve']]);
+    ws.close();
   });
 });

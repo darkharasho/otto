@@ -1,4 +1,4 @@
-import { interruptAllAndWait } from './remote/interrupt-active';
+import { createDelegationStarter } from './remote/delegation-start';
 import { isToggleInvocation, sendToggle } from './cli';
 import { newSystemMessage } from '@shared/messages';
 
@@ -476,6 +476,11 @@ async function startElectron(): Promise<void> {
 
   // Remote (iPhone) bridge supervisor. Always starts in Task 19; conditional
   // gating on settings lands in Task 22. Stays dormant until Tailscale is up.
+  const delegationStarter = createDelegationStarter({
+    sessions,
+    interruptDelegations: (sid) => delegations.interruptAllFor(sid),
+    publish: (sid, e) => sessionBus.publish(sid, e),
+  });
   const pairingStore = new PairingStore(db);
   const screenshotSecret = randomBytes(32).toString('base64url');
   const remoteModule = new RemoteModule({
@@ -507,20 +512,9 @@ async function startElectron(): Promise<void> {
       imageCache,
       activeSessionId: () => sessions.getActiveSessionId(),
       resolveApproval: (id, choice) => { broker.resolve(id, choice, 'remote'); return true; },
-      isBusy: () => sessions.hasActiveTurn(),
-      startDelegation: async ({ text, sessionId, interruptFirst }) => {
-        if (interruptFirst) await interruptAllAndWait(sessions);
-        const started = await sessions.start(sessionId ? { resume: sessionId } : {});
-        const sid = started.sessionId;
-        // sessions.send resolves only at turn end; report failures via the bus like sendPrompt.
-        void sessions.send({ sessionId: sid, text, origin: 'remote' }).catch((err) => {
-          const msg = err instanceof Error ? err.message : String(err);
-          logger.error(`remote delegation send failed: ${msg}`);
-          sessionBus.publish(sid, { type: 'event', kind: 'done', sessionId: sid } as unknown as import('./remote/session-bus').RemoteOutbound);
-          sessionBus.publish(sid, { type: 'error', code: 'send-failed', message: msg, fatal: false });
-        });
-        return { sessionId: sid };
-      },
+      approvalSessionId: (id) => broker.pendingSessionId(id),
+      isBusy: () => sessions.hasActiveTurn() || delegationStarter.isStarting(),
+      startDelegation: (args) => delegationStarter.start(args),
       resolveSudo: (promptId, password) => { sudoBroker.resolveSudo(promptId, password); return true; },
       configDir: ottoConfigDir,
       sendPrompt: async (text, origin, attachments) => {

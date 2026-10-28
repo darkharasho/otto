@@ -8,6 +8,7 @@ export interface RemoteModuleBridge {
   stop(): Promise<void>;
   mintPairingCode(): string;
   signScreenshotUrl(id: string): string;
+  disconnectDevice?(deviceId: string): void;
   readonly isPlainHttp: boolean;
 }
 
@@ -63,6 +64,12 @@ export class RemoteModule {
   signScreenshotUrl(id: string): string | null {
     if (!this.bridge) return null;
     try { return this.bridge.signScreenshotUrl(id); } catch { return null; }
+  }
+
+  /** Revoke a paired device and cut off any socket it still has open. */
+  revokeDevice(deviceId: string): void {
+    this.opts.pairing.revoke(deviceId);
+    this.bridge?.disconnectDevice?.(deviceId);
   }
 
   mintPairingCode(): { code: string; url: string; expiresAt: number } {

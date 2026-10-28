@@ -517,7 +517,7 @@ export function registerIpcHandlers(deps: {
         }));
     });
     ipcMain.handle('remote:revokeDevice', (_e, args: { deviceId: string }) => {
-      pairing.revoke(args.deviceId);
+      mod.revokeDevice(args.deviceId);
     });
   }
 

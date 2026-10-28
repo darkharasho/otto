@@ -82,6 +82,8 @@ export interface BridgeServerOpts {
   /** Optional image cache for inline-image markdown. When unset, /image returns 404. */
   imageCache?: { get(url: string): Promise<{ path: string; contentType: string }> };
   resolveApproval?: (decisionId: string, choice: 'approve' | 'approve-session' | 'deny') => boolean;
+  /** Session a pending decision belongs to; gates approve-session to sessions the connection delegated. */
+  approvalSessionId?: (decisionId: string) => string | null;
   isBusy?: () => boolean;
   /** Starts (or resumes, when sessionId is given) a session and kicks off the turn without awaiting its completion. */
   startDelegation?: (args: { text: string; sessionId?: string; interruptFirst: boolean }) => Promise<{ sessionId: string }>;
@@ -122,6 +124,8 @@ export class BridgeServer {
   /** Per-session staging map: sessionId -> (refId -> StagedEntry). Cleared as refs are consumed by prompts. */
   private readonly stagedAttachments = new Map<string, Map<string, StagedEntry>>();
   private static readonly STAGED_TTL_MS = 10 * 60 * 1000; // 10 minutes
+  /** Authenticated sockets per paired device, so a revoke can cut them off. */
+  private readonly deviceSockets = new Map<string, Set<WebSocket>>();
 
   private rateLimited(req: http.IncomingMessage): boolean {
     const ip = req.socket.remoteAddress ?? 'unknown';
@@ -210,15 +214,34 @@ export class BridgeServer {
   async stop(): Promise<void> {
     const s = this.server;
     this.server = null;
-    if (this.wss) { this.wss.close(); this.wss = null; }
+    if (this.wss) {
+      // wss.close() leaves established sockets open, and server.close() waits on them.
+      for (const c of this.wss.clients) c.terminate();
+      this.wss.close();
+      this.wss = null;
+    }
+    this.deviceSockets.clear();
     if (!s) return;
+    (s as http.Server).closeAllConnections?.();
     await new Promise<void>((resolve) => s.close(() => resolve()));
+  }
+
+  /** Close every live socket authenticated as this device (after a revoke). */
+  disconnectDevice(deviceId: string): void {
+    const set = this.deviceSockets.get(deviceId);
+    if (!set) return;
+    this.deviceSockets.delete(deviceId);
+    for (const ws of set) {
+      try { ws.close(4001, 'revoked'); } catch { /* already torn down */ }
+    }
   }
 
   private handleWs(ws: WebSocket, _req: http.IncomingMessage): void {
     let authed = false;
     let device: { id: string; label: string } | null = null;
     let unsub: null | (() => void) = null;
+    /** Sessions this connection started via `delegate`; only these may be approved for the session. */
+    const delegated = new Set<string>();
 
     const close = (code: number, reason: string) => { try { ws.close(code, reason); } catch { /* ws may already be torn down */ } };
 
@@ -231,6 +254,9 @@ export class BridgeServer {
         if (!found) return close(4001, 'auth_failed');
         authed = true;
         device = { id: found.id, label: found.label };
+        let sockets = this.deviceSockets.get(found.id);
+        if (!sockets) { sockets = new Set(); this.deviceSockets.set(found.id, sockets); }
+        sockets.add(ws);
         ws.send(JSON.stringify({ v: 1, type: 'auth_ok', deviceLabel: found.label }));
         // Subscribe to events for ALL sessions: the phone may connect before
         // any session exists, and we want to receive whichever sessions are
@@ -301,6 +327,7 @@ export class BridgeServer {
           return;
         }
         this.opts.startDelegation({ text: msg.text, sessionId, interruptFirst }).then((r) => {
+          delegated.add(r.sessionId);
           reply({ type: 'delegate_started', correlationId, sessionId: r.sessionId });
         }).catch((err) => {
           reply({ type: 'delegate_err', correlationId, message: err instanceof Error ? err.message : String(err) });
@@ -314,7 +341,12 @@ export class BridgeServer {
       }
       if (msg.type === 'ping') { ws.send(JSON.stringify({ v: 1, type: 'pong' })); return; }
       if (msg.type === 'approval' && typeof msg.decisionId === 'string' && (msg.decision === 'approve' || msg.decision === 'approve-session' || msg.decision === 'deny')) {
-        this.opts.resolveApproval?.(msg.decisionId, msg.decision);
+        let choice: 'approve' | 'approve-session' | 'deny' = msg.decision;
+        if (choice === 'approve-session') {
+          const sid = this.opts.approvalSessionId?.(msg.decisionId) ?? null;
+          if (sid === null || !delegated.has(sid)) choice = 'approve';
+        }
+        this.opts.resolveApproval?.(msg.decisionId, choice);
         return;
       }
       if (msg.type === 'sudo' && typeof msg.promptId === 'string' && (typeof msg.password === 'string' || msg.password === null)) {
@@ -343,6 +375,12 @@ export class BridgeServer {
     ws.on('close', () => {
       const fn = unsub as (() => void) | null;
       if (fn) fn();
+      const dev = device as { id: string } | null;
+      if (dev) {
+        const sockets = this.deviceSockets.get(dev.id);
+        sockets?.delete(ws);
+        if (sockets && sockets.size === 0) this.deviceSockets.delete(dev.id);
+      }
       // TODO: clear stagedAttachments for this connection's sessionId on disconnect.
       // The connection closure handler doesn't track a per-connection sessionId
       // (prompts can target any session). In-memory staging entries are cleaned

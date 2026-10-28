@@ -26,3 +26,12 @@ describe('interruptAllAndWait', () => {
     await expect(interruptAllAndWait(t, 60, 10)).rejects.toThrow('could not interrupt active turn');
   });
 });
+
+describe('interruptAllAndWait onInterrupt', () => {
+  it('calls onInterrupt for every session it interrupts', async () => {
+    const t = fake({ clears: true });
+    const seen: string[] = [];
+    await interruptAllAndWait(t, 1000, 10, (sid) => seen.push(sid));
+    expect(seen).toEqual(['a', 'b']);
+  });
+});

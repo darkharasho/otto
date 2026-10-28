@@ -120,7 +120,12 @@ export class DecisionBroker {
     });
   }
 
-  resolve(decisionId: string, choice: UserChoice, source: 'desktop' | 'remote' = 'desktop'): void {
+  /** Session a still-pending decision belongs to. */
+  pendingSessionId(decisionId: string): string | null {
+    return this.pending.get(decisionId)?.sessionId ?? null;
+  }
+
+    resolve(decisionId: string, choice: UserChoice, source: 'desktop' | 'remote' = 'desktop'): void {
     const entry = this.pending.get(decisionId);
     if (!entry) return;
     // Approving a catastrophic command requires being at the machine; a remote

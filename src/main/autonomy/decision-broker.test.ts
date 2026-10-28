@@ -323,3 +323,16 @@ describe('DecisionBroker session approvals vs policy', () => {
     expect(events).toEqual([]);
   });
 });
+
+describe('DecisionBroker.pendingSessionId', () => {
+  it('returns the session of a pending decision and null once resolved', async () => {
+    const { broker, events } = makeBroker('balanced');
+    const p = broker.decide(args({ sessionId: 'sX', actionClass: 'destructive' }));
+    const pending = events.find((e) => e.type === 'tool-call-pending');
+    if (!pending || pending.type !== 'tool-call-pending') throw new Error('expected pending');
+    expect(broker.pendingSessionId(pending.decisionId)).toBe('sX');
+    broker.resolve(pending.decisionId, 'deny');
+    await p;
+    expect(broker.pendingSessionId(pending.decisionId)).toBeNull();
+  });
+});

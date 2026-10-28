@@ -103,4 +103,22 @@ describe('RemoteModule', () => {
     expect(mod.status().running).toBe(true);
     await mod.stop();
   });
+
+  it('revokeDevice revokes the pairing and disconnects the device on the live bridge', async () => {
+    const bridge = { ...makeFakeBridge(), disconnected: [] as string[], disconnectDevice(id: string) { this.disconnected.push(id); } };
+    const pairing = makePairing();
+    const { deviceId } = await pairing.issue('peer');
+    const mod = new RemoteModule({
+      pairing,
+      bus: new SessionBus(),
+      resolveTailnetEndpoint: async () => ({ ip: '100.64.1.2', host: null }),
+      makeBridge: () => bridge as never,
+      pollMs: 0,
+    });
+    await mod.start();
+    mod.revokeDevice(deviceId);
+    expect(bridge.disconnected).toEqual([deviceId]);
+    expect(pairing.list().find((d) => d.id === deviceId)?.revokedAt).not.toBeNull();
+    await mod.stop();
+  });
 });
