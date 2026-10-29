@@ -218,36 +218,37 @@ export function ToolCallCard({ name, input, result, isError, callId, turnActive,
             <span className="w-6 h-6 rounded-md bg-gradient-to-br from-accent/30 to-accent2/20 text-[#b9b9ff] flex items-center justify-center flex-shrink-0">
               <ToolIcon name={desc.icon} className="w-3.5 h-3.5" />
             </span>
-            <span className="flex flex-col min-w-0 text-left">
-              <span className="flex items-baseline gap-1.5">
+            <span className="flex items-baseline gap-2 min-w-0 text-left">
+              <span className="flex items-baseline gap-1.5 flex-shrink-0">
                 {desc.group && (
                   <span className="text-[12.5px] font-medium text-muted">{desc.group} ·</span>
                 )}
-                <span className="text-[12.5px] font-semibold truncate">{desc.label}</span>
+                <span className={`text-[12.5px] ${summary ? 'font-medium text-muted' : 'font-semibold'}`}>{desc.label}</span>
               </span>
               {summary && (
-                <span className="font-mono text-[11px] text-muted truncate">{summary}</span>
+                <span className="font-mono text-[12px] text-text/90 truncate">{summary}</span>
               )}
             </span>
           </span>
           <span className="flex items-center gap-2 flex-shrink-0">
-            {status === 'running' ? (
-              <span className="font-mono text-[10px] text-[#5f6167]" data-testid="toolcall-elapsed">
-                {formatElapsed(now - startRef.current)}
-              </span>
-            ) : doneAt !== null ? (
+            {status !== 'running' && doneAt !== null && (
               <span className="font-mono text-[10px] text-[#5f6167]">{formatClock(doneAt)}</span>
-            ) : null}
+            )}
             <span className={[
-              'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[9.5px] font-semibold uppercase tracking-wide',
-              status === 'error'
-                ? 'bg-danger/15 text-danger border border-danger/30'
-                : status === 'running'
-                  ? 'bg-white/[0.04] text-muted border border-border'
-                  : 'otto-accent-pill',
+              'inline-flex items-center gap-1.5 text-[11px] font-medium',
+              status === 'error' ? 'text-danger' : status === 'running' ? 'text-accent' : 'text-good',
             ].join(' ')}>
               <StatusGlyph status={status} justFinished={justFinished} />
-              {status}
+              {status === 'running' ? (
+                <>
+                  running ·{' '}
+                  <span className="font-mono text-[10.5px]" data-testid="toolcall-elapsed">
+                    {formatElapsed(now - startRef.current)}
+                  </span>
+                </>
+              ) : (
+                status
+              )}
             </span>
             <svg
               viewBox="0 0 24 24"
@@ -351,7 +352,7 @@ function StatusGlyph({ status, justFinished, small }: { status: 'running' | 'don
   const cls = small ? 'w-3 h-3' : 'w-3.5 h-3.5';
   if (status === 'running') {
     return (
-      <svg viewBox="0 0 24 24" className={`${cls} text-muted otto-spin`}
+      <svg viewBox="0 0 24 24" className={`${cls} text-accent otto-spin`}
            fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
         <path d="M21 12a9 9 0 1 1-6.219-8.56" />
       </svg>
@@ -366,7 +367,7 @@ function StatusGlyph({ status, justFinished, small }: { status: 'running' | 'don
     );
   }
   return (
-    <svg viewBox="0 0 24 24" className={`${cls} text-accent ${justFinished ? 'otto-pop' : ''}`}
+    <svg viewBox="0 0 24 24" className={`${cls} text-good ${justFinished ? 'otto-pop' : ''}`}
          fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M5 12l5 5L20 7" />
     </svg>

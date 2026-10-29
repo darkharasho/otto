@@ -142,14 +142,12 @@ export function ChatWindow({
             </div>
           ) : (
             <>
+              <NowStrip onStop={onStop} />
               <MessageList
                 sessionId={activeSession?.id ?? null}
                 messages={activeSession?.messages ?? []}
                 streaming={activeSession?.currentTurnActive ?? false}
               />
-              <div className="px-4 pb-2">
-                <NowStrip onStop={onStop} />
-              </div>
             </>
           )}
           <div className="px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>

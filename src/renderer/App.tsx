@@ -6,6 +6,7 @@ import type { ContentBlock } from '@shared/messages';
 import { CommandBar } from './components/CommandBar';
 import { Panel } from './components/Panel';
 import { MessageList } from './components/MessageList';
+import { NowStrip } from './components/NowStrip';
 import { SessionSwitcher } from './components/SessionSwitcher';
 import { StatusFooter } from './components/StatusFooter';
 import { ErrorCard } from './components/ErrorCard';
@@ -455,6 +456,7 @@ export function App() {
           </div>
         }
       >
+        <NowStrip onStop={handleStop} />
         <MessageList
           sessionId={activeSession?.id ?? null}
           messages={activeSession?.messages ?? []}

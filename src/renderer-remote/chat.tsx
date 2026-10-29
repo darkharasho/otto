@@ -88,18 +88,18 @@ function ToolCard({ item }: { item: ToolItem }): JSX.Element {
     : item.status === 'denied' ? 'denied'
     : item.isError ? 'error'
     : 'done';
-  const statusLabel = status === 'running' ? '…' : status;
+  const statusLabel = status === 'running' ? 'running…' : status;
 
   const desc = describeTool(item.name);
   const summary = summarizeInput(item.name, item.input);
   const view = item.result === undefined ? null : classifyResult(item.name, item.result, Boolean(item.isError), item.input);
 
-  const pillClass =
+  const statusClass =
     status === 'running'
-      ? 'bg-white/[0.04] border border-border text-muted'
+      ? 'text-accent'
       : status === 'done'
-        ? 'otto-accent-pill'
-        : 'bg-danger/15 text-danger border border-danger/30';
+        ? 'text-good'
+        : 'text-danger';
 
   return (
     <div className="otto-elevated rounded-[10px] overflow-hidden">
@@ -113,20 +113,18 @@ function ToolCard({ item }: { item: ToolItem }): JSX.Element {
           <span className="w-5 h-5 rounded bg-gradient-to-br from-accent/30 to-accent2/20 text-[#b9b9ff] flex items-center justify-center flex-shrink-0">
             <ToolIcon name={desc.icon} className="w-3 h-3" />
           </span>
-          <span className="flex flex-col min-w-0 text-left">
-            <span className="flex items-baseline gap-1.5">
-              {desc.group && (
-                <span className="text-[9px] uppercase tracking-wide text-muted font-semibold">{desc.group}</span>
-              )}
-              <span className="font-semibold truncate">{desc.label}</span>
-            </span>
+          <span className="flex items-baseline gap-1.5 min-w-0 text-left">
+            {desc.group && (
+              <span className="text-[9px] uppercase tracking-wide text-muted font-semibold flex-shrink-0">{desc.group}</span>
+            )}
+            <span className={`flex-shrink-0 ${summary ? 'font-medium text-muted' : 'font-semibold'}`}>{desc.label}</span>
             {summary && (
-              <span className="font-mono text-[10px] text-muted truncate">{summary}</span>
+              <span className="font-mono text-[11px] text-text/90 truncate">{summary}</span>
             )}
           </span>
         </span>
         <span className="flex items-center gap-1.5 flex-shrink-0">
-          <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wide ${pillClass}`}>{statusLabel}</span>
+          <span className={`inline-flex items-center gap-1 text-[10.5px] font-medium ${statusClass}`}>{statusLabel}</span>
           <svg
             viewBox="0 0 24 24"
             className={`w-3 h-3 text-muted transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
@@ -822,6 +820,22 @@ export function Chat(): JSX.Element {
           ))}
         </div>
       )}
+
+      {(() => {
+        // Timeline header (matches the desktop NowStrip): what is Otto doing right now.
+        const runningTools = items.filter((it): it is ToolItem => it.kind === 'tool' && it.status === 'pending');
+        if (runningTools.length === 0) return null;
+        return (
+          <div className="flex items-center gap-2 px-4 py-1.5 border-b border-accent/25 bg-surface text-[11px]" data-testid="now-strip">
+            <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse flex-shrink-0" />
+            <span className="font-medium text-text/90 flex-shrink-0">{runningTools.length} running</span>
+            <span className="text-muted truncate">
+              — {runningTools.slice(0, 3).map((t) => describeTool(t.name).label.toLowerCase()).join(' · ')}
+              {runningTools.length > 3 ? ` +${runningTools.length - 3} more` : ''}
+            </span>
+          </div>
+        );
+      })()}
 
       <main className="flex-1 overflow-y-auto px-3 py-4 space-y-3">
         {items.length === 0 && (

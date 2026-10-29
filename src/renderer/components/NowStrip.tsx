@@ -3,9 +3,11 @@ import { describeTool } from '@shared/tool-presenters';
 import { useOttoStore } from '../state/store';
 import type { ActiveSessionState } from '../state/store';
 
-// One-line answer to "what is Otto doing right now?" — sits between the
-// message list and the composer. Active: running tool calls + processes with
-// ticking elapsed. Idle: quiet state with the session's time range.
+// Timeline header — one-line answer to "what is Otto doing right now?",
+// pinned above the message list as the head of the activity timeline.
+// Active: current task title (from the in-progress plan step), running tool
+// calls + processes with ticking elapsed. Idle: quiet state with the
+// session's time range.
 
 interface RunningItem {
   id: string; // matches the activity-<id> DOM anchor from Message.tsx
@@ -44,7 +46,7 @@ function collectRunning(session: ActiveSessionState): RunningItem[] {
   return items;
 }
 
-function stepInfo(session: ActiveSessionState): { current: number; total: number } | null {
+function stepInfo(session: ActiveSessionState): { current: number; total: number; title: string | null } | null {
   for (let i = session.messages.length - 1; i >= 0; i -= 1) {
     const m = session.messages[i]!;
     for (let j = m.content.length - 1; j >= 0; j -= 1) {
@@ -54,12 +56,21 @@ function stepInfo(session: ActiveSessionState): { current: number; total: number
         ? (b.input as Record<string, unknown>)['todos']
         : undefined;
       if (!Array.isArray(todos) || todos.length === 0) continue;
-      const statuses = todos.map((t) =>
-        t && typeof t === 'object' ? String((t as Record<string, unknown>)['status'] ?? 'pending') : 'pending'
-      );
-      const active = statuses.indexOf('in_progress');
-      const done = statuses.filter((s) => s === 'completed').length;
-      return { current: Math.min(active >= 0 ? active + 1 : done + 1, statuses.length), total: statuses.length };
+      const items = todos.map((t) => {
+        const o = t && typeof t === 'object' ? (t as Record<string, unknown>) : {};
+        return {
+          status: String(o['status'] ?? 'pending'),
+          // Same field precedence as the tasks presenter.
+          title: String(o['content'] ?? o['subject'] ?? o['title'] ?? ''),
+        };
+      });
+      const active = items.findIndex((t) => t.status === 'in_progress');
+      const done = items.filter((t) => t.status === 'completed').length;
+      return {
+        current: Math.min(active >= 0 ? active + 1 : done + 1, items.length),
+        total: items.length,
+        title: active >= 0 && items[active]!.title ? items[active]!.title : null,
+      };
     }
   }
   return null;
@@ -90,19 +101,19 @@ export function NowStrip({ onStop }: { onStop: () => void }) {
     return () => clearInterval(t);
   }, [running.length]);
 
-  if (!session || session.messages.length === 0) return null;
+  if (!session) return null;
 
   if (running.length === 0) {
-    const first = session.messages[0]!.createdAt;
-    const last = session.messages[session.messages.length - 1]!.createdAt;
+    const first = session.messages[0]?.createdAt;
+    const last = session.messages[session.messages.length - 1]?.createdAt;
     return (
       <div
         data-testid="now-strip"
-        className="flex items-center gap-2 px-3 py-1.5 rounded-[9px] border border-border/70 bg-white/[0.02] text-[11px] text-muted"
+        className="flex items-center gap-2 px-4 py-2 border-b border-border/60 bg-white/[0.015] text-[11px] text-muted"
       >
         <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-[#3f4046] flex-shrink-0" />
         <span>All quiet — nothing running</span>
-        {last > first && (
+        {first !== undefined && last !== undefined && last > first && (
           <span className="ml-auto font-mono text-[10px] text-[#5f6167]">
             session {clockHM(first)} – {clockHM(last)}
           </span>
@@ -115,10 +126,20 @@ export function NowStrip({ onStop }: { onStop: () => void }) {
   return (
     <div
       data-testid="now-strip"
-      className="flex items-center gap-2 px-3 py-1.5 rounded-[9px] border border-accent/30 bg-accent/[0.06] text-[11px] min-w-0"
+      className="flex items-center gap-2.5 px-4 py-2 border-b border-accent/25 text-[11px] min-w-0"
+      style={{ background: '#121318' }}
     >
-      <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-accent otto-pulse-dot flex-shrink-0" />
-      <span className="font-medium text-text/90 flex-shrink-0">
+      <span
+        aria-hidden
+        className="w-2 h-2 rounded-full bg-accent otto-pulse-dot flex-shrink-0"
+        style={{ boxShadow: '0 0 8px rgba(124,125,255,0.8)' }}
+      />
+      {step?.title && (
+        <span className="text-[12.5px] font-semibold text-[#e9e6ff] truncate flex-shrink-0 max-w-[40%]">
+          {step.title}
+        </span>
+      )}
+      <span className={`flex-shrink-0 ${step?.title ? 'text-muted' : 'font-medium text-text/90'}`}>
         {running.length} running
       </span>
       <span className="text-muted flex-shrink-0">—</span>

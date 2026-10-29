@@ -28,6 +28,20 @@ describe('NowStrip', () => {
     expect(container.firstChild).toBeNull();
   });
 
+  it('shows the quiet state for a fresh session with no messages yet', () => {
+    useOttoStore.setState({
+      activeSession: {
+        id: 's1',
+        messages: [],
+        currentTurnActive: false,
+        queueDepth: 0,
+        error: null,
+      },
+    });
+    render(<NowStrip onStop={() => {}} />);
+    expect(screen.getByText(/all quiet — nothing running/i)).toBeInTheDocument();
+  });
+
   it('shows the quiet state when nothing is running', () => {
     useOttoStore.setState({
       activeSession: {
@@ -62,6 +76,37 @@ describe('NowStrip', () => {
     expect(screen.getByText(/run command/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /pause all/i }));
     expect(onStop).toHaveBeenCalled();
+  });
+
+  it('leads with the in-progress plan step as the task title', () => {
+    useOttoStore.setState({
+      activeSession: {
+        id: 's1',
+        messages: [
+          assistantMessage([
+            {
+              type: 'tool_use', callId: 't1', name: 'TodoWrite',
+              input: {
+                todos: [
+                  { content: 'Find the culprit', status: 'completed' },
+                  { content: 'Restart the file indexer', status: 'in_progress' },
+                  { content: 'Verify disk is quiet', status: 'pending' },
+                ],
+              },
+            },
+            { type: 'tool_result', callId: 't1', result: 'ok' },
+            { type: 'tool_use', callId: 'c1', name: 'shell_exec', input: { command: 'balooctl6 start' } },
+          ]),
+        ],
+        currentTurnActive: true,
+        queueDepth: 0,
+        error: null,
+      },
+    });
+    render(<NowStrip onStop={() => {}} />);
+    expect(screen.getByText('Restart the file indexer')).toBeInTheDocument();
+    expect(screen.getByText(/step 2 of 3/)).toBeInTheDocument();
+    expect(screen.getByText(/1 running/)).toBeInTheDocument();
   });
 
   it('counts a running spawned process even after the turn ended', () => {
