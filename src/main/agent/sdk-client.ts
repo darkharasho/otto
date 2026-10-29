@@ -13,6 +13,7 @@ import {
 } from './gui-tools';
 import { uiTree } from '../a11y';
 import type { SessionEvent } from '@shared/ipc-contract';
+import { BACKGROUND_MODEL } from '@shared/models';
 import { exec as execInput, type InputAction } from '../input/executor';
 import type { DecisionBroker } from '../autonomy/decision-broker';
 import type { SudoBroker } from '../autonomy/sudo-broker';
@@ -271,7 +272,7 @@ function guiAgentDefinition(): NonNullable<Options['agents']>[string] {
       'Fast GUI operator on a quicker model. Give it a concrete, self-contained on-screen task — which window, exactly what to click/type/select, and what "done" looks like — and it drives the UI (accessibility tree, batched input, screenshots) and reports the final state. Use for long mechanical GUI sequences; keep diagnosis and decisions yourself.',
     prompt: guiAgentPrompt(),
     tools: GUI_AGENT_TOOLS,
-    model: process.env.OTTO_GUI_AGENT_MODEL || 'haiku',
+    model: process.env.OTTO_GUI_AGENT_MODEL || BACKGROUND_MODEL,
     maxTurns: 40,
   };
 }

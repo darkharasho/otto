@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { SessionEvent, StructuredError, WindowMode } from '@shared/ipc-contract';
 import type { AssistantMessage, AutonomyMode, ContentBlock, Message, SessionMeta, UserMessage } from '@shared/messages';
 import type { VoiceState } from '@shared/voice';
+import { DEFAULT_MODEL, currentModelId } from '@shared/models';
 
 export type { WindowMode } from '@shared/ipc-contract';
 
@@ -105,12 +106,17 @@ const attachInFlight = new Map<string, SessionEvent[]>();
 const abandonedSessions = new Set<string>();
 
 const MODEL_STORAGE_KEY = 'otto.model';
-const DEFAULT_MODEL = 'claude-sonnet-4-6';
 
 function loadStoredModel(): string {
   if (typeof window === 'undefined') return DEFAULT_MODEL;
   try {
-    return window.localStorage.getItem(MODEL_STORAGE_KEY) ?? DEFAULT_MODEL;
+    const stored = window.localStorage.getItem(MODEL_STORAGE_KEY);
+    if (stored === null) return DEFAULT_MODEL;
+    // A pick saved by an older Otto (e.g. claude-opus-4-8) moves to the
+    // newest model of the same family.
+    const current = currentModelId(stored);
+    if (current !== stored) window.localStorage.setItem(MODEL_STORAGE_KEY, current);
+    return current;
   } catch {
     return DEFAULT_MODEL;
   }

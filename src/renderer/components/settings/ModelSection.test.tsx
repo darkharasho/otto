@@ -5,7 +5,7 @@ import { ModelSection } from './ModelSection';
 describe('ModelSection', () => {
   it('renders without crashing and forwards value + onChange to the switcher', () => {
     const onChange = vi.fn();
-    const { container } = render(<ModelSection value="claude-sonnet-4-6" onChange={onChange} />);
+    const { container } = render(<ModelSection value="claude-sonnet-5-5" onChange={onChange} />);
     expect(container.querySelector('section')).toBeTruthy();
   });
 });

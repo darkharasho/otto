@@ -151,7 +151,7 @@ beforeEach(() => {
     startSession: vi.fn(async () => ({ id: 'sdk-1' })),
     openStream,
   };
-  manager = new SessionManager(repo, fakeSdk, 'claude-sonnet-4-6', (e) => events.push(e));
+  manager = new SessionManager(repo, fakeSdk, 'claude-sonnet-5-5', (e) => events.push(e));
 });
 
 afterEach(() => {
@@ -162,7 +162,7 @@ describe('SessionManager', () => {
   it('starts a session and persists it', async () => {
     const { sessionId } = await manager.start({});
     expect(sessionId).toBe('sdk-1');
-    expect(repo.getSession(sessionId)?.model).toBe('claude-sonnet-4-6');
+    expect(repo.getSession(sessionId)?.model).toBe('claude-sonnet-5-5');
   });
 
   it('streams text deltas through and persists the assembled assistant message', async () => {
@@ -480,11 +480,11 @@ describe('SessionManager', () => {
       yield { type: 'done' };
     });
     const privSdk: SdkClient = { startSession: vi.fn(async () => ({ id: 'sdk-priv' })), openStream };
-    const mgr = new SessionManager(privRepo, privSdk, 'claude-sonnet-4-6', () => {});
+    const mgr = new SessionManager(privRepo, privSdk, 'claude-sonnet-5-5', () => {});
     const { sessionId } = await mgr.start({ private: true });
     expect(privRepo.isPrivate(sessionId)).toBe(true);
     expect(privRepo.listSessions().find((s) => s.id === sessionId)).toBeUndefined();
-    expect(privRepo.getSession(sessionId)?.model).toBe('claude-sonnet-4-6');
+    expect(privRepo.getSession(sessionId)?.model).toBe('claude-sonnet-5-5');
   });
 
   it('rewrites image blocks in tool_result.result.content to image-ref blocks', async () => {
@@ -596,7 +596,7 @@ describe('SessionManager + SessionBus fan-out', () => {
         bus.publish(e.sessionId, { ...e, type: 'event', kind: e.type } as unknown as RemoteOutbound);
       }
     };
-    const mgr = new SessionManager(repo, fakeSdk, 'claude-sonnet-4-6', fanout);
+    const mgr = new SessionManager(repo, fakeSdk, 'claude-sonnet-5-5', fanout);
     const { sessionId } = await mgr.start({});
     bus.subscribe(sessionId, (e) => busCalls.push(e));
     await mgr.send({ sessionId, text: 'go' });
@@ -722,7 +722,7 @@ describe('SessionManager origin tracking', () => {
   it('a tool call in a session with a pending remote turn decides as remote even after other sends move the current message id', async () => {
     gatedManager();
     let currentMessageId = '';
-    const m = new SessionManager(repo, fakeSdk, 'claude-sonnet-4-6', (e) => events.push(e), (id) => { currentMessageId = id; });
+    const m = new SessionManager(repo, fakeSdk, 'claude-sonnet-5-5', (e) => events.push(e), (id) => { currentMessageId = id; });
     (fakeSdk.startSession as ReturnType<typeof vi.fn>)
       .mockResolvedValueOnce({ id: 'sess-B' })
       .mockResolvedValueOnce({ id: 'sess-A' });

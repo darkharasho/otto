@@ -1,6 +1,7 @@
 import { createDelegationStarter } from './remote/delegation-start';
 import { isToggleInvocation, sendToggle } from './cli';
 import { newSystemMessage } from '@shared/messages';
+import { BACKGROUND_MODEL, DEFAULT_MODEL } from '@shared/models';
 
 // Handle `otto toggle` BEFORE any Electron initialization. The CLI path
 // connects to the running instance's Unix socket, prints the response, and
@@ -318,7 +319,7 @@ async function startElectron(): Promise<void> {
     const iter = sdkMod.query({
       prompt,
       options: {
-        model: opts.model ?? 'claude-haiku-4-5-20251001',
+        model: opts.model ?? BACKGROUND_MODEL,
         systemPrompt:
           opts.systemPrompt ??
           'You are Otto\'s reflection step. Output ONLY the JSON object requested by the user prompt — no prose, no markdown fences, no commentary.',
@@ -459,7 +460,7 @@ async function startElectron(): Promise<void> {
   const sessions = new SessionManager(
     repo,
     sdk,
-    'claude-sonnet-4-6',
+    DEFAULT_MODEL,
     emitWithNotify,
     (id) => {
       currentMessageId = id;

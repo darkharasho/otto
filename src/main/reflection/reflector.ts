@@ -1,5 +1,6 @@
 import { ReflectionResultSchema, type ReflectionResult } from './schema';
 import { ZodError } from 'zod';
+import { BACKGROUND_MODEL } from '@shared/models';
 
 export interface ReflectorSdk {
   run(prompt: string, opts: { model: string; signal: AbortSignal }): Promise<string>;
@@ -29,7 +30,7 @@ export async function reflect(args: ReflectArgs): Promise<ReflectOutcome> {
   try {
     const result = await Promise.race([
       args.sdk.run(args.prompt, {
-        model: args.model ?? 'claude-haiku-4-5-20251001',
+        model: args.model ?? BACKGROUND_MODEL,
         signal: controller.signal,
       }),
       timeoutPromise,

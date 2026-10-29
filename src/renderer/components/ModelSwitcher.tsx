@@ -1,38 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-
-export interface ModelOption {
-  id: string;
-  label: string;
-  family: 'fable' | 'opus' | 'sonnet' | 'haiku';
-  tagline: string;
-}
-
-const MODELS: ModelOption[] = [
-  {
-    id: 'claude-fable-5',
-    label: 'Fable 5',
-    family: 'fable',
-    tagline: 'Most capable, slowest',
-  },
-  {
-    id: 'claude-opus-4-8',
-    label: 'Opus 4.8',
-    family: 'opus',
-    tagline: 'Highest reasoning',
-  },
-  {
-    id: 'claude-sonnet-4-6',
-    label: 'Sonnet 4.6',
-    family: 'sonnet',
-    tagline: 'Balanced — good default',
-  },
-  {
-    id: 'claude-haiku-4-5',
-    label: 'Haiku 4.5',
-    family: 'haiku',
-    tagline: 'Fastest, smallest',
-  },
-];
+import { MODELS, type ModelOption } from '@shared/models';
 
 interface Props {
   value: string;

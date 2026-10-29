@@ -1,5 +1,6 @@
 import { Lock } from 'lucide-react';
 import type { AutonomyMode } from '@shared/messages';
+import { modelLabel } from '@shared/models';
 import { ModeBadge } from './ModeBadge';
 
 interface Props {
@@ -7,14 +8,6 @@ interface Props {
   sessionId: string | null;
   mode: AutonomyMode;
   isPrivate?: boolean;
-}
-
-// Short label for the active model id. Falls back to the raw id.
-function modelLabel(id: string): string {
-  if (id.includes('opus')) return 'Opus 4.7';
-  if (id.includes('sonnet')) return 'Sonnet 4.6';
-  if (id.includes('haiku')) return 'Haiku 4.5';
-  return id;
 }
 
 export function StatusFooter({ model, sessionId, mode, isPrivate = false }: Props) {
