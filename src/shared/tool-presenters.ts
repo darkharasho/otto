@@ -22,6 +22,10 @@ const BUILTIN: Record<string, ToolDescriptor> = {
   move:              { label: 'Move cursor', group: 'Input', icon: 'mouse' },
   type:              { label: 'Type text', group: 'Input', icon: 'keyboard' },
   key:               { label: 'Press key', group: 'Input', icon: 'keyboard' },
+  act:               { label: 'Run steps', group: 'Input', icon: 'mouse' },
+  ui_tree:           { label: 'Read UI', group: 'Input', icon: 'search' },
+  ui_act:            { label: 'Operate control', group: 'Input', icon: 'mouse' },
+  Agent:             { label: 'Delegate', icon: 'tool' },
   knowledge_append:  { label: 'Append knowledge', group: 'Memory', icon: 'brain' },
   knowledge_search:  { label: 'Search knowledge', group: 'Memory', icon: 'brain', quiet: true },
   memory_save:       { label: 'Memory updated', group: 'Memory', icon: 'brain', quiet: true },
@@ -144,6 +148,20 @@ const SUMMARIZERS: Record<string, Summarizer> = {
   type:         (o, m) => o['text'] != null ? `"${truncate(String(o['text']), Math.max(8, m - 2))}"` : null,
   key:          (o)    => asString(o['combo']),
   screenshot:   (o)    => o['window'] ? String(o['window']) : o['region'] ? 'region' : 'full',
+  act:          (o, m) => {
+    const steps = Array.isArray(o['steps']) ? (o['steps'] as Array<Record<string, unknown>>) : [];
+    if (steps.length === 0) return null;
+    const kinds = steps.map((st) => String(st['action'] ?? '?'));
+    const head = `${steps.length} step${steps.length === 1 ? '' : 's'}: ${kinds.join(', ')}`;
+    const focus = asString(o['focus']);
+    return truncate(focus ? `${focus} · ${head}` : head, m);
+  },
+  ui_tree:      (o, m) => {
+    const parts = [asString(o['window']) ?? 'active window', asString(o['query'])].filter((s): s is string => s !== null);
+    return truncate(parts.join(' · '), m);
+  },
+  ui_act:       (o)    => asString(o['id']) ? `${String(o['op'] ?? 'press')} ${String(o['id'])}` : null,
+  Agent:        (o, m) => { const d = asString(o['description']); return d ? truncate(d, m) : null; },
   knowledge_append: (o, m) => truncate(String(o['note'] ?? ''), m) || null,
   web_search:   (o, m) => o['query'] != null ? `"${truncate(String(o['query']), Math.max(8, m - 2))}"` : null,
   memory_save:  (o) => {

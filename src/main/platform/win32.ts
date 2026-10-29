@@ -364,6 +364,35 @@ $r = New-Object Otto.RECT
 `;
 }
 
+function activateWindowScript(name: string): string {
+  const needle = pshSingleQuote(name.toLowerCase());
+  return `
+$needle = ${needle}
+$hit = [System.IntPtr]::Zero
+$cb = [Otto.EnumWindowsProc] {
+  param($h, $l)
+  if (-not [Otto.Native]::IsWindowVisible($h)) { return $true }
+  $len = [Otto.Native]::GetWindowTextLength($h)
+  if ($len -le 0) { return $true }
+  $sb = New-Object System.Text.StringBuilder ($len + 1)
+  [Otto.Native]::GetWindowText($h, $sb, $sb.Capacity) | Out-Null
+  if ($sb.ToString().ToLower().Contains($needle)) {
+    $script:hit = $h
+    return $false
+  }
+  return $true
+}
+[Otto.Native]::EnumWindows($cb, [System.IntPtr]::Zero) | Out-Null
+if ($hit -eq [System.IntPtr]::Zero) { throw 'no window matches' }
+if ([Otto.Native]::IsIconic($hit)) { [Otto.Native]::ShowWindow($hit, 9) | Out-Null }
+# A background process may not take the foreground; a synthetic Alt tap
+# satisfies the foreground-lock rule.
+[Otto.Native]::keybd_event(0x12, 0, 0, [System.IntPtr]::Zero)
+[Otto.Native]::keybd_event(0x12, 0, 2, [System.IntPtr]::Zero)
+[Otto.Native]::SetForegroundWindow($hit) | Out-Null
+`;
+}
+
 // ---------------------------------------------------------------------------
 // Win32Adapter
 // ---------------------------------------------------------------------------
@@ -471,6 +500,14 @@ export class Win32Adapter implements PlatformAdapter {
     type: async (text: string) => { await this.psHost.run(typeScript(text)); },
     key: async (combo: string) => { await this.psHost.run(keyScript(combo)); },
   };
+
+  async activateWindow(name: string): Promise<void> {
+    try {
+      await this.psHost.run(activateWindowScript(name));
+    } catch {
+      throw new Error(`no window matches name "${name}"`);
+    }
+  }
 
   private async resolveWindowGeometry(name: string): Promise<{ x: number; y: number; w: number; h: number }> {
     const out = (await this.psHost.run(resolveWindowGeometryScript(name))).trim();

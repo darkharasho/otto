@@ -13,9 +13,22 @@ type Masked = {
   prevOpacity: number;
 };
 
-export async function withSelfHidden<T>(fn: () => Promise<T>): Promise<T> {
+export interface MaskRect { x: number; y: number; w: number; h: number; }
+
+function intersects(win: BrowserWindow, r: MaskRect): boolean {
+  const b = win.getBounds();
+  return b.x < r.x + r.w && r.x < b.x + b.width && b.y < r.y + r.h && r.y < b.y + b.height;
+}
+
+/**
+ * Run `fn` (a capture) with Otto's own windows out of the picture. When the
+ * capture is limited to `region`, only windows overlapping it are masked —
+ * a small verify crop next to the panel then costs no hide/settle/show.
+ */
+export async function withSelfHidden<T>(fn: () => Promise<T>, region?: MaskRect): Promise<T> {
   const masked: Masked[] = BrowserWindow.getAllWindows()
     .filter((w) => !w.isDestroyed() && w.isVisible())
+    .filter((w) => !region || intersects(w, region))
     .map((w) => ({
       win: w,
       method: process.platform === 'linux' ? 'hide' : 'opacity',

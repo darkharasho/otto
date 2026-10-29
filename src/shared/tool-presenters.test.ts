@@ -391,3 +391,18 @@ describe('delegation tools', () => {
     expect(describeTool('delegate_to_machine', { machine: 'desk' }).label).toBe('Working on desk');
   });
 });
+
+describe('GUI batch and accessibility presenters', () => {
+  it('summarizes act steps with the focus window', () => {
+    expect(summarizeInput('mcp__otto-tools__act', {
+      focus: 'Firefox',
+      steps: [{ action: 'click' }, { action: 'type' }, { action: 'key' }],
+    })).toBe('Firefox · 3 steps: click, type, key');
+  });
+
+  it('summarizes ui_tree and ui_act', () => {
+    expect(summarizeInput('mcp__otto-tools__ui_tree', { window: 'KCalc', query: 'button' })).toBe('KCalc · button');
+    expect(summarizeInput('mcp__otto-tools__ui_tree', {})).toBe('active window');
+    expect(summarizeInput('mcp__otto-tools__ui_act', { id: 'e4' })).toBe('press e4');
+  });
+});

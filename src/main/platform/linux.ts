@@ -18,6 +18,8 @@ import type {
 import { isDevInstance } from '../instance';
 import { createPortalInput, type InputHandle } from '../input/portal';
 import { ottoConfigDir } from '../logger';
+import { kwinCapture } from '../screenshot/kwin-capture';
+import { encodePngFromBgra } from '../screenshot/png-fast';
 
 function virtualDesktopBounds(monitors: MonitorInfo[]): { x: number; y: number; w: number; h: number } {
   if (monitors.length === 0) return { x: 0, y: 0, w: 0, h: 0 };
@@ -121,6 +123,20 @@ export class LinuxAdapter implements PlatformAdapter {
         }
       }
 
+      // Fast path: ask KWin directly (~0.1s) instead of booting Spectacle
+      // (~1s+). Region/window captures become a CaptureArea of just that rect.
+      const fast = await kwinCapture(region ?? null, true);
+      if (fast) {
+        return {
+          bytes: await encodePngFromBgra(fast.bgra, fast.width, fast.height),
+          image: nativeImage.createFromBitmap(fast.bgra, { width: fast.width, height: fast.height }),
+          width: fast.width,
+          height: fast.height,
+          monitors,
+          origin: region ? { x: region.x, y: region.y } : { x: bounds.x, y: bounds.y },
+        };
+      }
+
       // Capture the full virtual desktop (all monitors). Coordinates everywhere
       // (region, click, move) are virtual-desktop absolute. Crop in-process
       // via nativeImage when the caller requested a region.
@@ -213,6 +229,14 @@ export class LinuxAdapter implements PlatformAdapter {
       h: d.bounds.height,
       scale: d.scaleFactor,
     }));
+  }
+
+  async activateWindow(name: string): Promise<void> {
+    await this.ensureKdotool();
+    const ids = (await this.runKdotool(['search', '--name', name])).split('\n').map((s) => s.trim()).filter(Boolean);
+    const firstId = ids[0];
+    if (!firstId) throw new Error(`no window matches name "${name}"`);
+    await this.runKdotool(['windowactivate', firstId]);
   }
 
   private async resolveWindowGeometry(name: string): Promise<{ x: number; y: number; w: number; h: number }> {

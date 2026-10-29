@@ -4,8 +4,14 @@ import type { SDKMessage, SDKUserMessage, Options, Query } from '@anthropic-ai/c
 import {
   buildInputTools, buildKnowledgeTool, buildScreenshotTool, buildShellTools, stubTools,
   buildRecallTool, buildMarkTaskCompleteTool, buildAnnotateTool, buildObserveTool,
+  buildActTool, buildUiTreeTool, buildUiActTool,
   type OttoTool,
 } from './tools';
+import {
+  performUiOp, runAct, screenshotContent, verifyCropContent, verifyTargetFor,
+  type ActArgs, type GuiCtx,
+} from './gui-tools';
+import { uiTree } from '../a11y';
 import type { SessionEvent } from '@shared/ipc-contract';
 import { exec as execInput, type InputAction } from '../input/executor';
 import type { DecisionBroker } from '../autonomy/decision-broker';
@@ -19,20 +25,12 @@ import { exec } from '../shell/executor';
 import { getPlatformAdapter } from '../platform';
 import { capture } from '../screenshot/executor';
 import { withSelfHidden } from '../screenshot/self-mask';
-import { tileIfNeeded, toJpeg } from '../screenshot/processor';
-import { captureVerifyCrop } from '../screenshot/verify-crop';
-
-// Tile edge cap for what we send to the model. Smaller = more screenshots fit
-// in conversation history before tripping Anthropic's ~32MB request cap.
-// 1280 keeps UI text legible while shrinking each tile ~2.3× vs. 1920.
-const MAX_SCREENSHOT_EDGE = 1280;
-// Hard ceiling on tiles per capture: prevents an absurd capture (e.g., 8000px+
-// across, 4+ stacked monitors) from blowing up the per-turn request payload.
-const MAX_SCREENSHOT_TILES = 8;
-// JPEG quality for API-bound tiles. 70 is the sweet spot for screenshot legibility
-// vs. payload size — a typical 1280px tile shrinks ~8× from PNG.
-const SCREENSHOT_JPEG_QUALITY = 70;
+import { tileIfNeeded } from '../screenshot/processor';
 import { save } from '../screenshot/store';
+
+// Fake-client screenshot path only; the real tools live in gui-tools.ts.
+const MAX_SCREENSHOT_EDGE = 1280;
+const MAX_SCREENSHOT_TILES = 8;
 import { tmpdir } from 'node:os';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -148,49 +146,47 @@ function screenshotToolDescription(): string {
   return '- screenshot(region?, window?): capture the virtual desktop as a PNG. Default is the full desktop (all monitors stitched); `region` crops by virtual-desktop coords; `window` (name pattern like "Firefox") crops to that window\'s bounds via kdotool — strongly preferred for iteration once a target window is identified, since it\'s much smaller and faster than a full capture. Result includes a `monitors` array with each display\'s {x, y, w, h} and a `tiles` array describing how the image was split.';
 }
 
-function guiWorkflowSection(): string[] {
+function skipTheGuiHints(): string[] {
   if (process.platform === 'darwin') {
     return [
-      'GUI workflow — when the user asks you to type, click, or otherwise interact with their screen:',
-      '1. Gather context with BOTH shell and vision before acting. Pick the cheapest tool that answers the question:',
-      '   - `shell_exec("ps -ef | grep -i firefox | grep -v grep")` to confirm a process is running.',
-      '   - `shell_exec("ls ~/Downloads")`, `shell_exec("cat /tmp/something")`, etc. to inspect filesystem state.',
-      '   - On macOS, AppleScript and `osascript` answer window questions precisely without vision:',
-      '     - `osascript -e \'tell application "System Events" to get name of every process whose visible is true\'` lists visible apps.',
-      '     - `osascript -e \'tell application "<AppName>" to activate\'` focuses an app before typing into it.',
-      '   - `screenshot` for anything visual — locating buttons inside a window, reading on-screen text, confirming an action.',
-      '   Combine signals: e.g., "type into the browser" → `osascript -e \'tell application "Firefox" to activate\'` to focus it, then `type(...)`.',
-      '',
-      'CRITICAL focus discipline: when the user has to click "Approve" on an autonomy prompt for an input action, focus moves to Otto\'s window. To prevent typing into Otto:',
-      '- Call `shell_exec("osascript -e \'tell application \\"<AppName>\\" to activate\'")` IMMEDIATELY before EACH `type`/`key`/`click` call, after any approval. Yes — re-activate every single time you fire an input tool.',
-      '- Encourage the user to choose "Approve for session" the first time so subsequent input tools don\'t need new approvals (and don\'t steal focus).',
-      '2. From the screenshot, note virtual-desktop pixel coordinates (the `monitors` array tells you which display each x/y is on). If the target is small (under ~20px) or the capture was downscaled/tiled, take a `region` screenshot of the surrounding area first — region crops are native resolution, so your pixel estimate becomes exact.',
-      '3. Click into the target (`click(x, y)`) BEFORE typing. Wait for the post-action delay to settle.',
-      '4. Then `type("...")` or send a `key("Cmd+...")` combo. Note: on macOS use Cmd (⌘) instead of Control for standard shortcuts.',
-      '5. Every click/double_click/drag result embeds a native-resolution verification crop centered on the target, captured right after the action with the cursor rendered, plus a `verify` rect giving the crop\'s virtual-desktop origin. Check it: the cursor should sit on the target and the UI should show the expected reaction. The pointer lands exactly where you ask — if the cursor is on the wrong element, your coordinate estimate was off; convert the correct spot from crop pixels via the `verify` rect and click again. Only take a full screenshot when the consequence extends beyond the crop.',
+      '   - `osascript` drives most apps directly: `tell application "<App>" to …`, and System Events answers window questions (`get name of every process whose visible is true`).',
+      '   - `defaults read/write <domain> <key>` changes most preferences without opening System Settings.',
+    ];
+  }
+  if (process.platform === 'win32') {
+    return [
+      '   - PowerShell cmdlets and the registry (`Get-ItemProperty`/`Set-ItemProperty HKCU:\\…`) change most settings without opening the Settings app.',
+      '   - `Start-Process`, `Stop-Process`, `Get-Process` manage apps; `winget` installs them.',
     ];
   }
   return [
-    'GUI workflow — when the user asks you to type, click, or otherwise interact with their screen:',
-    '1. Gather context with BOTH shell and vision before acting. Pick the cheapest tool that answers the question:',
-    '   - `shell_exec("ps -ef | grep -i firefox | grep -v grep")` to confirm a process is running.',
-    '   - `shell_exec("ls ~/Downloads")`, `shell_exec("cat /tmp/something")`, etc. to inspect filesystem state.',
-    '   - On KDE Wayland (this machine), `kdotool` answers window questions precisely without vision:',
-    '     - `kdotool search --name "<title pattern>"` returns matching window ids.',
-    '     - `kdotool getwindowgeometry <id>` returns absolute x/y/w/h in pixels.',
-    '     - `kdotool windowactivate <id>` focuses a window before typing into it.',
-    '     - `kdotool windowmove <id> <x> <y>` moves a window to a known position.',
-    '   - `screenshot` for anything visual — locating buttons inside a window, reading on-screen text, confirming an action.',
-    '   Combine signals: e.g., "type into the browser" → `kdotool search --name firefox` + `kdotool windowactivate <id>` to focus it, then `type(...)`.',
+    '   - KDE settings live in config files: `kreadconfig6`/`kwriteconfig6 --file <rc> --group <g> --key <k> <v>`, then reload via D-Bus.',
+    '   - D-Bus drives the desktop and many apps: `qdbus` / `gdbus call --session …` (e.g. `qdbus org.kde.KWin /KWin reconfigure`, MPRIS media control, notifications).',
+    '   - `kdotool search --name "<title>"`, `getwindowgeometry <id>`, `windowactivate <id>` answer window questions without vision.',
+  ];
+}
+
+function guiWorkflowSection(): string[] {
+  const mod = process.platform === 'darwin' ? 'Cmd' : 'Control';
+  return [
+    'GUI workflow — every tool call is a full model round trip, so the number of calls IS the speed. Work down this ladder and stop at the first rung that does the job:',
+    '1. Skip the GUI. A shell command, config file, CLI or IPC call beats clicking every time:',
+    '   - `shell_exec` for process/filesystem state (`ps`, `ls`, `cat`), app CLIs, and settings.',
+    ...skipTheGuiHints(),
+    '   - Reading a web page? WebFetch the URL instead of screenshotting the browser.',
+    '2. Read the UI as text with `ui_tree` (window title/app). It returns every control with role, name, value, state and exact bounds in one cheap call — use it instead of a screenshot to find buttons, read field values, menus, tabs and page text. Operate elements by id with `ui_act` (press/focus/set_text) or `act` steps {action:"ui", id}. Semantic ops do not depend on pixel accuracy at all.',
+    '3. Batch. When you know the next several actions, send them as ONE `act` call (e.g. focus window → click field → type → key Return) and pick one observation at the end. Do not issue click → look → type → look as separate calls when the sequence is predictable.',
+    '4. Pixels last. Use `screenshot` when ui_tree comes back empty or useless (games, canvas/GPU-drawn UIs, some Electron apps) or when you genuinely need to see the layout. Prefer `window`/`region` captures over the full desktop. If a target is small (<20px) or the capture was tiled/downscaled, take a `region` screenshot first — region crops are native resolution, so your pixel estimate becomes exact.',
     '',
-    'CRITICAL focus discipline (KEYBOARD ONLY): when the user has to click "Approve" on an autonomy prompt, focus moves to Otto\'s window. Keyboard input follows focus, so to prevent typing into Otto:',
-    '- Call `shell_exec("kdotool windowactivate <id>")` IMMEDIATELY before EACH `type`/`key` call, after any approval. Yes — re-activate every single time you fire a keyboard input tool.',
-    '- `click` does NOT need (and should NOT use) windowactivate: clicks are injected as real pointer events at the cursor position and hit whatever window is under the cursor regardless of focus. Re-activating before a click only churns focus needlessly.',
-    '- Encourage the user to choose "Approve for session" the first time so subsequent input tools don\'t need new approvals (and don\'t steal focus).',
-    '2. From the screenshot, note virtual-desktop pixel coordinates (the `monitors` array tells you which display each x/y is on). If the target is small (under ~20px) or the capture was downscaled/tiled, take a `region` screenshot of the surrounding area first — region crops are native resolution, so your pixel estimate becomes exact.',
-    '3. Click into the target (`click(x, y)`) BEFORE typing. Wait for the post-action delay to settle.',
-    '4. Then `type("...")` or send a `key("Control+...")` combo.',
-    '5. Every click/double_click/drag result embeds a native-resolution verification crop centered on the target, captured right after the action with the cursor rendered (Spectacle -p), plus a `verify` rect giving the crop\'s virtual-desktop origin. Check it: the cursor should sit on the target and the UI should show the expected reaction. The pointer lands exactly where you ask — if the cursor is on the wrong element, your coordinate estimate was off; convert the correct spot from crop pixels via the `verify` rect and click again. Only take a full screenshot when the consequence extends beyond the crop.',
+    'Verification — check results, but cheaply:',
+    '- click/double_click/drag attach a native-res crop centered on the target, captured right after the action with the cursor rendered, plus a `verify` rect giving the crop\'s virtual-desktop origin. The pointer lands exactly where you ask; if the cursor sits on the wrong element your coordinate estimate was off — convert the right spot from crop pixels via the `verify` rect and retry.',
+    '- Pass verify:false (or `act` observe "none") when the outcome is predictable or you will confirm it another way. Use `act` observe "tree" to confirm by text (field values, checkbox states, new dialogs) instead of an image.',
+    '- Take a full screenshot only when the consequence extends beyond a crop.',
+    '',
+    'Focus discipline (keyboard input follows focus): an autonomy approval prompt moves focus to Otto\'s window. Any batch that types or sends keys should set `act` `focus` to the target window — it re-raises that window right before the first step. With single `type`/`key` calls, raise the window first (act {steps:[{action:"focus", window}]} or the platform shell command).',
+    '- Clicks do NOT need focus handling: they hit whatever window is under the pointer.',
+    '- Encourage the user to choose "Approve for session" the first time so later input tools don\'t prompt (and don\'t steal focus).',
+    `- Standard shortcuts use ${mod} on this machine (e.g. "${mod}+S").`,
   ];
 }
 
@@ -208,11 +204,14 @@ function buildSystemPrompt(): string {
     '- get_cursor_position(): return the cursor position {x, y} in virtual-desktop pixels.',
     '- move(x, y): move the cursor to the given monitor-relative position.',
     '- scroll(dx, dy, x?, y?): scroll by (dx, dy); optional (x, y) moves cursor first.',
-    '- click(x, y, button?, delay_ms?): left/right/middle click at the position. Result embeds a zoomed verification crop (see GUI workflow).',
-    '- double_click(x, y, button?): double-click at the position. Result embeds a verification crop.',
-    '- drag(x1, y1, x2, y2, button?): drag from start to end. Result embeds a verification crop of the endpoint.',
+    '- click(x, y, button?, delay_ms?, verify?): left/right/middle click at the position. Result embeds a zoomed verification crop unless verify:false (see GUI workflow).',
+    '- double_click(x, y, button?, verify?): double-click at the position. Result embeds a verification crop unless verify:false.',
+    '- drag(x1, y1, x2, y2, button?, verify?): drag from start to end. Result embeds a verification crop of the endpoint unless verify:false.',
     '- type(text, delay_ms?): type literal text into the focused window.',
     '- key(combo, delay_ms?): send a key combo (e.g. "Control+S", "F5", "Return").',
+    '- act(steps, focus?, observe?, window?, region?, step_delay_ms?): run a batch of click/double_click/move/scroll/drag/type/key/wait/focus/ui steps in ONE call with ONE approval, then return one observation (crop|window|screen|region|tree|none). The default fast path for multi-step GUI work.',
+    '- ui_tree(window?, query?, max_nodes?, include_offscreen?): read a window\'s controls from the accessibility tree as text with element ids and exact bounds. Cheaper and more precise than a screenshot.',
+    '- ui_act(id, op?, text?): operate an element from ui_tree — press (invoke/toggle via accessibility, no pointer), focus, set_text, or click.',
     '- WebSearch(query): search the web; returns titles, urls, and snippets you can cite.',
     '- WebFetch(url, prompt): fetch a URL and extract readable content based on the prompt.',
     '- knowledge_append(note): save a durable fact or preference to Otto\'s memory. Stable preferences are prioritized for inclusion in future prompts. Use sparingly.',
@@ -230,13 +229,51 @@ function buildSystemPrompt(): string {
     '',
     ...guiWorkflowSection(),
     '',
+    `Delegating GUI work: for a long, mechanical on-screen sequence where you already know what must happen (filling a multi-field form, clicking through a settings wizard, repeating an action across many items), hand it to the "${GUI_AGENT_NAME}" subagent with the Agent tool — it runs on a faster model. Write the prompt self-contained (it has none of this conversation): target window, exact steps or end state, and what to report. Keep single actions, diagnosis and judgement calls yourself; do not run it in the background.`,
+    '',
     'Things NOT to do:',
     '- Do NOT press `Escape` as a recovery action — it will close menus, lose work, or hide Otto itself. Only use Escape when the user explicitly asks.',
-    '- Do NOT type or click into windows other than what the user asked for. If you can\'t find the target in the screenshot, say so and ask the user — don\'t guess.',
+    '- Do NOT type or click into windows other than what the user asked for. If you can\'t find the target in the tree or screenshot, say so and ask the user — don\'t guess.',
     '- Do NOT use input tools on Otto\'s own chat panel.',
     '',
     'The autonomy framework gates tool calls by action class. Some commands will pause for user approval before running — proceed normally, the user will see the prompt. Be concise.',
   ].join('\n');
+}
+
+// Tools the GUI subagent may use: the input/vision/accessibility surface plus
+// shell_exec for window lookups. All still run through Otto's MCP server, so
+// autonomy approvals apply exactly as for the main agent.
+const GUI_AGENT_TOOLS = [
+  'ui_tree', 'ui_act', 'act', 'screenshot', 'click', 'double_click', 'drag', 'move', 'scroll',
+  'type', 'key', 'get_cursor_position', 'shell_exec',
+].map((n) => `mcp__otto-tools__${n}`);
+
+export const GUI_AGENT_NAME = 'gui-operator';
+
+function guiAgentPrompt(): string {
+  return [
+    `You are Otto's GUI operator on the user's ${platformName()} machine. The main Otto agent hands you one concrete on-screen task; carry it out quickly and report back.`,
+    '',
+    ...guiWorkflowSection(),
+    '',
+    'When a screenshot is split into TILES, the meta `tiles` array gives each tile\'s virtual-desktop rect in attachment order: pixel (ix, iy) in tile N is (tiles[N].x + ix, tiles[N].y + iy).',
+    '',
+    'Rules:',
+    '- Do only the task you were given. If something unexpected appears — a confirmation for a destructive action, a login or payment prompt, an error you were not told about — stop and report it instead of improvising.',
+    '- Do NOT press Escape as a recovery action, and never use input tools on Otto\'s own window.',
+    '- Finish with a short report: what you did, the final on-screen state (quote field values / titles you can read), and anything that did not go as described.',
+  ].join('\n');
+}
+
+function guiAgentDefinition(): NonNullable<Options['agents']>[string] {
+  return {
+    description:
+      'Fast GUI operator on a quicker model. Give it a concrete, self-contained on-screen task — which window, exactly what to click/type/select, and what "done" looks like — and it drives the UI (accessibility tree, batched input, screenshots) and reports the final state. Use for long mechanical GUI sequences; keep diagnosis and decisions yourself.',
+    prompt: guiAgentPrompt(),
+    tools: GUI_AGENT_TOOLS,
+    model: process.env.OTTO_GUI_AGENT_MODEL || 'haiku',
+    maxTurns: 40,
+  };
 }
 
 function otherMachinesSection(names: string[]): string[] {
@@ -387,24 +424,6 @@ function toInputAction(name: string, args: unknown): InputAction {
   }
 }
 
-/**
- * Pointer actions that commit something get a post-action verification crop
- * centered on their endpoint. Moves/scrolls/keys don't — they're either
- * non-committal or have no meaningful screen anchor, and skipping them keeps
- * mid-workflow aiming fast.
- */
-function verifyTargetFor(action: InputAction): { x: number; y: number } | null {
-  switch (action.kind) {
-    case 'click':
-    case 'doubleClick':
-      return { x: action.x, y: action.y };
-    case 'drag':
-      return { x: action.x2, y: action.y2 };
-    default:
-      return null;
-  }
-}
-
 export function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
   const { createSdkMcpServer, tool } = sdk;
   const allTools: OttoTool[] = [
@@ -412,6 +431,9 @@ export function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
     ...buildShellTools(ctx.getRegistry),
     buildScreenshotTool(),
     ...buildInputTools(),
+    buildActTool(),
+    buildUiTreeTool(),
+    buildUiActTool(),
     buildKnowledgeTool(),
     buildRecallTool(),
     buildMarkTaskCompleteTool(),
@@ -419,6 +441,11 @@ export function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
     buildObserveTool(),
     ...(ctx.peers && ctx.peers.machineNames().length > 0 ? buildDelegationTools(ctx.peers, ctx.sessionId) : []),
   ];
+  const gui: GuiCtx = {
+    sessionId: ctx.sessionId,
+    getConfigDir: ctx.getConfigDir,
+    setRefs: setScreenshotRefs,
+  };
   const sdkTools = allTools.map((t) => {
     const shape = (t.schema as unknown as { shape?: Record<string, unknown> }).shape;
     if (!shape) {
@@ -511,42 +538,12 @@ export function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
           // Pointer actions that commit something get a native-res crop of
           // where they landed (pointer rendered) attached to the SAME tool
           // result, so the model verifies the hit without a full screenshot
-          // round-trip. Best-effort: a failed capture degrades to plain text.
-          const verifyTarget = verifyTargetFor(action);
+          // round-trip — unless it opted out with verify:false. Best-effort:
+          // a failed capture degrades to plain text.
+          const verifyTarget = (args as { verify?: boolean }).verify === false ? null : verifyTargetFor(action);
           if (verifyTarget) {
             try {
-              const crop = await withSelfHidden(() =>
-                captureVerifyCrop(getPlatformAdapter(), verifyTarget)
-              );
-              const savedPath = await save(crop.png, ctx.sessionId, ctx.getConfigDir());
-              const baseId = savedPath.split('/').pop()!.replace(/\.png$/, '');
-              setScreenshotRefs(callId, [{
-                type: 'image-ref' as const,
-                id: baseId,
-                sessionId: ctx.sessionId,
-                path: savedPath,
-                width: crop.rect.w,
-                height: crop.rect.h,
-                mimeType: 'image/png' as const,
-                source: 'screenshot' as const,
-              }]);
-              return {
-                content: [
-                  {
-                    type: 'image' as const,
-                    data: crop.jpeg.toString('base64'),
-                    mimeType: 'image/jpeg' as const,
-                  },
-                  {
-                    type: 'text' as const,
-                    text: JSON.stringify({
-                      ok: true,
-                      verify: crop.rect,
-                      note: 'native-res crop centered on the action endpoint, captured after the action; the rendered cursor shows exactly where it landed',
-                    }),
-                  },
-                ],
-              };
+              return { content: await verifyCropContent(gui, callId, verifyTarget) };
             } catch (err) {
               logger.warn(
                 `input verify capture failed (action still executed): ${err instanceof Error ? err.message : String(err)}`
@@ -563,6 +560,42 @@ export function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
           };
         }
 
+        if (t.name === 'act') {
+          let cancelled = false;
+          killsByCall.set(callId, () => { cancelled = true; });
+          try {
+            return await runAct(gui, callId, args as ActArgs, () => cancelled);
+          } finally {
+            killsByCall.delete(callId);
+          }
+        }
+
+        if (t.name === 'ui_tree') {
+          const a = args as { window?: string; query?: string; max_nodes?: number; include_offscreen?: boolean };
+          const tree = await uiTree({
+            window: a.window,
+            query: a.query,
+            maxNodes: a.max_nodes ?? 300,
+            includeOffscreen: a.include_offscreen,
+          });
+          return { content: [{ type: 'text' as const, text: tree.text }] };
+        }
+
+        if (t.name === 'ui_act') {
+          const a = args as { id: string; op?: 'press' | 'focus' | 'set_text' | 'click'; text?: string };
+          const r = await performUiOp(a.id, a.op ?? 'press', a.text);
+          if (r.pointer) {
+            // A real click happened: show where it landed, like `click` does.
+            try {
+              await new Promise((res) => setTimeout(res, 120));
+              return { content: await verifyCropContent(gui, callId, r.pointer, { method: r.method }) };
+            } catch (err) {
+              logger.warn(`ui_act verify capture failed: ${err instanceof Error ? err.message : String(err)}`);
+            }
+          }
+          return { content: [{ type: 'text' as const, text: JSON.stringify({ ok: true, ...r }) }] };
+        }
+
         if (t.name === 'knowledge_append') {
           const { note } = args as { note: string };
           await ctx.appendKnowledge(note, ctx.sessionId);
@@ -571,62 +604,7 @@ export function buildOttoMcpServer(sdk: AgentSdkModule, ctx: ToolCtx) {
 
         if (t.name === 'screenshot') {
           const sArgs = args as { region?: { x: number; y: number; w: number; h: number }; window?: string };
-          // eslint-disable-next-line no-console
-          console.log('[otto/screenshot] tool input:', JSON.stringify(args));
-          const captured = await withSelfHidden(() => capture(sArgs, getPlatformAdapter()));
-          // eslint-disable-next-line no-console
-          console.log('[otto/screenshot] captured:', captured.width, 'x', captured.height, 'bytes:', captured.bytes.length);
-          const tiled = await tileIfNeeded(captured.bytes, MAX_SCREENSHOT_EDGE, MAX_SCREENSHOT_TILES);
-          const savedPath = await save(captured.bytes, ctx.sessionId, ctx.getConfigDir());
-          // eslint-disable-next-line no-console
-          try {
-            const fs = await import('node:fs/promises');
-            const stat = await fs.stat(savedPath);
-            console.log('[otto/screenshot] saved file:', savedPath, 'size:', stat.size);
-          } catch (e) {
-            console.error('[otto/screenshot] stat saved file failed:', e);
-          }
-          // Capture refs in the call map so session.ts can rewrite the published event.
-          // Filename stem == id; derive from savedPath so disk + ref agree.
-          const baseId = savedPath.split('/').pop()!.replace(/\.png$/, '');
-          const refs: import('@shared/messages').ContentBlock[] = tiled.tiles.map(() => ({
-            type: 'image-ref' as const,
-            id: baseId,
-            sessionId: ctx.sessionId,
-            path: savedPath,
-            width: captured.width,
-            height: captured.height,
-            mimeType: 'image/png' as const,
-            source: 'screenshot' as const,
-          }));
-          setScreenshotRefs(callId, refs);
-          // Bytes for the current turn's API call. Re-encode as JPEG to keep the
-          // payload small enough that history doesn't blow Anthropic's request cap
-          // after a handful of screenshots.
-          const tilesForApi = tiled.tiles.map((tile) => ({
-            type: 'image' as const,
-            data: toJpeg(tile.bytes, SCREENSHOT_JPEG_QUALITY).toString('base64'),
-            mimeType: 'image/jpeg' as const,
-          }));
-          const meta = {
-            path: savedPath,
-            width: captured.width,
-            height: captured.height,
-            monitors: captured.monitors,
-            tiles: tiled.tiles.map((tile, index) => ({
-              index,
-              x: captured.origin.x + tile.x,
-              y: captured.origin.y + tile.y,
-              w: tile.w,
-              h: tile.h,
-            })),
-          };
-          return {
-            content: [
-              ...tilesForApi,
-              { type: 'text' as const, text: JSON.stringify(meta) },
-            ],
-          };
+          return { content: await screenshotContent(gui, callId, sArgs) };
         }
 
         if (t.name === 'recall') {
@@ -889,6 +867,9 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
     ...buildShellTools(deps.getRegistry),
     buildScreenshotTool(),
     ...buildInputTools(),
+    buildActTool(),
+    buildUiTreeTool(),
+    buildUiActTool(),
     buildKnowledgeTool(),
     buildRecallTool(),
     buildMarkTaskCompleteTool(),
@@ -900,6 +881,7 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
     ...DELEGATION_TOOL_NAMES.map((n) => `mcp__otto-tools__${n}`),
     'WebSearch',
     'WebFetch',
+    'Agent',
   ];
 
   return {
@@ -959,7 +941,8 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
             options: {
               ...(options as Options),
               systemPrompt,
-              tools: ['WebSearch', 'WebFetch'],
+              tools: ['WebSearch', 'WebFetch', 'Agent'],
+              agents: { [GUI_AGENT_NAME]: guiAgentDefinition() },
               allowedTools,
               mcpServers: { 'otto-tools': initialMcp },
               abortController,

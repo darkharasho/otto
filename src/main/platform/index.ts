@@ -1,3 +1,4 @@
+import type { NativeImage } from 'electron';
 import { LinuxAdapter } from './linux';
 import { DarwinAdapter } from './darwin';
 import { Win32Adapter } from './win32';
@@ -40,6 +41,12 @@ export interface CaptureResult {
    * Consumers add this to image-local pixel offsets to get virtual coords.
    */
   origin: { x: number; y: number };
+  /**
+   * The same pixels already decoded, when the adapter had them in hand (the
+   * KWin fast path). Lets downstream crop/tile/JPEG steps skip re-decoding
+   * `bytes`.
+   */
+  image?: NativeImage;
 }
 
 export type MouseButton = 'left' | 'right' | 'middle';
@@ -67,6 +74,8 @@ export interface PlatformAdapter {
     capture(opts: CaptureOptions): Promise<CaptureResult>;
   };
   input: PlatformInput;
+  /** Raise and focus the first window whose title (or app name) contains `name`. */
+  activateWindow?(name: string): Promise<void>;
 }
 
 // The adapter must be a singleton so per-instance state (e.g. the portal

@@ -9,6 +9,7 @@ import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildUsocketForElectron } from './build-usocket.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(import.meta.url);
@@ -24,6 +25,7 @@ await rebuild({
   onlyModules: ['better-sqlite3'],
   force: true,
 });
+buildUsocketForElectron();
 
 const r = spawnSync('node', ['scripts/fetch-embedding-model.mjs'], {
   stdio: 'inherit',

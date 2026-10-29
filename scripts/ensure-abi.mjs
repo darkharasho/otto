@@ -5,9 +5,10 @@
 
 import { execSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildUsocketForElectron } from './build-usocket.mjs';
 
 const target = process.argv[2];
 if (target !== 'node' && target !== 'electron') {
@@ -19,7 +20,24 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const stateFile = path.join(repoRoot, 'node_modules', '.otto-abi-state');
 const binary = path.join(repoRoot, 'node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node');
 
+function usocketBuilt() {
+  try {
+    const store = path.join(repoRoot, 'node_modules', '.pnpm');
+    const entry = readdirSync(store).find((d) => d.startsWith('usocket@'));
+    return !!entry && existsSync(path.join(store, entry, 'node_modules', 'usocket', 'build', 'Release', 'uwrap.node'));
+  } catch {
+    return false;
+  }
+}
+
 const current = existsSync(stateFile) ? readFileSync(stateFile, 'utf8').trim() : '';
+
+// usocket (Linux fast-capture fd passing) only matters under Electron; under
+// plain Node it simply fails to load and dbus-next falls back, so the node
+// target leaves whatever build is there alone.
+if (target === 'electron' && process.platform === 'linux' && !usocketBuilt()) {
+  buildUsocketForElectron();
+}
 
 if (current === target && existsSync(binary)) {
   process.exit(0);

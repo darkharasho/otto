@@ -217,10 +217,13 @@ const scrollSchema = z.object({
   x: coord.optional(),
   y: coord.optional(),
 });
-const clickSchema = z.object({ x: coord, y: coord, button: buttonSchema, delay_ms: delayMs });
-const doubleClickSchema = z.object({ x: coord, y: coord, button: buttonSchema });
+// Post-action verification crop. Default on; turn off when the outcome is
+// predictable (or will be checked another way) to skip the capture entirely.
+const verifyFlag = z.boolean().optional();
+const clickSchema = z.object({ x: coord, y: coord, button: buttonSchema, delay_ms: delayMs, verify: verifyFlag });
+const doubleClickSchema = z.object({ x: coord, y: coord, button: buttonSchema, verify: verifyFlag });
 const dragSchema = z.object({
-  x1: coord, y1: coord, x2: coord, y2: coord, button: buttonSchema,
+  x1: coord, y1: coord, x2: coord, y2: coord, button: buttonSchema, verify: verifyFlag,
 });
 const typeSchema = z.object({ text: z.string(), delay_ms: delayMs });
 const keySchema = z.object({ combo: z.string(), delay_ms: delayMs });
@@ -252,21 +255,21 @@ export function buildInputTools(): OttoTool[] {
     },
     {
       name: 'click',
-      description: 'Click at (x, y) in virtual-desktop pixels (origin at the top-left of the leftmost display). button: left|right|middle. Optional delay_ms. The result attaches a native-resolution image crop centered on (x, y), captured just after the click with the cursor rendered — inspect it to confirm the click landed and the UI reacted before doing anything else.',
+      description: 'Click at (x, y) in virtual-desktop pixels (origin at the top-left of the leftmost display). button: left|right|middle. Optional delay_ms. Unless verify:false, the result attaches a native-resolution image crop centered on (x, y), captured just after the click with the cursor rendered — inspect it to confirm the click landed and the UI reacted. Pass verify:false when the outcome is predictable to skip the capture.',
       actionClass: 'destructive',
       schema: clickSchema,
       async run(_input) { throw new Error(`click ${INPUT_HANDLER_THROW}`); },
     },
     {
       name: 'double_click',
-      description: 'Double-click at (x, y) in virtual-desktop pixels (origin at the top-left of the leftmost display). The result attaches a native-resolution verification crop centered on (x, y), like click.',
+      description: 'Double-click at (x, y) in virtual-desktop pixels (origin at the top-left of the leftmost display). Unless verify:false, the result attaches a native-resolution verification crop centered on (x, y), like click.',
       actionClass: 'destructive',
       schema: doubleClickSchema,
       async run(_input) { throw new Error(`double_click ${INPUT_HANDLER_THROW}`); },
     },
     {
       name: 'drag',
-      description: 'Drag from (x1, y1) to (x2, y2) with the given button held down. The result attaches a native-resolution verification crop centered on the endpoint (x2, y2).',
+      description: 'Drag from (x1, y1) to (x2, y2) with the given button held down. Unless verify:false, the result attaches a native-resolution verification crop centered on the endpoint (x2, y2).',
       actionClass: 'destructive',
       schema: dragSchema,
       async run(_input) { throw new Error(`drag ${INPUT_HANDLER_THROW}`); },
@@ -287,6 +290,108 @@ export function buildInputTools(): OttoTool[] {
       async run(_input) { throw new Error(`key ${INPUT_HANDLER_THROW}`); },
     },
   ];
+}
+
+const rectSchema = z.object({
+  x: z.number().int(),
+  y: z.number().int(),
+  w: z.number().int().positive(),
+  h: z.number().int().positive(),
+});
+
+const actStepSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('click'), x: coord, y: coord, button: buttonSchema }),
+  z.object({ action: z.literal('double_click'), x: coord, y: coord, button: buttonSchema }),
+  z.object({ action: z.literal('move'), x: coord, y: coord }),
+  z.object({ action: z.literal('scroll'), dx: z.number().int(), dy: z.number().int(), x: coord.optional(), y: coord.optional() }),
+  z.object({ action: z.literal('drag'), x1: coord, y1: coord, x2: coord, y2: coord, button: buttonSchema }),
+  z.object({ action: z.literal('type'), text: z.string() }),
+  z.object({ action: z.literal('key'), combo: z.string() }),
+  z.object({ action: z.literal('wait'), ms: z.number().int().nonnegative().max(10_000) }),
+  z.object({ action: z.literal('focus'), window: z.string().min(1) }),
+  z.object({
+    action: z.literal('ui'),
+    id: z.string().min(1),
+    op: z.enum(['press', 'focus', 'set_text', 'click']).default('press'),
+    text: z.string().optional(),
+  }),
+]);
+
+export type ActStep = z.infer<typeof actStepSchema>;
+
+const actSchema = z.object({
+  steps: z.array(actStepSchema).min(1).max(40),
+  focus: z.string().min(1).optional(),
+  observe: z.enum(['none', 'crop', 'window', 'screen', 'region', 'tree']).default('crop'),
+  window: z.string().min(1).optional(),
+  region: rectSchema.optional(),
+  step_delay_ms: z.number().int().nonnegative().max(2_000).optional(),
+});
+
+const SAFE_STEP_ACTIONS = new Set(['move', 'scroll', 'wait', 'focus']);
+
+/** Strictest class among the batch's steps: one approval covers the whole batch. */
+export function actActionClass(input: unknown): ActionClass {
+  const steps = (input as { steps?: Array<{ action?: string }> }).steps ?? [];
+  return steps.every((s) => SAFE_STEP_ACTIONS.has(String(s.action))) ? 'reversible' : 'destructive';
+}
+
+export function buildActTool(): OttoTool {
+  return {
+    name: 'act',
+    description:
+      'Run a SEQUENCE of GUI steps in one call, then return one observation — the fast path for anything more than a single click. ' +
+      'steps: [{action:"click"|"double_click", x, y, button?}, {action:"move", x, y}, {action:"scroll", dx, dy, x?, y?}, ' +
+      '{action:"drag", x1, y1, x2, y2}, {action:"type", text}, {action:"key", combo}, {action:"wait", ms}, ' +
+      '{action:"focus", window} (raise a window by title/app), {action:"ui", id, op?, text?} (operate an element from ui_tree, op press|focus|set_text|click)]. ' +
+      '`focus` (window title/app) raises that window before the first step — use it whenever the batch types or sends keys. ' +
+      'Steps run in order with step_delay_ms (default 80) between them; the batch stops at the first failing step and reports which. ' +
+      'observe (what comes back after the last step): "crop" (default; native-res crop around the last pointer target, or nothing if there was none), ' +
+      '"window" (screenshot of `window`), "screen" (full desktop), "region" (screenshot of `region`), "tree" (fresh ui_tree of `window` — text, no image), "none". ' +
+      'One approval covers the whole batch.',
+    actionClass: 'destructive',
+    actionClassFor: actActionClass,
+    schema: actSchema,
+    async run(_input) { throw new Error(`act ${INPUT_HANDLER_THROW}`); },
+  };
+}
+
+export function buildUiTreeTool(): OttoTool {
+  return {
+    name: 'ui_tree',
+    description:
+      "Read a window's controls from the OS accessibility tree as compact text — one line per element: `<id> <role> \"name\" =value [states] @x,y wxh`. " +
+      'Much faster and cheaper than a screenshot, with exact element bounds, and the ids can be operated directly with ui_act / act {action:"ui"}. ' +
+      '`window`: title or app-name substring (omit = the active window). `query`: keep only elements whose role/name/value contains it. ' +
+      '`max_nodes` (default 300). `include_offscreen`: also list elements scrolled out of view. ' +
+      'Works for native apps and browsers; games, canvas-drawn and some Electron UIs expose little or nothing — fall back to screenshots there.',
+    actionClass: 'read',
+    schema: z.object({
+      window: z.string().min(1).optional(),
+      query: z.string().min(1).optional(),
+      max_nodes: z.number().int().positive().max(2_000).optional(),
+      include_offscreen: z.boolean().optional(),
+    }),
+    async run(_input) { throw new Error(`ui_tree ${INPUT_HANDLER_THROW}`); },
+  };
+}
+
+export function buildUiActTool(): OttoTool {
+  return {
+    name: 'ui_act',
+    description:
+      'Operate an element from the latest ui_tree by id. op: "press" (default — invoke/click/toggle via the accessibility API, no pointer needed), ' +
+      '"focus", "set_text" (replace a field\'s text with `text`), "click" (real pointer click at the element\'s center). ' +
+      'Falls back to a pointer click when the element has no semantic action; the result says which method ran. ' +
+      'Re-run ui_tree afterwards (cheap) to see the new state.',
+    actionClass: 'destructive',
+    schema: z.object({
+      id: z.string().min(1),
+      op: z.enum(['press', 'focus', 'set_text', 'click']).default('press'),
+      text: z.string().optional(),
+    }),
+    async run(_input) { throw new Error(`ui_act ${INPUT_HANDLER_THROW}`); },
+  };
 }
 
 export function buildRecallTool(): OttoTool {

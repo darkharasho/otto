@@ -314,3 +314,24 @@ describe('buildObserveTool', () => {
     expect(events[0]!.text).toContain('no number');
   }, 15_000);
 });
+
+describe('act tool', () => {
+  it('is reversible only when every step is non-committal', async () => {
+    const { actActionClass } = await import('./tools');
+    expect(actActionClass({ steps: [{ action: 'move' }, { action: 'wait' }, { action: 'focus' }, { action: 'scroll' }] }))
+      .toBe('reversible');
+    expect(actActionClass({ steps: [{ action: 'move' }, { action: 'click' }] })).toBe('destructive');
+    expect(actActionClass({ steps: [{ action: 'ui' }] })).toBe('destructive');
+  });
+
+  it('validates steps as a discriminated union', async () => {
+    const { buildActTool } = await import('./tools');
+    const schema = buildActTool().schema;
+    expect(schema.safeParse({ steps: [{ action: 'click', x: 1, y: 2 }] }).success).toBe(true);
+    expect(schema.safeParse({ steps: [{ action: 'click', x: 1 }] }).success).toBe(false);
+    expect(schema.safeParse({ steps: [] }).success).toBe(false);
+    const parsed = schema.parse({ steps: [{ action: 'ui', id: 'e1' }] }) as { observe: string; steps: Array<{ op: string }> };
+    expect(parsed.observe).toBe('crop');
+    expect(parsed.steps[0]!.op).toBe('press');
+  });
+});

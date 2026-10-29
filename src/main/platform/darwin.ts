@@ -250,6 +250,34 @@ async function resolveWindowGeometry(name: string): Promise<{ x: number; y: numb
   return { x: parseInt(xs, 10), y: parseInt(ys, 10), w: parseInt(ws, 10), h: parseInt(hs, 10) };
 }
 
+async function activateWindow(name: string): Promise<void> {
+  const needle = name.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  // Match a window title first (raise that window), then an app name.
+  const script = `
+    tell application "System Events"
+      repeat with proc in (every process whose visible is true)
+        try
+          repeat with w in (every window of proc)
+            if name of w contains "${needle}" then
+              set frontmost of proc to true
+              perform action "AXRaise" of w
+              return "ok"
+            end if
+          end repeat
+        end try
+      end repeat
+      repeat with proc in (every process whose visible is true)
+        if name of proc contains "${needle}" then
+          set frontmost of proc to true
+          return "ok"
+        end if
+      end repeat
+    end tell
+    error "no window matches name \\"${needle}\\""
+  `;
+  await run('osascript', ['-e', script], 10_000);
+}
+
 // ---------------------------------------------------------------------------
 // DarwinAdapter
 // ---------------------------------------------------------------------------
@@ -374,6 +402,10 @@ export class DarwinAdapter implements PlatformAdapter {
       }
     },
   };
+
+  activateWindow(name: string): Promise<void> {
+    return activateWindow(name);
+  }
 
   input: PlatformInput = {
     cursorPosition: async (): Promise<CursorPosition> => {

@@ -1,4 +1,4 @@
-import { nativeImage } from 'electron';
+import { nativeImage, type NativeImage } from 'electron';
 
 export interface ProcessResult {
   bytes: Buffer;
@@ -19,9 +19,21 @@ function readPngDims(bytes: Buffer): { width: number; height: number } | null {
   return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
 }
 
+export interface EncodeOptions {
+  /** Pre-decoded pixels for `pngBytes`; skips a decode when provided. */
+  image?: NativeImage;
+  /** Emit JPEG at this quality instead of PNG (what the API payload wants). */
+  jpegQuality?: number;
+}
+
+function encode(img: NativeImage, opts: EncodeOptions): Buffer {
+  return opts.jpegQuality !== undefined ? img.toJPEG(opts.jpegQuality) : img.toPNG();
+}
+
 export async function downscaleIfNeeded(
   pngBytes: Buffer,
-  maxEdge: number
+  maxEdge: number,
+  opts: EncodeOptions = {}
 ): Promise<ProcessResult> {
   let width: number;
   let height: number;
@@ -39,14 +51,17 @@ export async function downscaleIfNeeded(
     throw new Error('could not read PNG dimensions');
   }
   if (Math.max(width, height) <= maxEdge) {
-    return { bytes: pngBytes, width, height, downscaled: false };
+    const bytes = opts.jpegQuality !== undefined
+      ? encode(opts.image ?? nativeImage.createFromBuffer(pngBytes), opts)
+      : pngBytes;
+    return { bytes, width, height, downscaled: false };
   }
   const scale = maxEdge / Math.max(width, height);
   const targetW = Math.round(width * scale);
   const targetH = Math.round(height * scale);
-  const img = nativeImage.createFromBuffer(pngBytes);
+  const img = opts.image ?? nativeImage.createFromBuffer(pngBytes);
   const resized = img.resize({ width: targetW, height: targetH });
-  return { bytes: resized.toPNG(), width: targetW, height: targetH, downscaled: true };
+  return { bytes: encode(resized, opts), width: targetW, height: targetH, downscaled: true };
 }
 
 /**
@@ -79,7 +94,8 @@ const DEFAULT_MAX_TILES = 8;
 export async function tileIfNeeded(
   pngBytes: Buffer,
   maxEdge: number,
-  maxTiles: number = DEFAULT_MAX_TILES
+  maxTiles: number = DEFAULT_MAX_TILES,
+  opts: EncodeOptions = {}
 ): Promise<TileResult> {
   let width: number;
   let height: number;
@@ -98,8 +114,11 @@ export async function tileIfNeeded(
   }
 
   if (Math.max(width, height) <= maxEdge) {
+    const bytes = opts.jpegQuality !== undefined
+      ? encode(opts.image ?? nativeImage.createFromBuffer(pngBytes), opts)
+      : pngBytes;
     return {
-      tiles: [{ bytes: pngBytes, x: 0, y: 0, w: width, h: height }],
+      tiles: [{ bytes, x: 0, y: 0, w: width, h: height }],
       width,
       height,
       fellBackToDownscale: false,
@@ -110,7 +129,7 @@ export async function tileIfNeeded(
   const rows = Math.ceil(height / maxEdge);
 
   if (cols * rows > maxTiles) {
-    const ds = await downscaleIfNeeded(pngBytes, maxEdge);
+    const ds = await downscaleIfNeeded(pngBytes, maxEdge, opts);
     return {
       tiles: [{ bytes: ds.bytes, x: 0, y: 0, w: ds.width, h: ds.height }],
       width,
@@ -121,7 +140,7 @@ export async function tileIfNeeded(
 
   const baseCellW = Math.floor(width / cols);
   const baseCellH = Math.floor(height / rows);
-  const img = nativeImage.createFromBuffer(pngBytes);
+  const img = opts.image ?? nativeImage.createFromBuffer(pngBytes);
   const tiles: Tile[] = [];
   for (let row = 0; row < rows; row += 1) {
     for (let col = 0; col < cols; col += 1) {
@@ -131,7 +150,7 @@ export async function tileIfNeeded(
       const cellH = row === rows - 1 ? height - cellY : baseCellH;
       const cropped = img.crop({ x: cellX, y: cellY, width: cellW, height: cellH });
       tiles.push({
-        bytes: cropped.toPNG(),
+        bytes: encode(cropped, opts),
         x: cellX,
         y: cellY,
         w: cellW,

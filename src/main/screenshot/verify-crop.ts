@@ -1,5 +1,6 @@
-import { nativeImage } from 'electron';
+import { nativeImage, screen } from 'electron';
 import type { CaptureResult, PlatformAdapter } from '../platform';
+import { withSelfHidden } from './self-mask';
 
 /**
  * Post-action verification crop: a small native-resolution excerpt of the
@@ -54,22 +55,33 @@ export function computeVerifyRect(
   return { x, y, w, h };
 }
 
+/** Bounding box of all displays in virtual-desktop coords. */
+function virtualDesktop(): { width: number; height: number; origin: { x: number; y: number }; scale: number } {
+  const displays = screen.getAllDisplays();
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const d of displays) {
+    minX = Math.min(minX, d.bounds.x);
+    minY = Math.min(minY, d.bounds.y);
+    maxX = Math.max(maxX, d.bounds.x + d.bounds.width);
+    maxY = Math.max(maxY, d.bounds.y + d.bounds.height);
+  }
+  if (!Number.isFinite(minX)) return { width: 0, height: 0, origin: { x: 0, y: 0 }, scale: 1 };
+  return { width: maxX - minX, height: maxY - minY, origin: { x: minX, y: minY }, scale: 1 };
+}
+
 export async function captureVerifyCrop(
   adapter: PlatformAdapter,
   target: { x: number; y: number },
   boxPx: number = VERIFY_BOX_PX
 ): Promise<VerifyCropResult> {
-  const full: CaptureResult = await adapter.screenshot.capture({});
-  // Same convention as the platform adapters' region path: image pixels are
-  // virtual-desktop coords times the primary monitor's scale factor.
-  const scale = full.monitors[0]?.scale || 1;
-  const rect = computeVerifyRect(target, { width: full.width, height: full.height, origin: full.origin, scale }, boxPx);
-  const img = nativeImage.createFromBuffer(full.bytes);
-  const cropped = img.crop({
-    x: Math.round((rect.x - full.origin.x) * scale),
-    y: Math.round((rect.y - full.origin.y) * scale),
-    width: Math.round(rect.w * scale),
-    height: Math.round(rect.h * scale),
-  });
-  return { png: cropped.toPNG(), jpeg: cropped.toJPEG(VERIFY_JPEG_QUALITY), rect };
+  // Ask the adapter for just the box: on KDE that is a ~10ms KWin CaptureArea
+  // instead of a full-desktop grab; elsewhere the adapter crops for us. Only
+  // Otto windows overlapping the box need hiding.
+  const rect = computeVerifyRect(target, virtualDesktop(), boxPx);
+  const shot: CaptureResult = await withSelfHidden(
+    () => adapter.screenshot.capture({ region: rect }),
+    rect
+  );
+  const img = shot.image ?? nativeImage.createFromBuffer(shot.bytes);
+  return { png: shot.bytes, jpeg: img.toJPEG(VERIFY_JPEG_QUALITY), rect };
 }
