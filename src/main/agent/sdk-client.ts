@@ -1,5 +1,5 @@
 import type { SdkClient, SdkStreamEvent, SessionStreamHandle, TaggedSdkStreamEvent } from './session';
-import { createSessionStream, type QueryFactory, type SessionStream } from './session-stream';
+import { createSessionStream, type EnqueueKind, type QueryFactory, type SessionStream } from './session-stream';
 import type { SDKMessage, SDKUserMessage, Options, Query } from '@anthropic-ai/claude-agent-sdk';
 import {
   buildInputTools, buildKnowledgeTool, buildScreenshotTool, buildShellTools, stubTools,
@@ -692,6 +692,9 @@ function createFakeSdkClient(deps?: {
       const waiters: Array<(item: Enqueued | null) => void> = [];
       let closed = false;
       let firstTurn = true;
+      // Turn in flight, and messages sent into it (folded in before it ends).
+      let running: string | null = null;
+      const steers: string[] = [];
       function pumpNext(): Promise<Enqueued | null> {
         if (inbox.length > 0) return Promise.resolve(inbox.shift()!);
         if (closed) return Promise.resolve(null);
@@ -699,11 +702,17 @@ function createFakeSdkClient(deps?: {
           waiters.push(resolve);
         });
       }
-      function enqueue(m: Enqueued): void {
-        if (closed) return;
+      function enqueue(m: Enqueued): EnqueueKind {
+        if (closed) return 'turn';
+        if (running !== null) {
+          steers.push(m.messageId);
+          return 'steer';
+        }
+        running = m.messageId;
         const w = waiters.shift();
         if (w) w(m);
         else inbox.push(m);
+        return 'turn';
       }
       function closeAll(): void {
         closed = true;
@@ -840,13 +849,19 @@ function createFakeSdkClient(deps?: {
             logger.warn(`onPerMessageContext threw: ${err instanceof Error ? err.message : err}`);
           }
           for await (const ev of turnEvents(next.text, abortController.signal)) {
+            if (ev.type === 'message-end') {
+              for (const steerId of steers.splice(0)) {
+                yield { type: 'steer-folded', steerId, messageId: next.messageId };
+              }
+            }
             yield { ...ev, messageId: next.messageId } as TaggedSdkStreamEvent;
           }
+          running = null;
         }
       }
 
       return {
-        enqueue(args) { enqueue(args); },
+        enqueue(args) { return enqueue(args); },
         async interrupt() { abortController.abort(); },
         events: taggedEvents,
         close() { abortController.abort(); closeAll(); },
@@ -956,6 +971,10 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
                 : {}),
               ...(resumeId ? { resume: resumeId } : {}),
               ...(spawnOverrides ?? {}),
+              // Echo each prompt back when the CLI reads it: how the session
+              // stream tells a message folded into a running turn from one
+              // that runs as its own (see createSessionStream).
+              extraArgs: { 'replay-user-messages': null },
             },
           }) as Query;
           return inner;
@@ -1010,6 +1029,14 @@ export function createRealSdkClient(deps: RealSdkClientDeps): SdkClient {
 export function toSessionStreamHandle(stream: SessionStream, onClose: () => void = () => {}): SessionStreamHandle {
   async function* eventsTagged(): AsyncIterable<TaggedSdkStreamEvent> {
     for await (const se of stream.events()) {
+      if (se.type === 'steer-folded') {
+        yield { type: 'steer-folded', messageId: se.messageId, steerId: se.steerId };
+        continue;
+      }
+      if (se.type === 'turn-promoted') {
+        yield { type: 'turn-promoted', messageId: se.messageId };
+        continue;
+      }
       const mapped = mapSdkMessage(se.raw);
       for (const ev of mapped) {
         yield { ...ev, messageId: se.messageId } as TaggedSdkStreamEvent;
@@ -1026,7 +1053,7 @@ export function toSessionStreamHandle(stream: SessionStream, onClose: () => void
     enqueue(args) {
       // Persist attachments via the createSessionStream path (it handles
       // reading bytes off disk and inlining base64).
-      stream.enqueueUserMessage(args);
+      return stream.enqueueUserMessage(args);
     },
     interrupt: () => stream.interrupt(),
     events: eventsTagged,

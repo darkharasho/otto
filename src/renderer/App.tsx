@@ -109,7 +109,11 @@ export function App() {
           void ipc.invoke('window.setMode', { mode: 'panel' });
         }
         const sessionId = await ensureSession();
-        appendUserMessage(crypto.randomUUID(), text, attachments);
+        // Mid-turn sends fold into the running turn: main's steer-queued
+        // event draws them as a note there, so no bubble of their own.
+        if (!useOttoStore.getState().activeSession?.currentTurnActive) {
+          appendUserMessage(crypto.randomUUID(), text, attachments);
+        }
         // eslint-disable-next-line no-console
         console.debug('[otto] session.send', { sessionId, len: text.length, attachments: attachments.length, voice });
         await ipc.invoke('session.send', { sessionId, text, attachments, voice });

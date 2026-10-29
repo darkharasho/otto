@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createMessageQueue, createSessionStream, type QueryFactory } from './session-stream';
+import { createMessageQueue, createSessionStream, type QueryFactory, type SessionStreamEvent } from './session-stream';
 
 describe('createMessageQueue', () => {
   it('yields pushed items in order across awaits', async () => {
@@ -49,37 +49,50 @@ describe('createSessionStream', () => {
 
     const events: Array<{ messageId: string; type: string }> = [];
     const iter = stream.events()[Symbol.asyncIterator]();
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 5; i++) {
       const { value } = await iter.next();
       events.push({ messageId: value.messageId, type: value.type });
     }
     stream.close();
     expect(yielded).toEqual(['hello', 'world']);
-    expect(events.map((e) => e.messageId)).toEqual(['m1', 'm1', 'm2', 'm2']);
+    // m2 was sent while m1's turn was in flight; never read into it, it gets its own.
+    expect(events).toEqual([
+      { messageId: 'm1', type: 'assistant-message' },
+      { messageId: 'm1', type: 'result' },
+      { messageId: 'm2', type: 'turn-promoted' },
+      { messageId: 'm2', type: 'assistant-message' },
+      { messageId: 'm2', type: 'result' },
+    ]);
   });
 });
 
 /**
- * A query fake that reads the prompt iterable eagerly, like the real
- * Query.streamInput (it writes every message to the CLI as soon as the
- * iterable yields it), and runs one turn per pulled message, closing each with
- * a `result`. `turn` scripts the SDK messages for a pulled prompt.
+ * A query fake that behaves like the bundled CLI in SDK mode: it reads the
+ * prompt iterable eagerly (Query.streamInput writes each message as soon as it
+ * is yielded), echoes each prompt back as a replay ack when it reads it, and
+ * runs a turn per idle-time batch of queued prompts, closing each with a
+ * `result`. A turn script calls `drain()` between "tool rounds" to read any
+ * prompts queued meanwhile into the running turn.
  */
-function eagerFactory(turn: (text: string, signal: AbortSignal) => AsyncGenerator<unknown>) {
+type CliTurn = (args: { text: string; signal: AbortSignal; drain: () => unknown[] }) => AsyncGenerator<unknown>;
+
+function cliFactory(turn: CliTurn) {
   const pulled: string[] = [];
+  const folded: string[] = [];
   const factory: QueryFactory = ({ prompt }) => {
-    const cliQueue: string[] = [];
+    const cliQueue: Array<{ text: string; uuid: string }> = [];
     let wake = null as (() => void) | null;
     let inputDone = false;
     void (async () => {
       for await (const m of prompt) {
         pulled.push(m.message.content as string);
-        cliQueue.push(m.message.content as string);
+        cliQueue.push({ text: m.message.content as string, uuid: m.uuid! });
         wake?.();
       }
       inputDone = true;
       wake?.();
     })();
+    const ack = (p: { text: string; uuid: string }) => ({ type: 'user', isReplay: true, uuid: p.uuid, message: { role: 'user', content: p.text } });
     let turnAbort = new AbortController();
     return {
       async *[Symbol.asyncIterator]() {
@@ -90,96 +103,146 @@ function eagerFactory(turn: (text: string, signal: AbortSignal) => AsyncGenerato
             wake = null;
             continue;
           }
-          const text = cliQueue.shift()!;
+          // Batch everything queued while idle into one turn.
+          const batch = cliQueue.splice(0);
+          for (const p of batch) yield ack(p);
           turnAbort = new AbortController();
-          yield* turn(text, turnAbort.signal);
+          const drain = () => cliQueue.splice(0).map((p) => { folded.push(p.text); return ack(p); });
+          yield* turn({ text: batch.map((p) => p.text).join('+'), signal: turnAbort.signal, drain });
           yield { type: 'result', subtype: turnAbort.signal.aborted ? 'error_during_execution' : 'success' };
         }
       },
       interrupt: async () => { turnAbort.abort(); },
     } as unknown as ReturnType<QueryFactory>;
   };
-  return { factory, pulled };
+  return { factory, pulled, folded };
 }
 
-describe('createSessionStream turn labelling', () => {
-  it('labels a running turn by its own id when the next message is queued, then advances on its result', async () => {
+const tick = (ms = 5) => new Promise((r) => setTimeout(r, ms));
+
+async function take(iter: AsyncIterator<SessionStreamEvent>, n: number): Promise<Array<[string, string, string?]>> {
+  const out: Array<[string, string, string?]> = [];
+  for (let i = 0; i < n; i++) {
+    const { value } = await iter.next();
+    out.push(value.type === 'steer-folded' ? [value.messageId, value.type, value.steerId] : [value.messageId, value.type]);
+  }
+  return out;
+}
+
+describe('createSessionStream steering', () => {
+  it('reports turn for an idle send and steer for a send into a running turn', async () => {
+    const { factory } = cliFactory(async function* () { await tick(50); });
+    const stream = createSessionStream({ sessionId: 's', queryFactory: factory });
+    expect(stream.enqueueUserMessage({ messageId: 'm1', text: 'first', attachments: [] })).toBe('turn');
+    expect(stream.enqueueUserMessage({ messageId: 'm2', text: 'second', attachments: [] })).toBe('steer');
+    stream.close();
+  });
+
+  it('hands a mid-turn message to the SDK at once and folds it into the running turn when read', async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => { release = r; });
-    const { factory } = eagerFactory(async function* (text) {
-      if (text === 'first') await gate;
-      yield { type: 'assistant', message: { content: [{ type: 'text', text: `echo:${text}` }] } };
+    const { factory, pulled, folded } = cliFactory(async function* ({ text, drain }) {
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: `start:${text}` }] } };
+      await gate;
+      yield* drain();
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'end' }] } };
     });
-    const stream = createSessionStream({ sessionId: 's', queryFactory: factory });
+    const contexts: string[] = [];
+    const stream = createSessionStream({ sessionId: 's', queryFactory: factory, onPerMessageContext: (id) => { contexts.push(id); } });
     const iter = stream.events()[Symbol.asyncIterator]();
     stream.enqueueUserMessage({ messageId: 'm1', text: 'first', attachments: [] });
-    const firstEvent = iter.next();
-    await new Promise((r) => setTimeout(r, 5));
-    stream.enqueueUserMessage({ messageId: 'm2', text: 'second', attachments: [] });
-    await new Promise((r) => setTimeout(r, 5));
+    const head = await take(iter, 1);
+    stream.enqueueUserMessage({ messageId: 'm2', text: 'new info', attachments: [] });
+    await tick();
+    expect(pulled).toEqual(['first', 'new info']);
     release();
-    const seen: Array<[string, string]> = [];
-    seen.push([(await firstEvent).value.messageId, (await firstEvent).value.type]);
-    for (let i = 0; i < 3; i++) {
-      const { value } = await iter.next();
-      seen.push([value.messageId, value.type]);
-    }
+    const rest = await take(iter, 3);
+    stream.close();
+    expect([...head, ...rest]).toEqual([
+      ['m1', 'assistant-message'],
+      ['m1', 'steer-folded', 'm2'],
+      ['m1', 'assistant-message'],
+      ['m1', 'result'],
+    ]);
+    expect(folded).toEqual(['new info']);
+    // The steer never became the current message: approvals stay with m1.
+    expect(contexts).toEqual(['m1']);
+  });
+
+  it('promotes a steer the turn ended without reading to a turn of its own', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const { factory } = cliFactory(async function* ({ text }) {
+      yield { type: 'assistant', message: { content: [{ type: 'text', text }] } };
+      if (text === 'first') await gate;
+    });
+    const contexts: string[] = [];
+    const stream = createSessionStream({ sessionId: 's', queryFactory: factory, onPerMessageContext: (id) => { contexts.push(id); } });
+    const iter = stream.events()[Symbol.asyncIterator]();
+    stream.enqueueUserMessage({ messageId: 'm1', text: 'first', attachments: [] });
+    const head = await take(iter, 1);
+    stream.enqueueUserMessage({ messageId: 'm2', text: 'second', attachments: [] });
+    await tick();
+    release();
+    const seen = [...head, ...await take(iter, 4)];
     stream.close();
     expect(seen).toEqual([
       ['m1', 'assistant-message'],
       ['m1', 'result'],
+      ['m2', 'turn-promoted'],
+      ['m2', 'assistant-message'],
+      ['m2', 'result'],
+    ]);
+    expect(contexts).toEqual(['m1', 'm2']);
+  });
+
+  it('several unread steers run as one turn owned by the oldest; the rest fold into it', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const { factory } = cliFactory(async function* ({ text }) {
+      yield { type: 'assistant', message: { content: [{ type: 'text', text }] } };
+      if (text === 'first') await gate;
+    });
+    const stream = createSessionStream({ sessionId: 's', queryFactory: factory });
+    const iter = stream.events()[Symbol.asyncIterator]();
+    stream.enqueueUserMessage({ messageId: 'm1', text: 'first', attachments: [] });
+    const head = await take(iter, 1);
+    stream.enqueueUserMessage({ messageId: 'm2', text: 'a', attachments: [] });
+    stream.enqueueUserMessage({ messageId: 'm3', text: 'b', attachments: [] });
+    await tick();
+    release();
+    const seen = [...head, ...await take(iter, 5)];
+    stream.close();
+    expect(seen).toEqual([
+      ['m1', 'assistant-message'],
+      ['m1', 'result'],
+      ['m2', 'turn-promoted'],
+      ['m2', 'steer-folded', 'm3'],
       ['m2', 'assistant-message'],
       ['m2', 'result'],
     ]);
   });
 
-  it("does not hand the SDK a second message until the first turn's result", async () => {
-    let release!: () => void;
-    const gate = new Promise<void>((r) => { release = r; });
-    const { factory, pulled } = eagerFactory(async function* (text) {
-      if (text === 'first') await gate;
-      yield { type: 'assistant', message: { content: [{ type: 'text', text }] } };
-    });
-    const stream = createSessionStream({ sessionId: 's', queryFactory: factory });
-    const iter = stream.events()[Symbol.asyncIterator]();
-    stream.enqueueUserMessage({ messageId: 'm1', text: 'first', attachments: [] });
-    stream.enqueueUserMessage({ messageId: 'm2', text: 'second', attachments: [] });
-    const firstEvent = iter.next();
-    await new Promise((r) => setTimeout(r, 10));
-    // The CLI would merge an already-written queued prompt into the running
-    // turn (or batch it with others), so the second one must stay with us.
-    expect(pulled).toEqual(['first']);
-    expect(stream.queueDepth()).toBe(1);
-    release();
-    await firstEvent;
-    await iter.next(); // m1 result
-    await iter.next(); // m2 assistant
-    expect(pulled).toEqual(['first', 'second']);
-    stream.close();
-  });
-
-  it('an interrupted turn ends on its result and the queued message runs as its own turn', async () => {
-    const { factory } = eagerFactory(async function* (text, signal) {
+  it('an interrupted turn ends on its result and an unread steer runs as its own turn', async () => {
+    const { factory } = cliFactory(async function* ({ text, signal }) {
       yield { type: 'assistant', message: { content: [{ type: 'text', text }] } };
       if (text === 'first' && !signal.aborted) await new Promise<void>((r) => signal.addEventListener('abort', () => r()));
     });
     const stream = createSessionStream({ sessionId: 's', queryFactory: factory });
     const iter = stream.events()[Symbol.asyncIterator]();
     stream.enqueueUserMessage({ messageId: 'm1', text: 'first', attachments: [] });
-    const first = await iter.next();
+    const first = await take(iter, 1);
     stream.enqueueUserMessage({ messageId: 'm2', text: 'second', attachments: [] });
+    await tick();
     await stream.interrupt();
-    const rest: Array<[string, string, unknown]> = [];
-    for (let i = 0; i < 3; i++) {
-      const { value } = await iter.next();
-      rest.push([value.messageId, value.type, (value.raw as { subtype?: string }).subtype]);
-    }
+    const rest = await take(iter, 4);
     stream.close();
-    expect(first.value.messageId).toBe('m1');
-    expect(rest).toEqual([
-      ['m1', 'result', 'error_during_execution'],
-      ['m2', 'assistant-message', undefined],
-      ['m2', 'result', 'success'],
+    expect([...first, ...rest]).toEqual([
+      ['m1', 'assistant-message'],
+      ['m1', 'result'],
+      ['m2', 'turn-promoted'],
+      ['m2', 'assistant-message'],
+      ['m2', 'result'],
     ]);
   });
 });

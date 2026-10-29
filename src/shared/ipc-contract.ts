@@ -328,6 +328,12 @@ export type SessionEvent =
       signal: string | null;
     }
   | { type: 'process-killed'; sessionId: string; messageId: string; handle: string }
+  /** User sent `text` while turn `messageId` was running; it rides along as a pending user_note `noteId`. */
+  | { type: 'steer-queued'; sessionId: string; messageId: string; noteId: string; text: string; content: ContentBlock[] }
+  /** The agent read note `noteId` into turn `messageId`. */
+  | { type: 'steer-folded'; sessionId: string; messageId: string; noteId: string }
+  /** Note `noteId` missed its turn: drop the note; a user-message with the same id and its own turn follow. */
+  | { type: 'steer-promoted'; sessionId: string; noteId: string }
   | { type: 'user-message-queued'; sessionId: string; messageId: string; queueDepth: number }
   | { type: 'user-message-consumed'; sessionId: string; messageId: string; queueDepth: number };
 

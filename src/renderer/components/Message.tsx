@@ -335,6 +335,40 @@ function computeFilmStrips(
   return { strips, folded };
 }
 
+/** A message the user sent mid-turn, folded into the running reply. */
+function UserNote({ block }: { block: Extract<ContentBlock, { type: 'user_note' }> }) {
+  return (
+    <div data-testid="user-note" className="otto-msg-enter flex flex-col items-end my-2.5">
+      <div className="mb-1 text-[10.5px] text-muted">
+        {block.pending ? 'Added mid-task · Otto reads it after this step' : 'Added mid-task'}
+      </div>
+      <div
+        className={[
+          'max-w-[80%] rounded-2xl rounded-br-md px-3.5 py-1.5 text-[13px] text-text break-words whitespace-pre-wrap border',
+          block.pending ? 'border-dashed border-accent/40 bg-accent/[0.07]' : 'border-accent/30 bg-accent/[0.14]',
+        ].join(' ')}
+      >
+        {block.content.map((c, i) => {
+          if (c.type === 'text') return <span key={i}>{c.text}</span>;
+          if (c.type === 'image-ref') {
+            const scheme = c.source === 'user' ? 'otto-user-image' : 'otto-image';
+            return (
+              <img
+                key={i}
+                src={`${scheme}://${c.sessionId}/${c.id}.${extFromMime(c.mimeType)}`}
+                alt=""
+                className="max-w-[160px] rounded mt-1 block"
+                loading="lazy"
+              />
+            );
+          }
+          return null;
+        })}
+      </div>
+    </div>
+  );
+}
+
 function renderBlocks(
   content: ContentBlock[],
   streamingTarget: boolean,
@@ -440,6 +474,9 @@ function renderBlocks(
           />
         </div>
       ));
+    } else if (b.type === 'user_note') {
+      flushActivity();
+      elements.push(<UserNote key={`note-${b.id}`} block={b} />);
     } else if (b.type === 'outcome') {
       flushActivity();
       elements.push(<OutcomeCard key={`outcome-${i}`} block={b} />);

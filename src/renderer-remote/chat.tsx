@@ -427,6 +427,11 @@ export function Chat(): JSX.Element {
                 input: block.input,
                 status: 'pending',
               });
+            } else if (t === 'user_note') {
+              // Sent mid-turn and folded into it: show it where Otto read it.
+              if (textBuf) { built.push({ kind: 'text', id: `${idBase}-t-${built.length}`, text: textBuf, done: true }); textBuf = ''; }
+              const noteContent = (Array.isArray(block.content) ? block.content : []) as Array<{ type: string; [k: string]: unknown }>;
+              built.push({ kind: 'user', id: String(block.id ?? `${idBase}-n-${built.length}`), text: String(block.text ?? ''), content: noteContent });
             } else if (t === 'tool_result') {
               const callId = String(block.callId ?? '');
               const idx = built.findIndex((it) => it.kind === 'tool' && it.callId === callId);
@@ -502,6 +507,23 @@ export function Chat(): JSX.Element {
         const text = String(msg.text ?? '');
         const content = Array.isArray(msg.content) ? (msg.content as Array<{ type: string; [k: string]: unknown }>) : undefined;
         setItems((prev) => prev.some((it) => it.id === id) ? prev : [...prev, { kind: 'user', id, text, content }]);
+        return;
+      }
+      case 'steer-queued': {
+        // Sent mid-turn: it folds into the running turn. Close the open text
+        // bubble so whatever Otto says next lands below the note.
+        const id = String(msg.noteId ?? newId());
+        const text = String(msg.text ?? '');
+        const content = Array.isArray(msg.content) ? (msg.content as Array<{ type: string; [k: string]: unknown }>) : undefined;
+        currentTextIdRef.current = null;
+        setItems((prev) => prev.some((it) => it.id === id)
+          ? prev
+          : [
+              ...prev
+                .filter((it) => !(it.kind === 'text' && !it.done && !it.text))
+                .map((it) => it.kind === 'text' && !it.done ? { ...it, done: true } : it),
+              { kind: 'user', id, text, content },
+            ]);
         return;
       }
       case 'user-message-queued': {
@@ -947,7 +969,7 @@ export function Chat(): JSX.Element {
               !connected
                 ? 'Disconnected — reconnecting…'
                 : busy
-                  ? 'Otto is working — your message will queue'
+                  ? 'Otto is working — add details and it will fold them in'
                   : 'Message Otto…'
             }
             rows={1}

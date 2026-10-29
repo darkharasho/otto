@@ -61,6 +61,7 @@ function makeFakeOpenStream(scriptByCall: Script[] | Script) {
         const w = waiters.shift();
         if (w) w(m);
         else inbox.push(m);
+        return 'turn';
       },
       async interrupt() { abortController.abort(); },
       events: taggedEvents,
@@ -74,29 +75,32 @@ function makeFakeOpenStream(scriptByCall: Script[] | Script) {
 
 /**
  * Eager mode: the real createSessionStream + sdk-client tagging in front of a
- * query fake that reads the prompt iterable as fast as it yields, the way
- * Query.streamInput does, and runs one turn per pulled prompt, each closed by
- * a `result` (error_during_execution when the turn was interrupted). `turn`
- * scripts the raw SDK messages for a pulled prompt.
+ * query fake that behaves like the bundled CLI: it reads the prompt iterable as
+ * fast as it yields (as Query.streamInput does), echoes each prompt back as a
+ * replay ack when it reads it, and runs one turn per idle-time batch of queued
+ * prompts, each closed by a `result` (error_during_execution when the turn was
+ * interrupted). `turn` scripts the raw SDK messages; calling `drain()` between
+ * steps reads prompts queued meanwhile into the running turn.
  */
-type EagerTurn = (args: { text: string; signal: AbortSignal }) => AsyncGenerator<unknown>;
+type EagerTurn = (args: { text: string; signal: AbortSignal; drain: () => unknown[] }) => AsyncGenerator<unknown>;
 
 function makeEagerOpenStream(turn: EagerTurn) {
   const pulled: string[] = [];
   const openStream = vi.fn((sessionId: string, _resumeId: string | undefined, hooks: { onPerMessageContext: (messageId: string) => void | Promise<void> }): SessionStreamHandle => {
     const queryFactory: QueryFactory = ({ prompt }) => {
-      const cliQueue: string[] = [];
+      const cliQueue: Array<{ text: string; uuid: string }> = [];
       let wake = null as (() => void) | null;
       let inputDone = false;
       void (async () => {
         for await (const m of prompt) {
           pulled.push(m.message.content as string);
-          cliQueue.push(m.message.content as string);
+          cliQueue.push({ text: m.message.content as string, uuid: m.uuid! });
           wake?.();
         }
         inputDone = true;
         wake?.();
       })();
+      const ack = (p: { text: string; uuid: string }) => ({ type: 'user', isReplay: true, uuid: p.uuid, message: { role: 'user', content: p.text } });
       let turnAbort = new AbortController();
       return {
         async *[Symbol.asyncIterator]() {
@@ -107,9 +111,11 @@ function makeEagerOpenStream(turn: EagerTurn) {
               wake = null;
               continue;
             }
-            const text = cliQueue.shift()!;
+            const batch = cliQueue.splice(0);
+            for (const p of batch) yield ack(p);
             turnAbort = new AbortController();
-            yield* turn({ text, signal: turnAbort.signal });
+            const drain = () => cliQueue.splice(0).map(ack);
+            yield* turn({ text: batch.map((p) => p.text).join('+'), signal: turnAbort.signal, drain });
             yield { type: 'result', subtype: turnAbort.signal.aborted ? 'error_during_execution' : 'success' };
           }
         },
@@ -748,7 +754,7 @@ describe('SessionManager origin tracking', () => {
 });
 
 describe('SessionManager turn labelling with an eagerly-pulling SDK', () => {
-  const ids = () => events.filter((e) => e.type === 'user-message-queued').map((e) => (e as { messageId: string }).messageId);
+  const ids = () => events.filter((e) => e.type === 'message-start').map((e) => (e as { messageId: string }).messageId);
   const ended = () => events.filter((e) => e.type === 'message-end').map((e) => (e as { messageId: string }).messageId);
   const cancelled = () => events.filter((e) => e.type === 'message-cancelled').map((e) => (e as { messageId: string }).messageId);
 
@@ -772,7 +778,7 @@ describe('SessionManager turn labelling with an eagerly-pulling SDK', () => {
     return { handlers, decide };
   }
 
-  it('a remote prompt queued behind a running desktop turn keeps its origin for its own tool calls', async () => {
+  it('a remote prompt the running desktop turn never reads gets its own turn and keeps its origin for its tool calls', async () => {
     let releaseD!: () => void;
     const gateD = new Promise<void>((r) => { releaseD = r; });
     let harness: ReturnType<typeof toolHarness> | null = null;
@@ -810,7 +816,7 @@ describe('SessionManager turn labelling with an eagerly-pulling SDK', () => {
     expect(manager.originForSession(sessionId)).toBe('remote');
   });
 
-  it('refuses onward delegation in a remote prompt queued behind a running desktop turn', async () => {
+  it('refuses onward delegation in a remote prompt promoted behind a running desktop turn', async () => {
     let releaseD!: () => void;
     const gateD = new Promise<void>((r) => { releaseD = r; });
     let harness: ReturnType<typeof toolHarness> | null = null;
@@ -847,7 +853,7 @@ describe('SessionManager turn labelling with an eagerly-pulling SDK', () => {
     await Promise.all([pD, pR]);
   });
 
-  it('an interrupt with a queued message cancels only the running turn and the queued one finalizes as its own', async () => {
+  it('an interrupt with an unread steer cancels only the running turn and the steer finalizes as its own', async () => {
     const { openStream } = makeEagerOpenStream(async function* ({ text, signal }) {
       if (text === 'desktop task') {
         yield { type: 'assistant', message: { content: [{ type: 'text', text: 'd-part' }] } };
@@ -876,5 +882,74 @@ describe('SessionManager turn labelling with an eagerly-pulling SDK', () => {
     expect(r.content).toEqual([{ type: 'text', text: 'r-text' }]);
     expect('cancelled' in r && r.cancelled).toBeFalsy();
     expect(manager.originForSession(sessionId)).toBe('remote');
+  });
+
+  it('folds a message sent mid-turn into the running turn as a user_note', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const { openStream, pulled } = makeEagerOpenStream(async function* ({ drain }) {
+      yield { type: 'assistant', message: { content: [{ type: 'tool_use', id: 'c1', name: 'probe', input: {} }] } };
+      await gate;
+      yield { type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: 'c1', content: 'ok' }] } };
+      yield* drain();
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: 'adjusted' }] } };
+    });
+    fakeSdk.openStream = openStream;
+    const { sessionId } = await manager.start({});
+    const pD = manager.send({ sessionId, text: 'fix the stutter' });
+    await waitFor(() => events.some((e) => e.type === 'tool-call-start'));
+    let steerSettled = false;
+    const pN = manager.send({ sessionId, text: 'only with Discord open', origin: 'remote' }).then(() => { steerSettled = true; });
+    await new Promise((r) => setTimeout(r, 5));
+    // Handed to the SDK straight away, not held for the turn to end.
+    expect(pulled).toEqual(['fix the stutter', 'only with Discord open']);
+    const [D] = ids();
+    const queued = events.find((e) => e.type === 'steer-queued') as Extract<SessionEvent, { type: 'steer-queued' }>;
+    expect(queued).toMatchObject({ messageId: D, text: 'only with Discord open' });
+    release();
+    await pN;
+    expect(steerSettled).toBe(true);
+    await pD;
+
+    expect(ids()).toEqual([D]);
+    expect(ended()).toEqual([D]);
+    expect(events).toContainEqual({ type: 'steer-folded', sessionId, messageId: D, noteId: queued.noteId });
+    expect(events.some((e) => e.type === 'user-message' && e.text === 'only with Discord open')).toBe(false);
+    const msgs = repo.loadMessages(sessionId);
+    expect(msgs.map((m) => m.role)).toEqual(['user', 'assistant']);
+    expect(msgs[1]!.content.map((b) => b.type)).toEqual(['tool_use', 'tool_result', 'user_note', 'text']);
+    expect(msgs[1]!.content[2]).toEqual({
+      type: 'user_note',
+      id: queued.noteId,
+      text: 'only with Discord open',
+      content: [{ type: 'text', text: 'only with Discord open' }],
+    });
+    // A folded note borrows the running turn's origin; it leaves none behind.
+    expect(manager.originForSession(sessionId)).toBe('desktop');
+  });
+
+  it('a steer promoted to its own turn is persisted as a user message after the earlier turn', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const { openStream } = makeEagerOpenStream(async function* ({ text }) {
+      yield { type: 'assistant', message: { content: [{ type: 'text', text: `re:${text}` }] } };
+      if (text === 'first') await gate;
+    });
+    fakeSdk.openStream = openStream;
+    const { sessionId } = await manager.start({});
+    const p1 = manager.send({ sessionId, text: 'first' });
+    await waitFor(() => events.some((e) => e.type === 'text-delta'));
+    const p2 = manager.send({ sessionId, text: 'second' });
+    await new Promise((r) => setTimeout(r, 5));
+    release();
+    await Promise.all([p1, p2]);
+    const queued = events.find((e) => e.type === 'steer-queued') as Extract<SessionEvent, { type: 'steer-queued' }>;
+    const promotedAt = events.findIndex((e) => e.type === 'steer-promoted');
+    expect(events[promotedAt]).toEqual({ type: 'steer-promoted', sessionId, noteId: queued.noteId });
+    expect(events[promotedAt + 1]).toMatchObject({ type: 'user-message', messageId: queued.noteId, text: 'second' });
+    const msgs = repo.loadMessages(sessionId);
+    expect(msgs.map((m) => m.role)).toEqual(['user', 'assistant', 'user', 'assistant']);
+    expect(msgs[2]!.id).toBe(queued.noteId);
+    expect(msgs[3]!.content).toEqual([{ type: 'text', text: 're:second' }]);
   });
 });

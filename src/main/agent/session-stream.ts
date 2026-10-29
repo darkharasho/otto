@@ -1,6 +1,7 @@
 import type { SDKUserMessage, SDKMessage, Options } from '@anthropic-ai/claude-agent-sdk';
 import type { ContentBlock } from '@shared/messages';
 import { promises as fsp } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 
 export interface MessageQueue<T> {
   push(item: T): void;
@@ -47,11 +48,20 @@ export type EnqueuedMessage = {
   attachments: Array<Extract<ContentBlock, { type: 'image-ref' }>>;
 };
 
-export interface SessionStreamEvent {
-  messageId: string;
-  type: 'assistant-message' | 'result' | 'system' | 'partial';
-  raw: SDKMessage;
-}
+/**
+ * How an enqueued message will be handled: 'turn' starts its own turn (the
+ * session was idle); 'steer' was sent while a turn was in flight and is folded
+ * into it — unless that turn ends before the CLI reads it, in which case a
+ * 'turn-promoted' event hands it its own turn.
+ */
+export type EnqueueKind = 'turn' | 'steer';
+
+export type SessionStreamEvent =
+  | { messageId: string; type: 'assistant-message' | 'result' | 'system' | 'partial'; raw: SDKMessage }
+  /** The CLI read steer `steerId` into running turn `messageId`. */
+  | { messageId: string; type: 'steer-folded'; steerId: string }
+  /** Steer `messageId` missed its turn and now runs as its own. */
+  | { messageId: string; type: 'turn-promoted' };
 
 export type QueryFactory = (params: {
   prompt: AsyncIterable<SDKUserMessage>;
@@ -59,7 +69,7 @@ export type QueryFactory = (params: {
 }) => AsyncIterable<SDKMessage> & { interrupt: () => Promise<void>; setMcpServers?: (servers: Record<string, unknown>) => Promise<unknown> };
 
 export interface SessionStream {
-  enqueueUserMessage(msg: EnqueuedMessage): void;
+  enqueueUserMessage(msg: EnqueuedMessage): EnqueueKind;
   interrupt(): Promise<void>;
   events(): AsyncIterable<SessionStreamEvent>;
   close(): void;
@@ -78,47 +88,38 @@ export function createSessionStream(args: {
    */
   onPerMessageContext?: (messageId: string) => void | Promise<void>;
 }): SessionStream {
-  const inbox = createMessageQueue<EnqueuedMessage>();
-  // Message ids handed to the SDK whose turn hasn't produced its `result` yet,
-  // oldest first. Stream events belong to the head: the SDK runs one user turn
-  // at a time, in order, and closes each with exactly one `result` (interrupted
-  // turns included — the CLI ends them with an error_during_execution result).
-  const turns: string[] = [];
+  const inbox = createMessageQueue<EnqueuedMessage & { kind: EnqueueKind }>();
+  // Every message goes to the CLI as soon as it's sent. A message sent while a
+  // turn runs is a "steer": the CLI drains it into the running turn between
+  // tool rounds, or — when that turn has no tool round left — runs it (batched
+  // with any other pending ones) as the next turn. The CLI echoes each user
+  // message back (replay-user-messages) when it reads it, carrying our uuid;
+  // that echo is what tells the two cases apart.
+  //
+  // The turn in flight: stream events belong to it. One turn == one `result`
+  // (interrupted turns included — the CLI ends them with error_during_execution).
+  let current: string | null = null;
+  // Steers handed over (or about to be) that the CLI hasn't read yet, oldest first.
+  const steers: string[] = [];
+  const idByUuid = new Map<string, string>();
   // Label for events seen while no turn is in flight (e.g. trailing status
   // messages after a result). Points at the last finished turn so SessionManager
   // drops them as late events rather than inventing a row.
   let lastTurnId = '';
   let closed = false;
-  let turnSettled: (() => void) | null = null;
 
-  function settleTurn(): void {
-    const w = turnSettled;
-    turnSettled = null;
-    w?.();
-  }
-
-  // Wait until no turn is in flight. Query.streamInput pulls the prompt
-  // iterable eagerly, and the bundled CLI does NOT keep queued prompts as
-  // separate turns: in SDK mode it drains 'next'-priority queued prompts into
-  // the running turn between tool rounds, and batches consecutive queued
-  // prompts into one turn at turn end — either way one `result` for several
-  // messages, which would shift every later label. Handing the SDK one message
-  // at a time keeps one message == one turn == one result.
-  function waitForIdle(): Promise<void> {
-    if (turns.length === 0 || closed) return Promise.resolve();
-    return new Promise((resolve) => { turnSettled = resolve; });
+  function startTurn(messageId: string): void | Promise<void> {
+    current = messageId;
+    return args.onPerMessageContext?.(messageId);
   }
 
   async function* promptIterable(): AsyncIterable<SDKUserMessage> {
     const it = inbox.iterable[Symbol.asyncIterator]();
     while (true) {
-      await waitForIdle();
-      if (closed) return;
       const next = await it.next();
-      if (next.done) return;
+      if (next.done || closed) return;
       const m = next.value;
-      turns.push(m.messageId);
-      if (args.onPerMessageContext) {
+      if (m.kind === 'turn' && args.onPerMessageContext) {
         await args.onPerMessageContext(m.messageId);
       }
       let content: unknown;
@@ -136,11 +137,15 @@ export function createSessionStream(args: {
         }
         content = parts;
       }
+      const uuid = randomUUID();
+      idByUuid.set(uuid, m.messageId);
       yield {
         type: 'user',
         message: { role: 'user', content: content as never },
         parent_tool_use_id: null,
         session_id: args.sessionId,
+        uuid,
+        priority: 'next',
       } as SDKUserMessage;
     }
   }
@@ -153,36 +158,70 @@ export function createSessionStream(args: {
   async function* events(): AsyncIterable<SessionStreamEvent> {
     try {
       for await (const raw of q) {
-        const type = mapType(raw);
-        const messageId = turns[0] ?? lastTurnId;
-        if (type === 'result' && turns.length > 0) {
-          // This turn is over: the next event belongs to the next queued message.
-          lastTurnId = turns.shift()!;
-          if (turns.length === 0) settleTurn();
+        const ack = replayAckId(raw);
+        if (ack !== null) {
+          const messageId = idByUuid.get(ack);
+          if (messageId === undefined) continue;
+          idByUuid.delete(ack);
+          const i = steers.indexOf(messageId);
+          if (i === -1) continue; // a turn's own prompt (or an already-promoted steer)
+          steers.splice(i, 1);
+          if (current !== null) {
+            yield { messageId: current, type: 'steer-folded', steerId: messageId };
+          } else {
+            await startTurn(messageId);
+            yield { messageId, type: 'turn-promoted' };
+          }
+          continue;
         }
+        const type = mapType(raw);
+        const messageId = current ?? lastTurnId;
         yield { messageId, type, raw };
+        if (type === 'result' && current !== null) {
+          lastTurnId = current;
+          current = null;
+          // Steers the CLI hadn't read by the end of the turn run next, as one
+          // turn: the oldest owns it, the rest fold in when their echo arrives.
+          const next = steers.shift();
+          if (next !== undefined) {
+            await startTurn(next);
+            yield { messageId: next, type: 'turn-promoted' };
+          }
+        }
       }
     } finally {
-      // Stream ended or failed: no result is coming, so stop holding the prompt pump.
       closed = true;
-      settleTurn();
     }
   }
 
   return {
-    enqueueUserMessage(msg) { inbox.push(msg); },
+    enqueueUserMessage(msg) {
+      let kind: EnqueueKind = 'turn';
+      if (current === null) current = msg.messageId;
+      else {
+        kind = 'steer';
+        steers.push(msg.messageId);
+      }
+      inbox.push({ ...msg, kind });
+      return kind;
+    },
     interrupt: () => q.interrupt(),
     events,
     close() {
       closed = true;
       inbox.close();
-      settleTurn();
     },
     queueDepth: () => inbox.depth(),
   };
 }
 
-function mapType(msg: SDKMessage): SessionStreamEvent['type'] {
+/** The uuid of a replay-user-messages echo of a prompt we sent, else null. */
+function replayAckId(msg: SDKMessage): string | null {
+  const m = msg as { type?: string; isReplay?: boolean; uuid?: unknown };
+  return m.type === 'user' && m.isReplay === true && typeof m.uuid === 'string' ? m.uuid : null;
+}
+
+function mapType(msg: SDKMessage): 'assistant-message' | 'result' | 'system' | 'partial' {
   const t = (msg as { type?: string }).type;
   if (t === 'assistant') return 'assistant-message';
   if (t === 'result') return 'result';

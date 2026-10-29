@@ -219,7 +219,7 @@ export function CommandBar({
   }
 
   const placeholder = busy
-    ? 'Otto is working — your message will queue'
+    ? 'Otto is working — add details and it will fold them in'
     : isPrivate
       ? 'Private — nothing here is saved, learned, or remembered'
       : 'Ask Otto to do something…';
@@ -424,7 +424,7 @@ export function CommandBar({
             onClick={onStop}
             disabled={!onStop}
             aria-label="Stop response"
-            title="Stop response (Esc) · Shift+Enter to interrupt and send new message"
+            title="Stop response (Esc) · Enter adds to the running task · Shift+Enter stops it and sends instead"
             className="group flex items-center gap-2 text-xs text-accent font-medium hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <span className="flex items-center justify-center w-6 h-6 rounded-md bg-accent/15 group-hover:bg-accent text-accent group-hover:text-white transition-colors">

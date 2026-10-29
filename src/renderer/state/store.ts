@@ -605,6 +605,45 @@ export const useOttoStore = create<OttoState>((set, get) => ({
         set({ activeSession: { ...session, openTurns: open, currentTurnActive: open > 0 } });
         return;
       }
+      case 'steer-queued': {
+        // Sent mid-turn: it rides along with the running turn as a pending
+        // note. Drop a matching optimistic bubble (submit raced the turn start).
+        let messages = session.messages;
+        const last = messages[messages.length - 1];
+        if (last && last.role === 'user' && userText(last.content) === event.text) messages = messages.slice(0, -1);
+        const note: ContentBlock = { type: 'user_note', id: event.noteId, text: event.text, content: event.content, pending: true };
+        const target = messages.find((m) => m.role === 'assistant' && m.id === event.messageId)
+          ?? [...messages].reverse().find((m) => m.role === 'assistant');
+        if (!target) {
+          const msg: UserMessage = { id: event.noteId, sessionId: session.id, seq: messages.length, createdAt: Date.now(), role: 'user', content: event.content };
+          set({ activeSession: { ...session, messages: [...messages, msg] } });
+          return;
+        }
+        set({ activeSession: updateAssistant({ ...session, messages }, target.id, (m) => ({ ...m, content: [...m.content, note] })) });
+        return;
+      }
+      case 'steer-folded': {
+        // The agent read it: it now sits where main persisted it — after
+        // everything the turn produced so far.
+        const next = updateAssistant(session, event.messageId, (m) => {
+          const note = m.content.find((b) => b.type === 'user_note' && b.id === event.noteId);
+          if (!note || note.type !== 'user_note') return m;
+          const { pending: _pending, ...read } = note;
+          return { ...m, content: [...m.content.filter((b) => b !== note), read] };
+        });
+        set({ activeSession: next });
+        return;
+      }
+      case 'steer-promoted': {
+        // Missed its turn: the note goes; the user-message that follows re-adds it as its own bubble.
+        const messages = session.messages.map((m) =>
+          m.role === 'assistant' && m.content.some((b) => b.type === 'user_note' && b.id === event.noteId)
+            ? { ...m, content: m.content.filter((b) => !(b.type === 'user_note' && b.id === event.noteId)) }
+            : m
+        );
+        set({ activeSession: { ...session, messages } });
+        return;
+      }
       case 'user-message-queued': {
         set({ activeSession: { ...session, queueDepth: event.queueDepth } });
         return;
@@ -693,6 +732,13 @@ export const useOttoStore = create<OttoState>((set, get) => ({
     set({ ...initial });
   },
 }));
+
+function userText(content: ContentBlock[]): string {
+  return content
+    .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
+    .map((c) => c.text)
+    .join('');
+}
 
 function updateAssistant(
   session: ActiveSessionState,

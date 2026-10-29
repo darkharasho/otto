@@ -74,6 +74,20 @@ export type ContentBlock =
       learnedNote?: string;
     }
   | {
+      /**
+       * A message the user sent while this turn was running, folded into it:
+       * the agent read it between steps and carried on. `id` is the user
+       * message id it would otherwise have had.
+       */
+      type: 'user_note';
+      id: string;
+      text: string;
+      /** text + image-ref blocks, as on a user message. */
+      content: ContentBlock[];
+      /** Renderer-only: sent, not read by the agent yet. Never persisted. */
+      pending?: boolean;
+    }
+  | {
       type: 'image-ref';
       id: string;
       sessionId: string;

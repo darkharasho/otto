@@ -6,8 +6,10 @@ import {
   newUserMessage,
   type AssistantMessage,
   type ContentBlock,
+  type UserMessage,
 } from '@shared/messages';
 import { consumeScreenshotRefs } from './sdk-client';
+import type { EnqueueKind } from './session-stream';
 
 function normalizeImageBlocks(callId: string, result: unknown): unknown {
   if (typeof result !== 'object' || result === null) return result;
@@ -44,12 +46,17 @@ export type SdkStreamEvent =
   | { type: 'tool-call-result'; callId: string; result: unknown; isError: boolean }
   | { type: 'message-end' }
   | { type: 'done' }
-  | { type: 'session-id'; id: string };
+  | { type: 'session-id'; id: string }
+  /** Steer `steerId` (an enqueued messageId) was folded into this running turn. */
+  | { type: 'steer-folded'; steerId: string }
+  /** This steer missed the turn it was sent into and now runs as its own turn. */
+  | { type: 'turn-promoted' };
 
 export type TaggedSdkStreamEvent = SdkStreamEvent & { messageId: string };
 
 export interface SessionStreamHandle {
-  enqueue(args: { messageId: string; text: string; attachments: Array<Extract<ContentBlock, { type: 'image-ref' }>> }): void;
+  /** 'turn' when the session was idle; 'steer' when sent into a running turn. */
+  enqueue(args: { messageId: string; text: string; attachments: Array<Extract<ContentBlock, { type: 'image-ref' }>> }): EnqueueKind;
   interrupt(): Promise<void>;
   events(): AsyncIterable<TaggedSdkStreamEvent>;
   close(): void;
@@ -66,6 +73,13 @@ export interface SdkClient {
 }
 
 type Emitter = (event: SessionEvent) => void;
+
+interface PendingSteer {
+  sessionId: string;
+  user: UserMessage & { sessionId: string };
+  /** Settles the send() that sent it: on fold, or when its own turn ends. */
+  resolve: () => void;
+}
 
 interface ActiveAssistant {
   message: AssistantMessage & { sessionId: string };
@@ -84,6 +98,9 @@ export class SessionManager {
   private readonly pendingRemote = new Map<string, Set<string>>(); // sessionId -> remote-origin messageIds not yet finalized
   private readonly lastOrigin = new Map<string, 'desktop' | 'remote'>(); // sessionId -> origin of the last finalized message
   private readonly seenSdkSessionId = new Set<string>();
+  // Messages sent into a running turn, keyed by the id they were enqueued
+  // under (their assistant id should they get a turn of their own).
+  private readonly steers = new Map<string, PendingSteer>();
   // callIds of annotate_result / mark_task_complete invocations: their
   // tool_use/tool_result never become content blocks — the annotation folds
   // into the target card, the outcome (when structured) becomes its own block.
@@ -274,6 +291,36 @@ export class SessionManager {
             });
             break;
           }
+          case 'steer-folded': {
+            const steer = this.takeSteer(ev.steerId);
+            if (!steer) break;
+            const row = this.getOrCreateAssistant(sessionId, messageId);
+            if (row) {
+              this.ensureStarted(sessionId, row);
+              const { id, content } = steer.user;
+              const text = content.filter((b): b is { type: 'text'; text: string } => b.type === 'text').map((b) => b.text).join('');
+              row.message.content.push({ type: 'user_note', id, text, content });
+              this.emit({ type: 'steer-folded', sessionId, messageId, noteId: id });
+            }
+            steer.resolve();
+            break;
+          }
+          case 'turn-promoted': {
+            // The turn it was sent into ended before the agent read it: it
+            // becomes a user message with a turn of its own, as if sent now.
+            const steer = this.steers.get(messageId);
+            if (!steer) break;
+            this.steers.delete(messageId);
+            const user = this.repo.appendMessage({ ...steer.user, createdAt: Date.now() });
+            const text = user.content.filter((b): b is { type: 'text'; text: string } => b.type === 'text').map((b) => b.text).join('');
+            this.emit({ type: 'steer-promoted', sessionId, noteId: user.id });
+            this.emit({ type: 'user-message', sessionId, messageId: user.id, text, content: user.content });
+            const row = this.getOrCreateAssistant(sessionId, messageId);
+            if (!row) { steer.resolve(); break; }
+            this.ensureStarted(sessionId, row);
+            void row.done.then(steer.resolve);
+            break;
+          }
           case 'message-end': {
             // If interrupt() flagged this message before the SDK closed it
             // out, finalize as cancelled so in-flight tool cards get
@@ -314,6 +361,7 @@ export class SessionManager {
         logger.error('SDK stream failed', err);
         this.emit({ type: 'error', sessionId, error: structured });
       }
+      this.dropSteers(sessionId);
       // Tear down the stream so the next send() rebuilds it.
       this.streams.delete(sessionId);
       this.aborts.delete(sessionId);
@@ -534,13 +582,12 @@ export class SessionManager {
   async send(args: { sessionId: string; text: string; attachments?: Array<Extract<ContentBlock, { type: 'image-ref' }>>; voice?: boolean; origin?: 'desktop' | 'remote' }): Promise<void> {
     const { sessionId, text } = args;
     const sdkText = args.voice ? text + SessionManager.VOICE_SUFFIX : text;
-    const user = this.repo.appendMessage({ ...newUserMessage(text, args.attachments ?? []), sessionId });
-    this.emit({ type: 'user-message', sessionId, messageId: user.id, text, content: user.content });
+    const user = { ...newUserMessage(text, args.attachments ?? []), sessionId };
     this.repo.setSessionTitleIfMissing(sessionId, text.slice(0, 80));
     this.repo.updateSessionActivity(sessionId, Date.now(), 'active');
 
-    // Pre-create the assistant row with a stable id we can use to tag the
-    // enqueued message. The stream consumer will populate it as events arrive.
+    // A stable id to tag the enqueued message with: its assistant row's id
+    // once it has a turn. The stream consumer populates the row as events arrive.
     const assistantId = newAssistantMessage().id;
     const origin = args.origin ?? 'desktop';
     this.origins.set(assistantId, origin);
@@ -553,21 +600,12 @@ export class SessionManager {
       pending.add(assistantId);
     }
     let stream: SessionStreamHandle;
-    let row: ActiveAssistant;
     try {
       stream = this.ensureStream(sessionId);
-      // Track ahead-of-time so events can find the row even if they arrive before
-      // we'd otherwise getOrCreate. We also keep a handle on the done promise so
-      // send() can await per-message completion (preserving the previous
-      // per-turn await semantics).
-      const created = this.getOrCreateAssistant(sessionId, assistantId);
-      if (!created) throw new Error(`assistantId ${assistantId} unexpectedly collided with a finalized message`);
-      row = created;
     } catch (err) {
       // Never enqueued: don't leave the id pinning the session to 'remote'.
       this.origins.delete(assistantId);
       this.dropPendingRemote(sessionId, assistantId);
-      this.assistants.get(sessionId)?.delete(assistantId);
       throw err;
     }
 
@@ -582,27 +620,61 @@ export class SessionManager {
     }
 
     // The current message id moves when this message's turn actually starts
-    // (onPerMessageContext from the stream pump), not here: a message queued
-    // behind a running turn must not take over that turn's approval cards.
+    // (onPerMessageContext from the stream pump), not here: a message sent
+    // into a running turn must not take over that turn's approval cards.
+    //
+    // Everything below up to the await runs synchronously after enqueue, so
+    // these events reach the renderer before the pump's (async)
+    // user-message-consumed and any stream event for this message.
+    const kind = stream.enqueue({ messageId: assistantId, text: sdkText, attachments: args.attachments ?? [] });
 
-    // Emit user-message-queued BEFORE enqueue so the renderer sees it before
-    // any user-message-consumed that fires synchronously from a waiting SDK
-    // pump. Without this, a brand-new stream's pump (already awaiting the
-    // inbox by the time we enqueue) can fire consumed first, leaving the
-    // renderer's queueDepth stuck at 1.
+    if (kind === 'steer') {
+      // Sent mid-turn: it rides along with the running turn as a note until
+      // the agent reads it (steer-folded) or, if that turn ends first, it is
+      // promoted to a turn of its own (turn-promoted).
+      const running = this.assistants.get(sessionId)?.keys().next().value ?? '';
+      const settled = new Promise<void>((resolve) => {
+        this.steers.set(assistantId, { sessionId, user, resolve });
+      });
+      this.emit({ type: 'steer-queued', sessionId, messageId: running, noteId: user.id, text, content: user.content });
+      await settled;
+      return;
+    }
+
+    this.repo.appendMessage(user);
+    this.emit({ type: 'user-message', sessionId, messageId: user.id, text, content: user.content });
     this.emit({
       type: 'user-message-queued',
       sessionId,
       messageId: assistantId,
-      queueDepth: stream.queueDepth() + 1,
+      queueDepth: stream.queueDepth(),
     });
-    stream.enqueue({ messageId: assistantId, text: sdkText, attachments: args.attachments ?? [] });
+    const row = this.getOrCreateAssistant(sessionId, assistantId);
+    if (!row) throw new Error(`assistantId ${assistantId} unexpectedly collided with a finalized message`);
     // Emit message-start eagerly so the renderer creates the assistant
     // placeholder and shows the thinking animation during the SDK round-trip.
     // The consumer loop's ensureStarted() will see row.started=true and skip.
     this.ensureStarted(sessionId, row);
-    void user;
     await row.done;
+  }
+
+  /** Remove a pending steer once the agent has read it; its id never gets a turn. */
+  private takeSteer(steerId: string): PendingSteer | undefined {
+    const steer = this.steers.get(steerId);
+    if (!steer) return undefined;
+    this.steers.delete(steerId);
+    this.origins.delete(steerId);
+    this.dropPendingRemote(steer.sessionId, steerId);
+    return steer;
+  }
+
+  /** Settle every pending steer of a torn-down stream: no echo is coming. */
+  private dropSteers(sessionId: string): void {
+    for (const [id, steer] of [...this.steers]) {
+      if (steer.sessionId !== sessionId) continue;
+      this.takeSteer(id);
+      steer.resolve();
+    }
   }
 
   async close(args: { sessionId: string }): Promise<void> {
@@ -620,6 +692,7 @@ export class SessionManager {
       abort.abort();
       this.aborts.delete(args.sessionId);
     }
+    this.dropSteers(args.sessionId);
     for (const id of this.assistants.get(args.sessionId)?.keys() ?? []) this.origins.delete(id);
     // Never finalized: a straggling tool call from the torn-down stream still counts as remote.
     if (this.pendingRemote.delete(args.sessionId)) this.lastOrigin.set(args.sessionId, 'remote');

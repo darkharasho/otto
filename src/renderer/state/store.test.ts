@@ -583,3 +583,55 @@ describe('store: tool-result-annotated', () => {
     expect(tr).toMatchObject({ callId: 'c1', takeaway: 'disk saturated during the hitch' });
   });
 });
+
+describe('mid-turn steering', () => {
+  const content = [{ type: 'text' as const, text: 'only with Discord open' }];
+  function running() {
+    const st = useOttoStore.getState();
+    st.beginSession('s1');
+    st.applyEvent({ type: 'message-start', sessionId: 's1', messageId: 'm1' });
+    st.applyEvent({ type: 'text-delta', sessionId: 's1', messageId: 'm1', text: 'checking' });
+  }
+  const blocks = () => useOttoStore.getState().activeSession!.messages.map((m) => m.content);
+
+  it('draws a queued steer as a pending note on the running turn', () => {
+    running();
+    useOttoStore.getState().applyEvent({ type: 'steer-queued', sessionId: 's1', messageId: 'm1', noteId: 'n1', text: 'only with Discord open', content });
+    expect(blocks()).toEqual([[
+      { type: 'text', text: 'checking' },
+      { type: 'user_note', id: 'n1', text: 'only with Discord open', content, pending: true },
+    ]]);
+  });
+
+  it('moves a folded note after what the turn produced meanwhile and clears pending', () => {
+    running();
+    const st = useOttoStore.getState();
+    st.applyEvent({ type: 'steer-queued', sessionId: 's1', messageId: 'm1', noteId: 'n1', text: 'only with Discord open', content });
+    st.applyEvent({ type: 'tool-call-start', sessionId: 's1', messageId: 'm1', callId: 'c1', name: 'probe', input: {} });
+    st.applyEvent({ type: 'steer-folded', sessionId: 's1', messageId: 'm1', noteId: 'n1' });
+    expect(blocks()[0]!.map((b) => b.type)).toEqual(['text', 'tool_use', 'user_note']);
+    expect(blocks()[0]![2]).not.toHaveProperty('pending');
+  });
+
+  it('a promoted steer leaves the old turn and comes back as its own bubble', () => {
+    running();
+    const st = useOttoStore.getState();
+    st.applyEvent({ type: 'steer-queued', sessionId: 's1', messageId: 'm1', noteId: 'n1', text: 'only with Discord open', content });
+    st.applyEvent({ type: 'steer-promoted', sessionId: 's1', noteId: 'n1' });
+    st.applyEvent({ type: 'user-message', sessionId: 's1', messageId: 'n1', text: 'only with Discord open', content });
+    const msgs = useOttoStore.getState().activeSession!.messages;
+    expect(msgs.map((m) => m.role)).toEqual(['assistant', 'user']);
+    expect(msgs[0]!.content).toEqual([{ type: 'text', text: 'checking' }]);
+    expect(msgs[1]!.id).toBe('n1');
+  });
+
+  it('replaces an optimistic bubble that raced the turn start', () => {
+    running();
+    const st = useOttoStore.getState();
+    st.appendUserMessage('opt', 'only with Discord open');
+    st.applyEvent({ type: 'steer-queued', sessionId: 's1', messageId: 'm1', noteId: 'n1', text: 'only with Discord open', content });
+    const msgs = useOttoStore.getState().activeSession!.messages;
+    expect(msgs.map((m) => m.role)).toEqual(['assistant']);
+    expect(msgs[0]!.content.at(-1)).toMatchObject({ type: 'user_note', id: 'n1' });
+  });
+});
