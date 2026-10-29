@@ -662,7 +662,6 @@ describe('SessionManager origin tracking', () => {
     fakeSdk.openStream = openStream;
     return { release };
   }
-  const queuedId = () => (events.find((e) => e.type === 'user-message-queued') as { messageId: string }).messageId;
 
   it('reports remote for the session while its remote-origin message is in flight', async () => {
     const { release } = gatedManager();

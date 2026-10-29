@@ -131,7 +131,7 @@ async function take(iter: AsyncIterator<SessionStreamEvent>, n: number): Promise
 
 describe('createSessionStream steering', () => {
   it('reports turn for an idle send and steer for a send into a running turn', async () => {
-    const { factory } = cliFactory(async function* () { await tick(50); });
+    const { factory } = cliFactory(async function* () { await tick(50); yield* []; });
     const stream = createSessionStream({ sessionId: 's', queryFactory: factory });
     expect(stream.enqueueUserMessage({ messageId: 'm1', text: 'first', attachments: [] })).toBe('turn');
     expect(stream.enqueueUserMessage({ messageId: 'm2', text: 'second', attachments: [] })).toBe('steer');
