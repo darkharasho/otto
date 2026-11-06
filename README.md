@@ -66,7 +66,7 @@ Tool approvals and turn-complete events ping the system notification center when
 Grab the latest release for your platform:
 
 - **Linux** — [AppImage / deb](https://github.com/darkharasho/otto/releases/latest)
-- **Windows** — [Installer](https://github.com/darkharasho/otto/releases/latest) (unsigned — click "More info → Run anyway" on SmartScreen)
+- **Windows** — [Installer](https://github.com/darkharasho/otto/releases/latest) (signed; older unsigned releases need "More info → Run anyway" on SmartScreen)
 - **macOS** — [DMG (Intel + Apple Silicon)](https://github.com/darkharasho/otto/releases/latest) (signed + notarized)
 
 ### Prerequisites

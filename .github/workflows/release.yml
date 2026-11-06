@@ -128,6 +128,21 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=6144
 
+      # Windows is signed with Azure Artifact Signing (win.azureSignOptions in
+      # electron-builder.yml). Without these electron-builder can't authenticate,
+      # so fail before the slow build instead of after it.
+      - name: Check the Windows signing secrets are set
+        if: matrix.platform == 'win'
+        shell: bash
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        run: |
+          for v in AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET; do
+            [ -n "${!v}" ] || { echo "::error::Secret $v is not set."; exit 1; }
+          done
+
       - name: Build and publish Electron distributables
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -137,7 +152,23 @@ jobs:
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          AZURE_TENANT_ID: ${{ matrix.platform == 'win' && secrets.AZURE_TENANT_ID || '' }}
+          AZURE_CLIENT_ID: ${{ matrix.platform == 'win' && secrets.AZURE_CLIENT_ID || '' }}
+          AZURE_CLIENT_SECRET: ${{ matrix.platform == 'win' && secrets.AZURE_CLIENT_SECRET || '' }}
         run: pnpm exec electron-builder ${{ matrix.args }} --publish always
+
+      # The release stays a draft if this fails, since publish needs every build.
+      - name: Verify the Windows installer is signed
+        if: matrix.platform == 'win'
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem dist -Filter *.exe | Where-Object { $_.Name -like '*-setup.exe' }
+          if (-not $files) { Write-Error "No installer found in dist/"; exit 1 }
+          foreach ($f in $files) {
+            $sig = Get-AuthenticodeSignature $f.FullName
+            Write-Host "$($f.Name): $($sig.Status) — $($sig.SignerCertificate.Subject)"
+            if ($sig.Status -ne 'Valid') { Write-Error "$($f.Name) is not validly signed"; exit 1 }
+          }
 
   publish:
     needs: [build]

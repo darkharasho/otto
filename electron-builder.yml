@@ -52,6 +52,13 @@ win:
   target: nsis
   icon: build/icon.ico
   artifactName: ${productName}-${version}-${arch}-setup.${ext}
+  # Signed with Azure Artifact Signing so SmartScreen doesn't warn. Credentials come from
+  # AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET (set in the release workflow).
+  azureSignOptions:
+    publisherName: Michael Stephens
+    endpoint: https://eus.codesigning.azure.net/
+    codeSigningAccountName: darkharasho-signing
+    certificateProfileName: public-trust
 
 mac:
   target:
@@ -71,8 +78,9 @@ mac:
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     LSUIElement: true
-  notarize:
-    teamId: YMPSC6RQ4F
+  # electron-builder 26 takes a boolean here; the team id (YMPSC6RQ4F) comes from
+  # the APPLE_TEAM_ID env var the release workflow sets.
+  notarize: true
 
 asarUnpack:
   - "native/darwin_shortcut.node"
