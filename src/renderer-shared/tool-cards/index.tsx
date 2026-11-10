@@ -19,6 +19,7 @@ import { TypedCard } from './TypedCard';
 import { TasksCard } from './TasksCard';
 import { JsonTreeCard } from './JsonTreeCard';
 import { ObserveCard } from './ObserveCard';
+import { DelegationCard } from './DelegationCard';
 
 // Each Card narrows `view` internally via Extract<ResultView, { kind: '...' }>.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -47,10 +48,9 @@ const RENDERERS: Record<ResultView['kind'], AnyCard> = {
   notebook: NotebookCard,
   tree:     JsonTreeCard,
   observe:  ObserveCard,
-  // The live card (with local approvals) is desktop-only; elsewhere show the outcome text.
-  delegation: ({ view }: { view: Extract<ResultView, { kind: 'delegation' }> }) => (
-    <MarkdownCard view={{ kind: 'markdown', text: view.snapshot.finalText || view.snapshot.error || `${view.snapshot.machine}: ${view.snapshot.status}` }} />
-  ),
+  // Approvals are answerable only on the delegating desktop (DelegationView);
+  // elsewhere this shows the same live transcript minus the decision buttons.
+  delegation: DelegationCard,
 };
 
 export function ToolCardBody({ view, compact, onStop }: { view: ResultView; compact?: boolean; onStop?: () => void }) {

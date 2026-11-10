@@ -156,6 +156,19 @@ export function summarizeInput(name: string, input: unknown, maxLen = 80): strin
   return null;
 }
 
+/** Mirrors DelegationSnapshot in src/shared/delegation.ts (what this app reads of it). */
+export interface DelegationSnapshotView {
+  machine: string;
+  status: string;
+  items: Array<
+    | { kind: 'text'; text: string }
+    | { kind: 'tool'; callId: string; name: string; summary: string; status: string; result?: string }
+  >;
+  pendingApproval: { name: string } | null;
+  pendingSudo: { command: string } | null;
+  error?: string;
+}
+
 export type ResultView =
   | { kind: 'image';    src: string; alt?: string; meta?: string }
   | { kind: 'terminal'; stdout?: string; stderr?: string; exitCode?: number; durationMs?: number }
@@ -163,6 +176,7 @@ export type ResultView =
   | { kind: 'kv';       entries: Array<[string, string]> }
   | { kind: 'error';    text: string }
   | { kind: 'empty' }
+  | { kind: 'delegation'; snapshot: DelegationSnapshotView }
   | { kind: 'json';     value: unknown };
 
 const DATA_URL_RE = /data:image\/[a-zA-Z+]+;base64,[A-Za-z0-9+/=]+/;
@@ -195,6 +209,20 @@ export function classifyResult(name: string, result: unknown, isError: boolean):
 
   const parsed = parseMcpName(name);
   const bareName = parsed?.server === 'otto-tools' ? parsed.tool : name;
+
+  // A task handed to another of the user's machines: the result (and each
+  // in-flight snapshot) is that machine's own transcript, rendered as such.
+  if (bareName === 'delegate_to_machine' || bareName === 'wait_for_machine') {
+    if (
+      result && typeof result === 'object' &&
+      (result as { v?: unknown }).v === 1 &&
+      Array.isArray((result as { items?: unknown }).items)
+    ) {
+      return { kind: 'delegation', snapshot: result as unknown as DelegationSnapshotView };
+    }
+    if (typeof result === 'string') return { kind: 'markdown', text: result };
+  }
+
   if (bareName === 'screenshot' && typeof result === 'object' && result !== null && 'path' in (result as object)) {
     const r = result as { path: unknown; width?: unknown; height?: unknown };
     if (typeof r.path === 'string') {

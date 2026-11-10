@@ -28,7 +28,7 @@ import { OttoMark } from '@/components/OttoMark';
 type ToolStatus = 'pending' | 'resolved' | 'denied';
 
 interface TextItem { kind: 'text'; id: string; text: string; done: boolean }
-interface ToolItem { kind: 'tool'; id: string; callId: string; name: string; input: unknown; status: ToolStatus; result?: unknown; isError?: boolean }
+interface ToolItem { kind: 'tool'; id: string; callId: string; name: string; input: unknown; status: ToolStatus; result?: unknown; isError?: boolean; snapshot?: unknown }
 interface ScreenshotItem { kind: 'screenshot'; id: string; shotId: string; signedUrl: string }
 interface UserItem { kind: 'user'; id: string; text: string; content?: Array<{ type: string; [k: string]: unknown }> }
 type TranscriptItem = TextItem | ToolItem | ScreenshotItem | UserItem;
@@ -353,6 +353,19 @@ export default function ChatScreen() {
         ));
         return;
       }
+      // Partial-result snapshots: a running delegation (or observe) publishes
+      // its progress so the card fills in while the call is still open,
+      // instead of sitting on "..." with nothing to show.
+      case 'tool-call-snapshot': {
+        const callId = String(msg.callId ?? '');
+        if (!callId) return;
+        setItems((prev) => prev.map((it) =>
+          it.kind === 'tool' && it.callId === callId && it.status === 'pending'
+            ? { ...it, snapshot: msg.snapshot }
+            : it
+        ));
+        return;
+      }
       case 'tool-call-pending': {
         const decisionId = String(msg.decisionId ?? '');
         if (!decisionId) return;
@@ -552,7 +565,7 @@ export default function ChatScreen() {
     if (it.kind === 'tool') {
       return (
         <View style={{ paddingHorizontal: 12, marginBottom: 8 }}>
-          <ToolCard name={it.name} input={it.input} status={it.status} result={it.result} isError={it.isError} />
+          <ToolCard name={it.name} input={it.input} status={it.status} result={it.result} isError={it.isError} snapshot={it.snapshot} />
         </View>
       );
     }

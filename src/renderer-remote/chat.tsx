@@ -23,7 +23,7 @@ import { toLocalImageSrc } from '../shared/image-src';
 type ToolStatus = 'pending' | 'resolved' | 'denied';
 
 interface TextItem { kind: 'text'; id: string; text: string; done: boolean }
-interface ToolItem { kind: 'tool'; id: string; callId: string; name: string; input: unknown; status: ToolStatus; result?: unknown; isError?: boolean }
+interface ToolItem { kind: 'tool'; id: string; callId: string; name: string; input: unknown; status: ToolStatus; result?: unknown; isError?: boolean; snapshot?: unknown }
 interface ScreenshotItem { kind: 'screenshot'; id: string; shotId: string; signedUrl: string }
 interface UserItem { kind: 'user'; id: string; text: string; content?: Array<{ type: string; [k: string]: unknown }> }
 type TranscriptItem = TextItem | ToolItem | ScreenshotItem | UserItem;
@@ -82,7 +82,7 @@ function TypingDots(): JSX.Element {
 }
 
 function ToolCard({ item }: { item: ToolItem }): JSX.Element {
-  const [open, setOpen] = useState(false);
+  const [override, setOverride] = useState<boolean | null>(null);
   const status =
     item.status === 'pending' ? 'running'
     : item.status === 'denied' ? 'denied'
@@ -92,7 +92,14 @@ function ToolCard({ item }: { item: ToolItem }): JSX.Element {
 
   const desc = describeTool(item.name);
   const summary = summarizeInput(item.name, item.input);
-  const view = item.result === undefined ? null : classifyResult(item.name, item.result, Boolean(item.isError), item.input);
+  // While the call is open, its latest snapshot stands in for the result — a
+  // delegation renders the other machine's transcript as it arrives.
+  const view = item.result === undefined
+    ? (item.snapshot === undefined ? null : classifyResult(item.name, item.snapshot, false, item.input))
+    : classifyResult(item.name, item.result, Boolean(item.isError), item.input);
+  // A live card opens itself so remote progress needs no tap; once the user
+  // toggles it, their choice sticks.
+  const open = override ?? (status === 'running' && view !== null && view.kind !== 'empty');
 
   const statusClass =
     status === 'running'
@@ -106,7 +113,7 @@ function ToolCard({ item }: { item: ToolItem }): JSX.Element {
       <button
         type="button"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOverride(!open)}
         className="w-full flex items-center justify-between gap-2 px-2.5 py-2 text-xs min-h-[44px] hover:bg-white/[0.03]"
       >
         <span className="flex items-center gap-2 min-w-0 flex-1">
@@ -589,6 +596,19 @@ export function Chat(): JSX.Element {
         const callId = String(msg.callId ?? '');
         setItems((prev) => prev.map((it) =>
           it.kind === 'tool' && it.callId === callId ? { ...it, status: 'denied' } : it
+        ));
+        return;
+      }
+      // Partial-result snapshots: a running delegation (or observe) publishes
+      // its progress so the card fills in while the call is still open,
+      // instead of sitting on "running…" with nothing to show.
+      case 'tool-call-snapshot': {
+        const callId = String(msg.callId ?? '');
+        if (!callId) return;
+        setItems((prev) => prev.map((it) =>
+          it.kind === 'tool' && it.callId === callId && it.status === 'pending'
+            ? { ...it, snapshot: msg.snapshot }
+            : it
         ));
         return;
       }
