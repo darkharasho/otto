@@ -292,7 +292,7 @@ export default function ChatScreen() {
         body = (
           <ToolCard
             name={it.name} input={it.input} status={it.status} result={it.result} isError={it.isError}
-            output={it.output} takeaway={it.takeaway} why={it.why} deniedReason={it.deniedReason}
+            output={it.output} snapshot={it.snapshot} takeaway={it.takeaway} why={it.why} deniedReason={it.deniedReason}
           />
         );
         break;

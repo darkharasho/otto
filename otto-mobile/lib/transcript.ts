@@ -24,6 +24,8 @@ export type TranscriptItem =
       result?: unknown; isError?: boolean; deniedReason?: string;
       /** Live stdout/stderr while it runs; the final result replaces it. */
       output?: string;
+      /** Latest partial result while it runs (a delegation's remote transcript, a watch). */
+      snapshot?: unknown;
       takeaway?: string; why?: string;
     }
   | { kind: 'outcome'; id: string; block: OutcomeBlock }
@@ -276,7 +278,7 @@ function applyEvent(s0: TranscriptState, ev: RemoteEventFrame): TranscriptState 
     case 'tool-call-output':
       return updateTool(s, ev.callId, (it) => ({ output: ((it.output ?? '') + ev.data).slice(-4000) }));
     case 'tool-call-result':
-      return updateTool(s, ev.callId, () => ({ status: 'resolved', result: ev.result, isError: ev.isError, output: undefined }));
+      return updateTool(s, ev.callId, () => ({ status: 'resolved', result: ev.result, isError: ev.isError, output: undefined, snapshot: undefined }));
     case 'tool-result-annotated':
       return updateTool(s, ev.callId, () => ({ takeaway: ev.takeaway, why: ev.why }));
     case 'tool-call-denied':
@@ -326,6 +328,7 @@ function applyEvent(s0: TranscriptState, ev: RemoteEventFrame): TranscriptState 
     case 'error':
       return { ...closeBubbles(s), openTurns: 0, awaitingReply: false, error: ev.error.message };
     case 'tool-call-snapshot':
+      return updateTool(s, ev.callId, (it) => it.status === 'pending' ? { snapshot: ev.snapshot } : {});
     case 'process-spawned':
     case 'process-stdout':
     case 'process-stderr':

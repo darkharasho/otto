@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { View, Text, Pressable, ScrollView, Linking } from 'react-native';
 import { ChevronDown } from 'lucide-react-native';
 import { describeTool, summarizeInput, classifyResult, type ResultView } from '@shared/tool-presenters';
+import type { DelegationSnapshot } from '@shared/delegation';
 import type { ToolStatus } from '@/lib/transcript';
 import { colors, mono } from '@/lib/theme';
 import { ToolIcon } from './ToolIcon';
@@ -15,6 +16,8 @@ interface Props {
   isError?: boolean;
   /** Live output while it runs. */
   output?: string;
+  /** Latest partial-result snapshot while it runs. */
+  snapshot?: unknown;
   takeaway?: string;
   why?: string;
   deniedReason?: string;
@@ -139,21 +142,76 @@ function ResultRenderer({ view }: { view: ResultView }) {
       );
     case 'image':
       return <Text style={{ fontSize: 11, color: colors.textMuted, fontStyle: 'italic' }}>{view.note ?? 'Screenshot (shown on the desktop)'}</Text>;
-    case 'tree':
     case 'delegation':
+      return <DelegationRenderer snapshot={view.snapshot} />;
+    case 'tree':
     case 'json':
     default:
       return <Mono>{JSON.stringify('value' in view ? view.value : view, null, 2).slice(0, 6000)}</Mono>;
   }
 }
 
-export function ToolCard({ name, input, status, result, isError, output, takeaway, why, deniedReason }: Props) {
-  const [open, setOpen] = useState(false);
+const DELEGATION_STATUS: Record<DelegationSnapshot['status'], string> = {
+  connecting: 'Connecting',
+  busy: 'Busy',
+  running: 'Working',
+  done: 'Done',
+  interrupted: 'Interrupted',
+  error: 'Error',
+  lost: 'Connection lost',
+};
+
+const DELEGATION_DOT: Record<string, string> = {
+  running: colors.accent,
+  done: colors.success,
+  error: colors.danger,
+  denied: colors.warning,
+};
+
+/** The other machine's transcript. Its approvals can only be answered on the
+ *  desktop that delegated the task, so they show as a waiting note. */
+function DelegationRenderer({ snapshot }: { snapshot: DelegationSnapshot }) {
+  return (
+    <View style={{ gap: 6 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <Text style={{ fontSize: 11, fontWeight: '600', color: colors.text }}>{snapshot.machine}</Text>
+        <Text style={{ fontSize: 11, color: colors.textMuted }}>{DELEGATION_STATUS[snapshot.status] ?? snapshot.status}</Text>
+      </View>
+      {snapshot.items.map((it, i) =>
+        it.kind === 'text' ? (
+          <EmojiText key={i} style={{ fontSize: 11, color: colors.text }} iconSize={11}>{it.text}</EmojiText>
+        ) : (
+          <View key={it.callId || String(i)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: DELEGATION_DOT[it.status] ?? colors.textMuted }} />
+            <Text style={{ fontSize: 11, fontWeight: '500', color: colors.text }}>{describeTool(it.name).label}</Text>
+            <Text style={{ ...small, color: colors.textMuted, flex: 1 }} numberOfLines={1}>{it.summary}</Text>
+          </View>
+        ),
+      )}
+      {snapshot.pendingApproval ? (
+        <Text style={{ fontSize: 11, color: colors.warning }}>
+          Waiting for approval of {describeTool(snapshot.pendingApproval.name).label} on {snapshot.machine}.
+        </Text>
+      ) : null}
+      {snapshot.pendingSudo ? <Text style={{ fontSize: 11, color: colors.warning }}>Waiting for a password on {snapshot.machine}.</Text> : null}
+      {snapshot.error ? <Text style={{ fontSize: 11, color: colors.danger }}>{snapshot.error}</Text> : null}
+    </View>
+  );
+}
+
+export function ToolCard({ name, input, status, result, isError, output, snapshot, takeaway, why, deniedReason }: Props) {
+  const [override, setOverride] = useState<boolean | null>(null);
   const state = status === 'pending' ? 'running' : status === 'denied' ? 'denied' : isError ? 'error' : 'done';
   const stateColor = state === 'running' ? colors.textMuted : state === 'done' ? colors.success : colors.danger;
   const desc = describeTool(name, input);
   const summary = summarizeInput(name, input);
-  const view = result === undefined ? null : classifyResult(name, result, Boolean(isError), input);
+  // While the call is open, its latest snapshot stands in for the result, so a
+  // delegation shows the other machine's transcript as it arrives.
+  const view = result !== undefined ? classifyResult(name, result, Boolean(isError), input)
+    : snapshot !== undefined ? classifyResult(name, snapshot, false, input)
+    : null;
+  // A live card with something to show opens itself; a tap overrides that for good.
+  const open = override ?? (state === 'running' && view !== null && view.kind !== 'empty');
   const note = state === 'denied' ? deniedReason : isError ? why ?? takeaway : takeaway;
 
   // Low-signal tools (memory, file reads) get a one-line receipt.
@@ -171,7 +229,7 @@ export function ToolCard({ name, input, status, result, isError, output, takeawa
   return (
     <View style={{ borderRadius: 8, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface, overflow: 'hidden' }}>
       <Pressable
-        onPress={() => setOpen((v) => !v)}
+        onPress={() => setOverride(!open)}
         style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10, paddingVertical: 8, minHeight: 44 }}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>

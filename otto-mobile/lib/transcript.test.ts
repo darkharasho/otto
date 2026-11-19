@@ -97,6 +97,14 @@ describe('transcriptReducer: live events', () => {
     expect(s.sudos).toEqual([]);
   });
 
+  it('shows a running call\'s latest snapshot until its result lands', () => {
+    let s = frames(opened(), ev({ kind: 'tool-call-start', messageId: 'a1', callId: 'c1', name: 'delegate_to_machine', input: {} }, 1));
+    s = frames(s, ev({ kind: 'tool-call-snapshot', messageId: 'a1', callId: 'c1', snapshot: { v: 1, step: 1 } }, 2));
+    expect(s.items[0]).toMatchObject({ status: 'pending', snapshot: { v: 1, step: 1 } });
+    s = frames(s, ev({ kind: 'tool-call-result', messageId: 'a1', callId: 'c1', result: 'done', isError: false }, 3));
+    expect(s.items[0]).toMatchObject({ status: 'resolved', result: 'done', snapshot: undefined });
+  });
+
   it('drops a promoted steer note', () => {
     let s = frames(opened(), ev({ kind: 'steer-queued', messageId: 'a1', noteId: 'n1', text: 'also x', content: [] }, 1));
     expect(s.items.map((it) => it.id)).toEqual(['n1']);

@@ -1,3 +1,8 @@
+Version v0.21.0
+
+Changes:
+- **Delegated tasks are now visible from your phone.** When Otto hands a task to another of your paired machines, the phone app and the web remote showed a collapsed card reading `running…` with nothing in it until the task finished. Both now render that machine's live transcript — its status, what it's saying, and each tool call as it runs — the same view the delegating desktop has had. Live cards open themselves so there's nothing to tap, and approvals raised on the remote machine show as a waiting note, since only the desktop that delegated the task can answer them.
+
 Version v0.16.0
 
 Changes:
