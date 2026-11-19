@@ -2,7 +2,7 @@
   "expo": {
     "name": "Otto",
     "slug": "otto-mobile",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "otto",
@@ -21,24 +21,7 @@
         "tinted": "./assets/icon-tinted.png"
       },
       "infoPlist": {
-        "NSCameraUsageDescription": "Otto needs camera access to scan pairing QR codes from your desktop.",
-        "ITSAppUsesNonExemptEncryption": false,
-        "NSAppTransportSecurity": {
-          "NSAllowsLocalNetworking": true,
-          "NSAllowsArbitraryLoads": true,
-          "NSExceptionDomains": {
-            "ts.net": {
-              "NSExceptionAllowsInsecureHTTPLoads": true,
-              "NSIncludesSubdomains": true
-            },
-            "127.0.0.1": {
-              "NSExceptionAllowsInsecureHTTPLoads": true
-            },
-            "localhost": {
-              "NSExceptionAllowsInsecureHTTPLoads": true
-            }
-          }
-        }
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -47,17 +30,31 @@
       },
       "package": "com.otto.mobile",
       "permissions": [
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.CAMERA"
       ]
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": false
+        }
+      ],
       [
         "expo-camera",
         {
-          "cameraPermission": "Otto needs camera access to scan pairing QR codes from your desktop."
+          "cameraPermission": "Otto uses the camera to scan the pairing QR code shown in Otto on your computer.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Otto lets you pick photos to attach to a message for Otto on your computer.",
+          "cameraPermission": false,
+          "microphonePermission": false
         }
       ],
       "./plugins/allow-http"
@@ -65,11 +62,7 @@
     "extra": {
       "router": {
         "origin": false
-      },
-      "eas": {
-        "projectId": "332f7fb5-5db1-4e4b-83b5-a041dfd5bfa2"
       }
-    },
-    "owner": "harasho"
+    }
   }
 }

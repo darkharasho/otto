@@ -508,7 +508,7 @@ export default function ChatScreen() {
     const showOttoLabel = (it.kind === 'text' || it.kind === 'tool' || it.kind === 'screenshot') &&
       (!prev || prev.kind === 'user');
     if (it.kind === 'user') {
-      const imageRefs = (it.content ?? []).filter((b) => b.type === 'image-ref') as ImageRef[];
+      const imageRefs = (it.content ?? []).filter((b): b is typeof b & ImageRef => b.type === 'image-ref');
       return (
         <View style={{ alignItems: 'flex-end', paddingHorizontal: 12, marginBottom: 12 }}>
           <View style={{ borderRadius: 16, backgroundColor: 'rgba(99,102,241,0.2)', borderWidth: 1, borderColor: 'rgba(99,102,241,0.3)', paddingHorizontal: 16, paddingVertical: 8, maxWidth: '80%', borderBottomRightRadius: 6 }}>
