@@ -11,8 +11,9 @@
 
 export interface RemoteContext {
   kind: 'remote';
-  /** Bearer token issued at pairing time. Required to hit /image. */
-  token: string;
+  /** Bearer token issued at pairing time, appended as `token=`. Omit it when
+   *  the client sends an Authorization header instead (the iOS app). */
+  token?: string;
   /** Base path for the bridge; defaults to '' (same origin). */
   basePath?: string;
 }
@@ -40,7 +41,7 @@ export function toLocalImageSrc(rawSrc: string | undefined, ctx: ImageSrcContext
     return `otto-img:///?u=${encoded}`;
   }
   const base = ctx.basePath ?? '';
-  return `${base}/image?u=${encoded}&token=${encodeURIComponent(ctx.token)}`;
+  return ctx.token ? `${base}/image?u=${encoded}&token=${encodeURIComponent(ctx.token)}` : `${base}/image?u=${encoded}`;
 }
 
 function base64UrlEncode(s: string): string {

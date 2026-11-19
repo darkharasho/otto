@@ -146,7 +146,7 @@ describe('BridgeServer WS auth', () => {
       });
     });
     ws.close();
-    expect(messages).toContainEqual(expect.objectContaining({ type: 'event', kind: 'text-delta', text: 'hello' }));
+    expect(messages).toContainEqual(expect.objectContaining({ type: 'event', kind: 'text-delta', text: 'hello', sessionId: 's1', seq: 1 }));
   });
 
   it('forwards events for sessions that did not yet exist at WS auth time', async () => {
@@ -370,6 +370,8 @@ describe('BridgeServer /image', () => {
     const res = await fetch(`http://127.0.0.1:${port}/image?u=${u}&token=${encodeURIComponent(token)}`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe('image/png');
+    const viaHeader = await fetch(`http://127.0.0.1:${port}/image?u=${u}`, { headers: { authorization: `Bearer ${token}` } });
+    expect(viaHeader.status).toBe(200);
     const buf = Buffer.from(await res.arrayBuffer());
     expect(buf.equals(bytes)).toBe(true);
   });
@@ -493,8 +495,9 @@ describe('BridgeServer /sessions', () => {
     expect(noauth.status).toBe(401);
     const ok = await fetch(`http://127.0.0.1:${port}/sessions/abc/messages`, { headers: { authorization: `Bearer ${token}` } });
     expect(ok.status).toBe(200);
-    const body = (await ok.json()) as { messages: Array<{ id: string; role: string }> };
+    const body = (await ok.json()) as { messages: Array<{ id: string; role: string }>; seq: number };
     expect(body.messages).toHaveLength(1);
+    expect(body.seq).toBe(0);
     expect(body.messages[0]).toMatchObject({ id: 'm1', role: 'user' });
   });
 });
@@ -592,6 +595,10 @@ describe('BridgeServer GET /user-upload', () => {
     expect(ok.headers.get('content-type')).toBe('image/png');
     const buf = Buffer.from(await ok.arrayBuffer());
     expect(buf.equals(pngBytes)).toBe(true);
+
+    // 3b. Valid token in the Authorization header (the iOS app) → 200
+    const viaHeader = await fetch(`http://127.0.0.1:${port}/user-upload/${sid}/img-1.png`, { headers: { authorization: `Bearer ${token}` } });
+    expect(viaHeader.status).toBe(200);
 
     // 4. Traversal attempt → 404 (resolveImageRequest rejects unsafe paths)
     const traversal = await fetch(`http://127.0.0.1:${port}/user-upload/${sid}/..%2Fsecret.png?token=${encodeURIComponent(token)}`);

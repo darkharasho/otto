@@ -257,13 +257,17 @@ export class BridgeServer {
         let sockets = this.deviceSockets.get(found.id);
         if (!sockets) { sockets = new Set(); this.deviceSockets.set(found.id, sockets); }
         sockets.add(ws);
-        ws.send(JSON.stringify({ v: 1, type: 'auth_ok', deviceLabel: found.label }));
+        // activeSessionId lets a client open straight into the conversation the
+        // desktop is on, instead of waiting for that session's next event.
+        ws.send(JSON.stringify({ v: 1, type: 'auth_ok', deviceLabel: found.label, activeSessionId: this.opts.activeSessionId?.() ?? null }));
         // Subscribe to events for ALL sessions: the phone may connect before
         // any session exists, and we want to receive whichever sessions are
         // currently or subsequently active. We include `sessionId` on every
         // outbound frame so the PWA can route by session.
-        unsub = this.opts.bus.subscribeAll((sid, e) => {
-          try { ws.send(JSON.stringify({ v: 1, sessionId: sid, ...e })); } catch { /* ws may be closed */ }
+        // `seq` lets the client track what it has seen, so on reconnect it asks
+        // /history only for what it missed instead of replaying everything.
+        unsub = this.opts.bus.subscribeAll((sid, e, seq) => {
+          try { ws.send(JSON.stringify({ v: 1, sessionId: sid, seq, ...e })); } catch { /* ws may be closed */ }
         });
         return;
       }
@@ -475,9 +479,9 @@ export class BridgeServer {
     const cache = this.opts.imageCache;
     if (!cache) { res.statusCode = 404; res.end('disabled'); return; }
     const url = new URL(req.url ?? '/', 'http://x');
-    // <img> tags can't send custom headers — the PWA appends the bearer as a
-    // query param, matching how it would supply the WS token on first auth.
-    const token = url.searchParams.get('token') ?? '';
+    // <img> tags can't send custom headers, so the PWA appends the bearer as a
+    // query param. The iOS app sends the Authorization header.
+    const token = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '') || (url.searchParams.get('token') ?? '');
     if (!token || !(await this.opts.pairing.verify(token))) { res.statusCode = 401; res.end('unauthorized'); return; }
     const encoded = url.searchParams.get('u');
     if (!encoded) { res.statusCode = 400; res.end('missing u'); return; }
@@ -502,9 +506,9 @@ export class BridgeServer {
   private async handleUserUpload(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     if (!this.opts.configDir) { res.statusCode = 404; res.end('disabled'); return; }
     const url = new URL(req.url ?? '/', 'http://x');
-    // <img> tags can't send custom headers — the PWA appends the bearer as a
-    // query param, matching how /image does it.
-    const token = url.searchParams.get('token') ?? '';
+    // <img> tags can't send custom headers, so the PWA appends the bearer as a
+    // query param (as /image does). The iOS app sends the Authorization header.
+    const token = (req.headers.authorization ?? '').replace(/^Bearer\s+/i, '') || (url.searchParams.get('token') ?? '');
     if (!token || !(await this.opts.pairing.verify(token))) { res.statusCode = 401; res.end('unauthorized'); return; }
     // Path shape: /user-upload/<sessionId>/<file>
     const m = /^\/user-upload\/([^/?]+)\/([^/?]+)/.exec(url.pathname);
@@ -607,10 +611,13 @@ export class BridgeServer {
       res.statusCode = 404; res.end('not found'); return;
     }
     const sessionId = decodeURIComponent(parts[1]!);
+    // Read the sequence number before loading, so the client's next /history
+    // call covers anything published while the transcript was being read.
+    const seq = this.opts.bus.currentSeq(sessionId);
     const messages = (await this.opts.loadMessages?.(sessionId)) ?? [];
     res.statusCode = 200;
     res.setHeader('content-type', 'application/json');
-    res.end(JSON.stringify({ messages }));
+    res.end(JSON.stringify({ messages, seq }));
   }
 
   private async handleHistory(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
