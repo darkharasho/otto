@@ -8,6 +8,12 @@ on:
 permissions:
   contents: write
 
+env:
+  # onnxruntime-node's postinstall fetches its Linux CUDA binaries from a GitHub
+  # release asset that now 404s, failing the install. Otto only runs ONNX on
+  # the CPU, so skip them.
+  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+
 jobs:
   test:
     runs-on: ubuntu-latest
