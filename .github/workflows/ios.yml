@@ -62,6 +62,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Test
+        run: npm test
+
       - name: Version
         run: |
           pkg=$(node -p "require('./package.json').version")
