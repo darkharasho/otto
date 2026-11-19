@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { View, Text, Pressable, ScrollView, Animated, Dimensions } from 'react-native';
 import { listSessions, type RemoteSessionSummary } from '@/lib/wire';
+import { colors } from '@/lib/theme';
 
 const DRAWER_WIDTH = 288; // w-72
 
@@ -63,25 +64,25 @@ export function SessionDrawer({ open, baseUrl, token, currentSessionId, onClose,
         <Pressable onPress={onClose} style={{ flex: 1 }} />
       </Animated.View>
       {/* Drawer */}
-      <Animated.View style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: DRAWER_WIDTH, backgroundColor: '#1a1a1c', borderRightWidth: 1, borderRightColor: '#2a2a2e', transform: [{ translateX: slideAnim }] }}>
-        <View style={{ paddingTop: 56, paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#2a2a2e', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={{ fontSize: 14, fontWeight: '600', color: '#e4e4e7' }}>Sessions</Text>
+      <Animated.View style={{ position: 'absolute', top: 0, left: 0, bottom: 0, width: DRAWER_WIDTH, backgroundColor: colors.surface, borderRightWidth: 1, borderRightColor: colors.border, transform: [{ translateX: slideAnim }] }}>
+        <View style={{ paddingTop: 56, paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>Sessions</Text>
           <Pressable onPress={onClose} hitSlop={8}>
-            <Text style={{ fontSize: 12, color: '#71717a' }}>Close</Text>
+            <Text style={{ fontSize: 12, color: colors.textMuted }}>Close</Text>
           </Pressable>
         </View>
-        <View style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: '#2a2a2e' }}>
+        <View style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: colors.border }}>
           <Pressable
             onPress={onNewSession}
-            style={{ borderRadius: 8, backgroundColor: '#6366f1', paddingVertical: 10, alignItems: 'center' }}
+            style={{ borderRadius: 8, backgroundColor: colors.accent, paddingVertical: 10, alignItems: 'center' }}
           >
             <Text style={{ color: 'white', fontSize: 14, fontWeight: '500' }}>+ New chat</Text>
           </Pressable>
         </View>
         <ScrollView style={{ flex: 1 }}>
-          {loading && <Text style={{ paddingHorizontal: 16, paddingVertical: 12, fontSize: 12, color: '#71717a' }}>Loading...</Text>}
+          {loading && <Text style={{ paddingHorizontal: 16, paddingVertical: 12, fontSize: 12, color: colors.textMuted }}>Loading...</Text>}
           {!loading && sessions.length === 0 && (
-            <Text style={{ paddingHorizontal: 16, paddingVertical: 12, fontSize: 12, color: '#71717a' }}>No sessions yet.</Text>
+            <Text style={{ paddingHorizontal: 16, paddingVertical: 12, fontSize: 12, color: colors.textMuted }}>No sessions yet.</Text>
           )}
           {sessions.map((s) => {
             const isCurrent = s.id === currentSessionId;
@@ -91,15 +92,15 @@ export function SessionDrawer({ open, baseUrl, token, currentSessionId, onClose,
                 onPress={() => onPickSession(s.id)}
                 style={{ paddingHorizontal: 16, paddingVertical: 10, backgroundColor: isCurrent ? 'rgba(13,13,14,0.4)' : 'transparent' }}
               >
-                <Text style={{ fontSize: 14, color: '#e4e4e7' }} numberOfLines={1}>
+                <Text style={{ fontSize: 14, color: colors.text }} numberOfLines={1}>
                   {s.title?.trim() || 'Untitled'}
                 </Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
-                  <Text style={{ fontSize: 11, color: '#71717a' }}>
+                  <Text style={{ fontSize: 11, color: colors.textMuted }}>
                     {relativeTime(s.lastActive)}
                   </Text>
                   {isCurrent && (
-                    <Text style={{ fontSize: 11, color: '#6366f1', marginLeft: 8 }}>current</Text>
+                    <Text style={{ fontSize: 11, color: colors.accent, marginLeft: 8 }}>current</Text>
                   )}
                 </View>
               </Pressable>

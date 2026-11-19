@@ -2,6 +2,7 @@ import React from 'react';
 import { Text, View } from 'react-native';
 import { splitEmoji, hasEmojiIcon } from '@/lib/emoji-icons';
 import { FluentEmoji } from './FluentEmoji';
+import { colors } from '@/lib/theme';
 
 interface Props {
   children: string;
@@ -18,7 +19,7 @@ interface Props {
  * - Unmapped emoji → Fluent UI High Contrast SVGs from Iconify CDN
  * - Unknown emoji → stripped
  */
-export function EmojiText({ children: text, style, iconSize, iconColor = '#6366f1' }: Props) {
+export function EmojiText({ children: text, style, iconSize, iconColor = colors.accent }: Props) {
   if (!hasEmojiIcon(text)) {
     return <Text style={style}>{text}</Text>;
   }

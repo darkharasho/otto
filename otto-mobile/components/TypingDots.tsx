@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Animated, Easing } from 'react-native';
+import { colors } from '@/lib/theme';
 
 const DOT_SIZE = 5;
 const GAP = 4;
@@ -68,7 +69,7 @@ export function TypingDots() {
               width: DOT_SIZE,
               height: DOT_SIZE,
               borderRadius: DOT_SIZE,
-              backgroundColor: '#6366f1',
+              backgroundColor: colors.accent,
               opacity,
               transform: [{ translateY }],
             }}

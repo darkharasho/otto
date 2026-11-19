@@ -22,6 +22,7 @@ on:
   pull_request:
     paths:
       - 'otto-mobile/**'
+      - 'src/shared/**'
       - '.github/workflows/ios.yml'
   workflow_dispatch:
     inputs:

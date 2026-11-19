@@ -2,7 +2,7 @@ import { View, Text, FlatList, Pressable, Alert } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { Plus } from 'lucide-react-native';
 import { useAppStore } from '@/lib/store';
-import { useTheme } from '@/lib/theme';
+import { colors as t } from '@/lib/theme';
 import { MachineCard } from '@/components/MachineCard';
 import { OttoMark } from '@/components/OttoMark';
 
@@ -12,7 +12,6 @@ export default function MachineListScreen() {
   const updateMachine = useAppStore((s) => s.updateMachine);
   const setActiveMachine = useAppStore((s) => s.setActiveMachine);
   const router = useRouter();
-  const t = useTheme();
 
   const handlePress = (id: string) => {
     setActiveMachine(id);
@@ -63,7 +62,7 @@ export default function MachineListScreen() {
               onPress={() => router.push('/scan')}
               style={{ backgroundColor: t.accent, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12 }}
             >
-              <Text style={{ color: '#ffffff', fontWeight: '500' }}>Add machine</Text>
+              <Text style={{ color: t.white, fontWeight: '500' }}>Add machine</Text>
             </Pressable>
           </View>
         ) : (
