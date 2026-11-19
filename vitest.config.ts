@@ -15,8 +15,8 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['src/renderer/test-setup.ts'],
-    // otto-mobile/lib holds the iOS app's pure logic (no React Native imports).
-    include: ['src/**/*.test.{ts,tsx}', 'otto-mobile/lib/**/*.test.ts'],
+    // otto-mobile has its own vitest config (it needs the app's tsconfig and deps).
+    include: ['src/**/*.test.{ts,tsx}'],
     // Cap parallelism so a full run doesn't saturate the machine. Without this,
     // Vitest spawns one worker per core. Forks pool + maxForks:2 keeps it to two.
     pool: 'forks',
