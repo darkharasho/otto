@@ -1,0 +1,152 @@
+name: iOS
+
+# Builds the iOS app (otto-mobile, Expo) on a `mobile-v*` tag and uploads it to App Store Connect,
+# where it shows up in TestFlight. Same flow as duel-binder and famchat: the native project is
+# generated with `expo prebuild`, archived unsigned, and signed only at export with cloud-managed
+# distribution signing. Without the App Store Connect secrets, and on pull requests, it only checks
+# that the app compiles, for the simulator, unsigned.
+#
+# Release: bump otto-mobile/package.json "version", then push tag mobile-v<version>. The desktop
+# release (release.yml) uses plain v* tags, so the two never trigger each other.
+# Version: the tag (mobile-v1.2.3 -> 1.2.3), else package.json. Build number: minutes since the
+# Unix epoch, so it only grows whichever run built it (App Store Connect refuses a reused one).
+#
+# Secrets (App Store Connect > Users and Access > Integrations > App Store Connect API, an Admin
+# key so Xcode can create the distribution certificate and profile itself):
+#   APP_STORE_CONNECT_KEY_ID, APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY (the .p8 file's
+#   text) and APPLE_TEAM_ID.
+
+on:
+  push:
+    tags: ['mobile-v*']
+  pull_request:
+    paths:
+      - 'otto-mobile/**'
+      - 'src/shared/**'
+      - '.github/workflows/ios.yml'
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: Upload to TestFlight
+        type: boolean
+        default: true
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  ios:
+    runs-on: macos-26
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: otto-mobile
+    env:
+      WORKSPACE: ios/Otto.xcworkspace
+      SCHEME: Otto
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: otto-mobile/package-lock.json
+
+      - run: npm ci --legacy-peer-deps
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Version
+        run: |
+          pkg=$(node -p "require('./package.json').version")
+          if [[ "$GITHUB_REF" == refs/tags/mobile-v* ]]; then
+            name="${GITHUB_REF_NAME#mobile-v}"
+            [ "$name" = "$pkg" ] || echo "::warning::Tag $GITHUB_REF_NAME doesn't match package.json ($pkg); using the tag."
+          else
+            name="$pkg"
+          fi
+          [[ "$name" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Version '$name' isn't x.y.z"; exit 1; }
+          number=$(( $(date +%s) / 60 ))
+          echo "VERSION=$name" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=$number" >> "$GITHUB_ENV"
+          echo "Otto iOS $name ($number)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Generate the Xcode project
+        run: npx expo prebuild --platform ios --clean
+
+      - name: Check for signing secrets
+        id: secrets
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          UPLOAD: ${{ github.event_name != 'workflow_dispatch' || inputs.upload }}
+        run: |
+          if [ -n "$KEY_ID" ] && [ -n "$ISSUER_ID" ] && [ -n "$KEY" ] && [ -n "$TEAM_ID" ] \
+            && [ "$GITHUB_EVENT_NAME" != "pull_request" ] && [ "$UPLOAD" = "true" ]; then
+            echo "sign=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sign=false" >> "$GITHUB_OUTPUT"
+            if [ "$GITHUB_EVENT_NAME" != "pull_request" ] && [ "$UPLOAD" = "true" ]; then
+              echo "::warning::App Store Connect secrets aren't set: building for the simulator only, nothing is uploaded."
+            fi
+          fi
+
+      - name: Compile for the simulator (unsigned)
+        if: steps.secrets.outputs.sign == 'false'
+        run: |
+          xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" -configuration Release \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO -quiet build
+
+      - name: Archive, sign and upload to App Store Connect
+        if: steps.secrets.outputs.sign == 'true'
+        env:
+          KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+          TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          KEY_PATH="$RUNNER_TEMP/AuthKey_$KEY_ID.p8"
+          (umask 077; printf '%s' "$KEY" > "$KEY_PATH")
+          ARCHIVE="$RUNNER_TEMP/Otto.xcarchive"
+
+          # Archive unsigned and sign only at export (distribution, cloud-managed): signing the
+          # archive made a new Apple Development certificate on every fresh runner until the
+          # account hit Apple's certificate limit (duel-binder). The app has no entitlements, so
+          # the unsigned archive loses nothing.
+          xcodebuild -workspace "$WORKSPACE" -scheme "$SCHEME" -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$ARCHIVE" \
+            DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGNING_ALLOWED=NO \
+            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            -quiet archive
+
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>$TEAM_ID</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>uploadSymbols</key><true/>
+          </dict>
+          </plist>
+          EOF
+
+          xcodebuild -exportArchive -archivePath "$ARCHIVE" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" -allowProvisioningUpdates \
+            -authenticationKeyPath "$KEY_PATH" -authenticationKeyID "$KEY_ID" \
+            -authenticationKeyIssuerID "$ISSUER_ID"
+          rm -f "$KEY_PATH"
+          echo "Uploaded $VERSION ($BUILD_NUMBER) to App Store Connect; it reaches TestFlight once processed." >> "$GITHUB_STEP_SUMMARY"

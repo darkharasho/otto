@@ -6,6 +6,7 @@ import * as Device from 'expo-device';
 import * as Haptics from 'expo-haptics';
 import { pair, parsePairingUrl } from '@/lib/wire';
 import { useAppStore } from '@/lib/store';
+import { colors } from '@/lib/theme';
 
 function deviceLabel(): string {
   return Device.modelName ?? (Platform.OS === 'ios' ? 'iPhone' : 'Android');
@@ -64,8 +65,8 @@ export default function ScanScreen() {
 
   if (!permission) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0d0d0e', alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ color: '#71717a' }}>Checking camera permissions...</Text>
+      <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ color: colors.textMuted }}>Checking camera permissions...</Text>
       </View>
     );
   }
@@ -74,16 +75,16 @@ export default function ScanScreen() {
     return (
       <>
         <Stack.Screen options={{ title: 'Add machine' }} />
-        <View style={{ flex: 1, backgroundColor: '#0d0d0e', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
-          <Text style={{ color: '#e4e4e7', fontSize: 18, fontWeight: '600', marginBottom: 8, textAlign: 'center' }}>Camera access needed</Text>
-          <Text style={{ color: '#71717a', fontSize: 14, textAlign: 'center', marginBottom: 24 }}>
+        <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 32 }}>
+          <Text style={{ color: colors.text, fontSize: 18, fontWeight: '600', marginBottom: 8, textAlign: 'center' }}>Camera access needed</Text>
+          <Text style={{ color: colors.textMuted, fontSize: 14, textAlign: 'center', marginBottom: 24 }}>
             Otto needs camera access to scan the pairing QR code from your desktop.
           </Text>
-          <Pressable onPress={requestPermission} style={{ backgroundColor: '#6366f1', borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12, marginBottom: 16 }}>
-            <Text style={{ color: '#ffffff', fontWeight: '500' }}>Grant access</Text>
+          <Pressable onPress={requestPermission} style={{ backgroundColor: colors.accent, borderRadius: 12, paddingHorizontal: 24, paddingVertical: 12, marginBottom: 16 }}>
+            <Text style={{ color: colors.white, fontWeight: '500' }}>Grant access</Text>
           </Pressable>
           <Pressable onPress={() => setShowManual(true)}>
-            <Text style={{ color: '#6366f1', fontSize: 14 }}>Or paste URL manually</Text>
+            <Text style={{ color: colors.accent, fontSize: 14 }}>Or paste URL manually</Text>
           </Pressable>
         </View>
       </>
@@ -93,7 +94,7 @@ export default function ScanScreen() {
   return (
     <>
       <Stack.Screen options={{ title: 'Add machine' }} />
-      <View style={{ flex: 1, backgroundColor: '#0d0d0e' }}>
+      <View style={{ flex: 1, backgroundColor: colors.bg }}>
         {!showManual ? (
           <View style={{ flex: 1 }}>
             <CameraView
@@ -111,7 +112,7 @@ export default function ScanScreen() {
             {/* Busy indicator */}
             {busy && (
               <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ color: '#ffffff', fontSize: 18, fontWeight: '600' }}>Pairing...</Text>
+                <Text style={{ color: colors.white, fontSize: 18, fontWeight: '600' }}>Pairing...</Text>
               </View>
             )}
             {/* Manual fallback button */}
@@ -120,37 +121,37 @@ export default function ScanScreen() {
                 onPress={() => setShowManual(true)}
                 style={{ backgroundColor: 'rgba(26,26,28,0.9)', borderRadius: 12, paddingHorizontal: 20, paddingVertical: 10 }}
               >
-                <Text style={{ color: '#e4e4e7', fontSize: 14 }}>Paste URL instead</Text>
+                <Text style={{ color: colors.text, fontSize: 14 }}>Paste URL instead</Text>
               </Pressable>
             </View>
           </View>
         ) : (
           <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, paddingHorizontal: 24, paddingTop: 32 }}>
-            <Text style={{ color: '#e4e4e7', fontSize: 18, fontWeight: '600', marginBottom: 8 }}>Paste pairing URL</Text>
-            <Text style={{ color: '#71717a', fontSize: 14, marginBottom: 16 }}>
+            <Text style={{ color: colors.text, fontSize: 18, fontWeight: '600', marginBottom: 8 }}>Paste pairing URL</Text>
+            <Text style={{ color: colors.textMuted, fontSize: 14, marginBottom: 16 }}>
               On your desktop, open Otto Settings &gt; Mobile remote and copy the pairing URL.
             </Text>
             <TextInput
               value={manualInput}
               onChangeText={setManualInput}
               placeholder="http://...?code=XYZ"
-              placeholderTextColor="#71717a"
+              placeholderTextColor={colors.textMuted}
               multiline
               autoCapitalize="none"
               autoCorrect={false}
-              style={{ backgroundColor: '#1a1a1c', borderWidth: 1, borderColor: '#2a2a2e', borderRadius: 12, padding: 12, color: '#e4e4e7', fontSize: 14, marginBottom: 16, minHeight: 80 }}
+              style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: 12, padding: 12, color: colors.text, fontSize: 14, marginBottom: 16, minHeight: 80 }}
             />
             <Pressable
               onPress={handleManualSubmit}
               disabled={busy || !manualInput.trim()}
-              style={{ backgroundColor: '#6366f1', borderRadius: 12, paddingVertical: 12, alignItems: 'center', marginBottom: 12, opacity: busy || !manualInput.trim() ? 0.5 : 1 }}
+              style={{ backgroundColor: colors.accent, borderRadius: 12, paddingVertical: 12, alignItems: 'center', marginBottom: 12, opacity: busy || !manualInput.trim() ? 0.5 : 1 }}
             >
-              <Text style={{ color: '#ffffff', fontWeight: '500' }}>
+              <Text style={{ color: colors.white, fontWeight: '500' }}>
                 {busy ? 'Pairing...' : 'Pair'}
               </Text>
             </Pressable>
             <Pressable onPress={() => setShowManual(false)} style={{ alignItems: 'center' }}>
-              <Text style={{ color: '#6366f1', fontSize: 14 }}>Back to camera</Text>
+              <Text style={{ color: colors.accent, fontSize: 14 }}>Back to camera</Text>
             </Pressable>
           </KeyboardAvoidingView>
         )}

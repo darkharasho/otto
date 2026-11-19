@@ -13,7 +13,8 @@ export type RemoteInbound =
   | { type: 'interrupt'; sessionId: string };
 
 type Subscriber = (e: RemoteOutbound) => void;
-type AllSubscriber = (sessionId: string, e: RemoteOutbound) => void;
+/** `seq` is the event's per-session sequence number, the same one /history uses. */
+type AllSubscriber = (sessionId: string, e: RemoteOutbound, seq: number) => void;
 type InputHandler = (m: RemoteInbound) => Promise<void>;
 
 interface RingEntry { seq: number; event: RemoteOutbound; t: number }
@@ -78,7 +79,7 @@ export class SessionBus {
       }
     }
     for (const s of this.allSubs) {
-      try { s(sessionId, event); } catch { /* a single bad subscriber must not break the others */ }
+      try { s(sessionId, event, seq); } catch { /* a single bad subscriber must not break the others */ }
     }
   }
 
@@ -109,6 +110,11 @@ export class SessionBus {
     } finally {
       this.inputRunning.set(sessionId, false);
     }
+  }
+
+  /** Sequence number of the latest event published for a session (0 if none). */
+  currentSeq(sessionId: string): number {
+    return this.seqs.get(sessionId) ?? 0;
   }
 
   history(sessionId: string, sinceSeq: number): { events: Array<{ seq: number; event: RemoteOutbound }>; truncated: boolean } {

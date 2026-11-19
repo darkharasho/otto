@@ -1,40 +1,9 @@
 // Wire helpers: thin wrappers around the BridgeServer HTTP+WS surface. The
 // server is reached at the same origin the PWA was served from.
 
-import type { ContentBlock } from '@shared/messages';
+import type { PairResult, HistoryEntry, RemoteSessionSummary } from '@shared/remote-protocol';
 
-export type ImageRef = Extract<ContentBlock, { type: 'image-ref' }>;
-
-/** Frames the PWA sends to the bridge server over WS. */
-export type WsOutboundFrame =
-  | { v: 1; type: 'auth'; token: string }
-  | { v: 1; type: 'prompt'; sessionId: string; text: string; attachmentIds?: string[] }
-  | { v: 1; type: 'attach'; sessionId: string; mimeType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'; bytesBase64: string; clientCorrelationId: string }
-  | { v: 1; type: 'approval'; decisionId: string; decision: 'approve' | 'approve-session' | 'deny' }
-  | { v: 1; type: 'sudo'; promptId: string; password: string | null }
-  | { v: 1; type: 'interrupt'; sessionId?: string }
-  | { v: 1; type: 'ping' }
-  | { v: 1; type: 'switch_session'; sessionId: string }
-  | { v: 1; type: 'new_session' }
-  | { v: 1; type: 'delegate'; text: string; correlationId: string; sessionId?: string; ifBusy?: 'reject' | 'interrupt' };
-
-/** Frames the bridge server sends to the PWA over WS. */
-export type WsInboundFrame =
-  | { v: 1; type: 'auth_ok'; deviceLabel: string }
-  | { v: 1; type: 'pong' }
-  | { v: 1; type: 'session_switched'; sessionId: string }
-  | { v: 1; type: 'attach_ok'; clientCorrelationId: string; ref: ImageRef }
-  | { v: 1; type: 'attach_err'; clientCorrelationId: string; message: string }
-  | { v: 1; type: 'delegate_started'; correlationId: string; sessionId: string }
-  | { v: 1; type: 'delegate_busy'; correlationId: string; activeSessionId: string | null }
-  | { v: 1; type: 'delegate_err'; correlationId: string; message: string }
-  | { v: 1; type: string; [k: string]: unknown };
-
-export interface PairResult {
-  token: string;
-  deviceId: string;
-  wsUrl: string;
-}
+export type { ImageRef, WsOutboundFrame, WsInboundFrame, PairResult, HistoryEntry, RemoteSessionSummary } from '@shared/remote-protocol';
 
 export async function pair(code: string, deviceLabel: string): Promise<PairResult> {
   const res = await fetch('/pair', {
@@ -49,24 +18,11 @@ export async function pair(code: string, deviceLabel: string): Promise<PairResul
   return (await res.json()) as PairResult;
 }
 
-export interface HistoryEntry {
-  seq: number;
-  event: unknown;
-}
-
 export async function getHistory(token: string, sessionId: string, sinceSeq: number): Promise<{ events: HistoryEntry[]; truncated: boolean }> {
   const url = `/history?session_id=${encodeURIComponent(sessionId)}&since=${sinceSeq}`;
   const res = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error(`history failed (${res.status})`);
   return (await res.json()) as { events: HistoryEntry[]; truncated: boolean };
-}
-
-export interface RemoteSessionSummary {
-  id: string;
-  title: string | null;
-  createdAt: number;
-  lastActive: number;
-  status: string;
 }
 
 export async function listSessions(token: string, limit = 50): Promise<{ sessions: RemoteSessionSummary[] }> {
@@ -75,12 +31,13 @@ export async function listSessions(token: string, limit = 50): Promise<{ session
   return (await res.json()) as { sessions: RemoteSessionSummary[] };
 }
 
-export async function loadMessages(token: string, sessionId: string): Promise<{ messages: Array<Record<string, unknown>> }> {
+/** `seq` is the session's latest event seq when the transcript was read (older bridges omit it). */
+export async function loadMessages(token: string, sessionId: string): Promise<{ messages: Array<Record<string, unknown>>; seq?: number }> {
   const res = await fetch(`/sessions/${encodeURIComponent(sessionId)}/messages`, {
     headers: { authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error(`messages failed (${res.status})`);
-  return (await res.json()) as { messages: Array<Record<string, unknown>> };
+  return (await res.json()) as { messages: Array<Record<string, unknown>>; seq?: number };
 }
 
 export interface WsHandlers {

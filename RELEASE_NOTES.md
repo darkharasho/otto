@@ -1,3 +1,13 @@
+Version v0.22.0
+
+Fixes:
+- **The phone no longer shows messages twice after reconnecting.** Every reconnect (for example, after the phone app came back from the background) replayed the desktop's whole recent event buffer, so tool cards and replies appeared twice. The bridge now numbers each event it sends, and the web remote and the iOS app only replay what they actually missed.
+- **Phone image requests can use an Authorization header.** Images in replies (`/image`) and photos you attached (`/user-upload`) now also accept the pairing token as a header, so the iOS app no longer puts it in URLs. The web remote is unchanged.
+
+Changes:
+- **Paired phones open on the conversation the desktop is on.** On connecting, the bridge now tells the phone which conversation is active, so it shows it straight away.
+- **Needed by the new iOS app (Otto Remote 1.0).** It catches up with the desktop: sudo password prompts, reasoning, live tool output, task summary cards, images in replies and approval reasons now all work from the phone. Update the desktop before using it.
+
 Version v0.21.0
 
 Changes:

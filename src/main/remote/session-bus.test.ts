@@ -137,3 +137,18 @@ describe('SessionBus input queue', () => {
     expect(events.indexOf('s2-end')).toBeLessThan(events.indexOf('s1-end'));
   });
 });
+
+describe('SessionBus sequence numbers', () => {
+  it('passes each event its per-session seq and exposes the latest', () => {
+    const bus = new SessionBus();
+    const got: Array<[string, number]> = [];
+    bus.subscribeAll((sid, _e, seq) => got.push([sid, seq]));
+    bus.publish('s1', { type: 'event', kind: 'a' } as RemoteOutbound);
+    bus.publish('s1', { type: 'event', kind: 'b' } as RemoteOutbound);
+    bus.publish('s2', { type: 'event', kind: 'c' } as RemoteOutbound);
+    expect(got).toEqual([['s1', 1], ['s1', 2], ['s2', 1]]);
+    expect(bus.currentSeq('s1')).toBe(2);
+    expect(bus.currentSeq('nope')).toBe(0);
+    expect(bus.history('s1', 1).events.map((e) => e.seq)).toEqual([2]);
+  });
+});

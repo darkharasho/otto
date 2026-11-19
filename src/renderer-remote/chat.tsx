@@ -396,7 +396,8 @@ export function Chat(): JSX.Element {
     const tok = tokenRef.current;
     if (!tok) return;
     try {
-      const { messages } = await loadMessages(tok, sid);
+      const { messages, seq } = await loadMessages(tok, sid);
+      if (typeof seq === 'number') lastSeqRef.current = Math.max(lastSeqRef.current, seq);
       const built: TranscriptItem[] = [];
       for (const raw of messages) {
         const role = String((raw as { role?: unknown }).role ?? '');
@@ -459,6 +460,17 @@ export function Chat(): JSX.Element {
 
   const handleEvent = (msg: { type: string; [k: string]: unknown }): void => {
     if (msg.type === 'pong') return;
+    // Live frames carry the bus's per-session seq. Skip what we've already
+    // applied (a /history replay can overlap live frames) and remember the
+    // latest, so a reconnect only replays what was missed.
+    if (typeof msg.seq === 'number' && typeof msg.sessionId === 'string') {
+      if (msg.sessionId === sessionIdRef.current) {
+        if (msg.seq <= lastSeqRef.current) return;
+        lastSeqRef.current = msg.seq;
+      } else if (msg.type === 'event') {
+        lastSeqRef.current = msg.seq; // this event switches us to its session below
+      }
+    }
     if (msg.type === 'session_switched' && typeof msg.sessionId === 'string') {
       const sid = msg.sessionId;
       resetForSession(sid);

@@ -1,7 +1,7 @@
 import { View, Text, Pressable, Alert } from 'react-native';
 import { Trash2, Pencil } from 'lucide-react-native';
 import type { Machine } from '@/lib/store';
-import { useTheme } from '@/lib/theme';
+import { colors as t } from '@/lib/theme';
 import { PlatformIcon } from './PlatformIcon';
 
 function relativeTime(ms: number): string {
@@ -20,7 +20,6 @@ interface Props {
 }
 
 export function MachineCard({ machine, onPress, onDelete, onRename }: Props) {
-  const t = useTheme();
 
   const handleRename = () => {
     Alert.prompt(
