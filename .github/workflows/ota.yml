@@ -1,0 +1,109 @@
+name: ota
+
+# Over-the-air updates (EAS Update): JS and asset changes reach installed iPhone apps without a
+# store build or review. Builds check the "production" channel on launch, download an update made
+# for their runtime version (= app version) in the background and run it on the next launch.
+# Updates can't change native code: each target is checked for native changes first
+# (scripts/expo-native-check.sh: expo-* / react-native-* packages, app config plugins, local
+# plugins), and those need a native release (a v* tag) instead.
+#
+#   gh workflow run ota.yml                                   # newest native release (+ App Store live)
+#   gh workflow run ota.yml -f release_version=1.1.0+29400000 # one native release
+#
+# Targets: with "latest", the newest native/ios/<NAME+NUMBER> tag (ios.yml tags builds that reached
+# TestFlight) and, if older, the newest build of the version the App Store has live, so App Store
+# installs get the fix while a newer version waits for review. Each target is published with the
+# app version set to its NAME, so the update's runtime version matches the build's.
+# Rolling back = running this again from an older commit.
+#
+# Needs: secret EXPO_TOKEN (expo.dev > Access tokens) and the EAS project ID, in app.json
+# (expo.extra.eas.projectId) or the repository variable EXPO_PROJECT_ID. Skips with a warning
+# without them. Only builds made with the project ID set take updates.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: "Native release to update (NAME+NUMBER, e.g. 1.1.0+29400000), or latest"
+        default: "latest"
+
+concurrency:
+  group: ota
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  BUNDLE_ID: com.project96.otto
+  RELEASE_VERSION: ${{ inputs.release_version || 'latest' }}
+  EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
+
+jobs:
+  targets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ready: ${{ steps.t.outputs.ready }}
+      versions: ${{ steps.t.outputs.versions }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: t
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          project="${EXPO_PROJECT_ID:-$(node -p "require('./otto-mobile/app.json').expo.extra?.eas?.projectId || ''")}"
+          if [ -z "$EXPO_TOKEN" ] || [ -z "$project" ]; then
+            echo "::warning::EXPO_TOKEN or the EAS project ID isn't set; no update published. See README > Releasing."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "versions=[]" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "$RELEASE_VERSION" != latest ]; then
+            versions="$RELEASE_VERSION"
+          else
+            versions="$(scripts/native-release-targets.sh ios "$BUNDLE_ID")"
+          fi
+          json="$(python3 -c 'import json,sys; print(json.dumps(sys.stdin.read().split()))' <<<"$versions")"
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+          echo "versions=$json" >> "$GITHUB_OUTPUT"
+          echo "iOS releases to update: $(tr '\n' ' ' <<<"$versions")" >> "$GITHUB_STEP_SUMMARY"
+
+  ios:
+    needs: targets
+    if: needs.targets.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        release: ${{ fromJSON(needs.targets.outputs.versions) }}
+    defaults:
+      run:
+        working-directory: otto-mobile
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for native changes since ${{ matrix.release }}
+        run: ../scripts/expo-native-check.sh ios "${{ matrix.release }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: otto-mobile/package-lock.json
+
+      - run: npm ci --legacy-peer-deps
+
+      - name: Publish the update
+        env:
+          RELEASE: ${{ matrix.release }}
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          # The runtime version is the app version ("appVersion" policy): publish as the target's NAME.
+          export OTTO_APP_VERSION="${RELEASE%+*}" OTTO_BUILD_NUMBER="${RELEASE#*+}"
+          npx --yes eas-cli@latest update --channel production --platform ios \
+            --message "$GITHUB_SHA" --non-interactive
+          echo "Published an update for iOS $RELEASE (runtime $OTTO_APP_VERSION) from ${GITHUB_SHA:0:7}" >> "$GITHUB_STEP_SUMMARY"

@@ -99,6 +99,21 @@ npm run package          # build distributable for current platform
 
 ---
 
+## Releasing
+
+One version and one tag for every platform: desktop (Linux, Windows, macOS) and the iOS app (`otto-mobile`).
+
+- **Full release:** add a `Version v1.2.3` section to `RELEASE_NOTES.md`, bump `package.json`, and push tag `v1.2.3`. `release.yml` publishes the desktop apps as the latest GitHub release, which installed desktops update to. `ios.yml` builds iOS 1.2.3 from the same tag, uploads it to TestFlight, tags the build `native/ios/1.2.3+<build>` and submits it for App Store review. A failed submission is only a warning; retry with `gh workflow run submit.yml -f submit=true`, or run it without inputs to see the status. The iOS version always comes from the tag, never from `otto-mobile/app.json`. It has to be above the version the App Store has live (iOS 1.0.0 shipped before desktop and iOS shared versions, so the first shared release must be at least v1.0.1). `ios.yml` stops a tag at or below the live version.
+- **JS-only fix for iPhones:** `gh workflow run ota.yml` publishes an EAS Update to the newest native iOS release and, while it's older, the version the App Store has live. It stops if native dependencies (expo-\*, react-native-\*, config plugins) changed since that release, because those changes need a full release.
+- **Desktop catch-up after an update:** `gh workflow run release.yml -f desktop_release=1.2.4` builds only the desktop apps and publishes them as the latest release `v1.2.4`. iOS doesn't build. Versions shown drift until the next full release, which must use a later version.
+
+One-time setup for over-the-air updates:
+
+1. Run `eas login`.
+2. In `otto-mobile`, run `eas init` to create the EAS project, then put its ID in `app.json` as `expo.extra.eas.projectId`. It isn't secret. `eas init` can't edit `app.config.js` itself and will tell you to add it. You can set the repository variable `EXPO_PROJECT_ID` instead.
+3. Set the `EXPO_TOKEN` secret (expo.dev → Access tokens).
+4. Ship one full release. Only builds made after this have `expo-updates` switched on, and before then `ota.yml` skips with a warning.
+
 ## Contributing
 
 Contributions welcome. Fork, branch, PR.
