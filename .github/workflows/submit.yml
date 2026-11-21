@@ -1,0 +1,78 @@
+name: submit
+
+# Submit an iOS build that's already in TestFlight for App Store review (scripts/asc-submit.py).
+# Tag releases (ios.yml) submit themselves; this is for checking status, or retrying when that failed.
+# Store releases are for native changes; JS-only changes go out as EAS Updates (ota.yml).
+#
+#   gh workflow run submit.yml                                  # status only: versions, reviews, builds
+#   gh workflow run submit.yml -f release=latest -f whats_new="…" -f submit=true
+#
+# release=latest is the newest native/ios/<NAME+NUMBER> tag (builds that reached TestFlight).
+# replace_waiting pulls an older version that's waiting for review or in review so this one takes its place.
+#
+# Secrets: APP_STORE_CONNECT_KEY_ID, APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY.
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Build to submit (NAME+NUMBER, e.g. 1.1.0+29400000) or latest"
+        default: "latest"
+      whats_new:
+        description: "What's New text (needed when the version has none yet)"
+        default: ""
+      submit:
+        description: "Submit for review (off: only show status)"
+        type: boolean
+        default: false
+      replace_waiting:
+        description: "Pull an older version that's waiting for review or in review"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BUNDLE_ID: com.project96.otto
+      ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write the App Store Connect key
+        env:
+          ASC_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+        run: |
+          [ -n "$ASC_KEY" ] && [ -n "$ASC_KEY_ID" ] && [ -n "$ASC_ISSUER_ID" ] \
+            || { echo "::error::App Store Connect secrets aren't set."; exit 1; }
+          echo "ASC_KEY_PATH=$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8" >> "$GITHUB_ENV"
+          (umask 077; printf '%s' "$ASC_KEY" > "$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8")
+      - name: Status
+        if: ${{ !inputs.submit }}
+        run: python3 scripts/asc-submit.py status "$BUNDLE_ID" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Submit for review
+        if: ${{ inputs.submit }}
+        env:
+          RELEASE: ${{ inputs.release }}
+          WHATS_NEW: ${{ inputs.whats_new }}
+          REPLACE: ${{ inputs.replace_waiting }}
+        run: |
+          if [ "$RELEASE" = latest ]; then
+            # Newest by build number (it only grows).
+            RELEASE="$(git ls-remote --tags origin 'refs/tags/native/ios/*' \
+              | sed -nE 's#^.*refs/tags/native/ios/([0-9]+\.[0-9]+\.[0-9]+\+[0-9]+)$#\1#p' \
+              | sort -t+ -k2,2n | tail -1)"
+            [ -n "$RELEASE" ] || { echo "::error::No native/ios/* tag yet."; exit 1; }
+          fi
+          args=(submit "$BUNDLE_ID" "$RELEASE")
+          [ -n "$WHATS_NEW" ] && args+=(--whats-new "$WHATS_NEW")
+          [ "$REPLACE" = true ] && args+=(--replace-waiting)
+          python3 scripts/asc-submit.py "${args[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "${PIPESTATUS[0]}"
+      - name: Remove the key
+        if: always()
+        run: rm -f "$RUNNER_TEMP"/AuthKey_*.p8

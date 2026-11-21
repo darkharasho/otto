@@ -1,31 +1,43 @@
 name: iOS
 
-# Builds the iOS app (otto-mobile, Expo) on a `mobile-v*` tag and uploads it to App Store Connect,
-# where it shows up in TestFlight. Same flow as duel-binder and famchat: the native project is
-# generated with `expo prebuild`, archived unsigned, and signed only at export with cloud-managed
-# distribution signing. Without the App Store Connect secrets, and on pull requests, it only checks
-# that the app compiles, for the simulator, unsigned.
+# Builds the iOS app (otto-mobile, Expo) on a `v*` tag and uploads it to App Store Connect, where it
+# shows up in TestFlight. The same tag builds the desktop app (release.yml): one tag, one version
+# everywhere. Same flow as duel-binder and famchat: the native project is generated with
+# `expo prebuild`, archived unsigned, and signed only at export with cloud-managed distribution
+# signing. Without the App Store Connect secrets, and on pull requests, it only checks that the app
+# compiles, for the simulator, unsigned.
 #
-# Release: bump otto-mobile/package.json "version", then push tag mobile-v<version>. The desktop
-# release (release.yml) uses plain v* tags, so the two never trigger each other.
-# Version: the tag (mobile-v1.2.3 -> 1.2.3), else package.json. Build number: minutes since the
-# Unix epoch, so it only grows whichever run built it (App Store Connect refuses a reused one).
+# Version: the tag (v1.2.3 -> 1.2.3); a manual run takes the `version` input, else the root
+# package.json (the desktop version). otto-mobile/app.json's version isn't used for releases:
+# app.config.js reads OTTO_APP_VERSION / OTTO_BUILD_NUMBER. Build number: minutes since the Unix
+# epoch, so it only grows whichever run built it (App Store Connect refuses a reused one).
+#
+# After an upload really happened, the build is tagged native/ios/<NAME+NUMBER> (ota.yml sends EAS
+# Updates to those) and, on a tag push, submitted for App Store review (app-store-review; a failure
+# there is only a warning, submit.yml can submit later). Tags pushed with GITHUB_TOKEN start no
+# workflows.
 #
 # Secrets (App Store Connect > Users and Access > Integrations > App Store Connect API, an Admin
 # key so Xcode can create the distribution certificate and profile itself):
 #   APP_STORE_CONNECT_KEY_ID, APP_STORE_CONNECT_ISSUER_ID, APP_STORE_CONNECT_KEY (the .p8 file's
-#   text) and APPLE_TEAM_ID.
+#   text) and APPLE_TEAM_ID. Optional variable EXPO_PROJECT_ID (or expo.extra.eas.projectId in
+#   app.json): with it, builds take over-the-air updates (ota.yml); without, expo-updates is off.
 
 on:
   push:
-    tags: ['mobile-v*']
+    tags: ['v*']
   pull_request:
     paths:
       - 'otto-mobile/**'
       - 'src/shared/**'
+      - 'scripts/asc-submit.py'
+      - 'scripts/store-check.py'
       - '.github/workflows/ios.yml'
   workflow_dispatch:
     inputs:
+      version:
+        description: "App version x.y.z (default: the root package.json's)"
+        default: ""
       upload:
         description: Upload to TestFlight
         type: boolean
@@ -38,16 +50,22 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  BUNDLE_ID: com.project96.otto
+
 jobs:
   ios:
     runs-on: macos-26
     timeout-minutes: 60
+    outputs:
+      shipped: ${{ steps.shipped.outputs.version }}
     defaults:
       run:
         working-directory: otto-mobile
     env:
       WORKSPACE: ios/Otto.xcworkspace
       SCHEME: Otto
+      EXPO_PROJECT_ID: ${{ vars.EXPO_PROJECT_ID }}
     steps:
       - uses: actions/checkout@v4
 
@@ -66,18 +84,36 @@ jobs:
         run: npm test
 
       - name: Version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          pkg=$(node -p "require('./package.json').version")
-          if [[ "$GITHUB_REF" == refs/tags/mobile-v* ]]; then
-            name="${GITHUB_REF_NAME#mobile-v}"
-            [ "$name" = "$pkg" ] || echo "::warning::Tag $GITHUB_REF_NAME doesn't match package.json ($pkg); using the tag."
+          pkg=$(node -p "require('../package.json').version")
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            name="${GITHUB_REF_NAME#v}"
+          elif [ -n "$INPUT_VERSION" ]; then
+            name="${INPUT_VERSION#v}"
           else
             name="$pkg"
           fi
           [[ "$name" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Version '$name' isn't x.y.z"; exit 1; }
+          # App Store Connect refuses builds of a version at or below the one the App Store has live.
+          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+            live="$(../scripts/store-live-version.sh "$BUNDLE_ID" 2>/dev/null || true)"
+            if [ -n "$live" ] && [ "$(printf '%s\n' "$name" "$live" | sort -V | tail -1)" = "$live" ]; then
+              msg="Version $name isn't above the App Store's live version $live; App Store Connect will refuse it."
+              if [[ "$GITHUB_REF" == refs/tags/v* ]]; then echo "::error::$msg"; exit 1; fi
+              echo "::warning::$msg"
+            fi
+          fi
           number=$(( $(date +%s) / 60 ))
-          echo "VERSION=$name" >> "$GITHUB_ENV"
-          echo "BUILD_NUMBER=$number" >> "$GITHUB_ENV"
+          # app.config.js reads these, so prebuild writes them into Info.plist and Expo.plist
+          # (the version is also the EAS Update runtime version).
+          {
+            echo "VERSION=$name"
+            echo "BUILD_NUMBER=$number"
+            echo "OTTO_APP_VERSION=$name"
+            echo "OTTO_BUILD_NUMBER=$number"
+          } >> "$GITHUB_ENV"
           echo "Otto iOS $name ($number)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Generate the Xcode project
@@ -118,8 +154,8 @@ jobs:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           KEY_PATH="$RUNNER_TEMP/AuthKey_$KEY_ID.p8"
-          # Expo writes app.json's literal version and buildNumber into Info.plist,
-          # so the build settings below alone don't reach the bundle.
+          # Prebuild already wrote these via app.config.js; set them again so the bundle can't
+          # carry anything else (the build settings below alone don't reach Info.plist).
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" \
             -c "Set :CFBundleVersion $BUILD_NUMBER" ios/Otto/Info.plist
           (umask 077; printf '%s' "$KEY" > "$KEY_PATH")
@@ -157,3 +193,61 @@ jobs:
             -authenticationKeyIssuerID "$ISSUER_ID"
           rm -f "$KEY_PATH"
           echo "Uploaded $VERSION ($BUILD_NUMBER) to App Store Connect; it reaches TestFlight once processed." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Shipped
+        id: shipped
+        if: steps.secrets.outputs.sign == 'true'
+        run: echo "version=$VERSION+$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+
+  # Tags each build that reached App Store Connect as native/ios/<NAME+NUMBER>. ota.yml sends EAS
+  # Updates to the newest tagged one (and the App Store's live one), so dry runs and failed uploads
+  # are never updated. Tags pushed with GITHUB_TOKEN start no workflows.
+  native-tag:
+    needs: ios
+    if: needs.ios.outputs.shipped != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Tag the native release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE: ${{ needs.ios.outputs.shipped }}
+        run: |
+          ref="refs/tags/native/ios/$RELEASE"
+          if gh api "repos/$GITHUB_REPOSITORY/git/$ref" --silent 2>/dev/null; then
+            echo "$ref already exists"
+          else
+            gh api -X POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="$ref" -f sha="$GITHUB_SHA" --silent
+            echo "Tagged $ref" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # Tag releases go straight to App Store review once TestFlight has processed the build, pulling an
+  # older version that's waiting for review or in review: the newest build is the one worth
+  # reviewing, and EAS Updates (ota.yml also updates the App Store's live version) carry JS changes
+  # meanwhile. If submitting fails, that's a warning; submit.yml can submit the build later.
+  app-store-review:
+    needs: ios
+    if: startsWith(github.ref, 'refs/tags/v') && needs.ios.outputs.shipped != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    env:
+      ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Submit for App Store review
+        env:
+          ASC_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+          RELEASE: ${{ needs.ios.outputs.shipped }}
+        run: |
+          export ASC_KEY_PATH="$RUNNER_TEMP/AuthKey_$ASC_KEY_ID.p8"
+          (umask 077; printf '%s' "$ASC_KEY" > "$ASC_KEY_PATH")
+          if python3 scripts/asc-submit.py submit "$BUNDLE_ID" "$RELEASE" --wait 90 --replace-waiting \
+              --whats-new "Bug fixes and improvements." | tee -a "$GITHUB_STEP_SUMMARY"; [ "${PIPESTATUS[0]}" = 0 ]; then
+            echo "Submitted $RELEASE for App Store review" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::$RELEASE wasn't submitted for App Store review (see the log). Submit it later with submit.yml."
+          fi
+          rm -f "$ASC_KEY_PATH"

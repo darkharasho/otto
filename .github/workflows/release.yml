@@ -1,9 +1,31 @@
 name: Build Release Artifacts
 
+# Desktop releases (electron-builder, published to GitHub releases; electron-updater installs the
+# latest published release). A `v*` tag is a full release: this builds the desktop apps and ios.yml
+# builds the iOS app from the same tag, all numbered from the tag (v1.2.3 -> 1.2.3).
+#
+# Desktop-only release (gh workflow run release.yml -f desktop_release=1.2.4): builds only the
+# desktop apps at that version and publishes them as the latest release v1.2.4, so installed
+# desktops catch up with a JS change that phones got as an EAS Update (ota.yml), without a new
+# store build. The tag is made by publishing the release with GITHUB_TOKEN, which starts no
+# workflows, so iOS doesn't build. Refuses a version whose tag exists; the next full release takes
+# a later version.
+#
+# Release notes: the "Version v<x.y.z>" section of RELEASE_NOTES.md, if there is one.
+
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      desktop_release:
+        description: "Desktop-only release: publish Linux/Windows/macOS as latest release v<this version> (e.g. 1.2.4); iOS doesn't build"
+        required: true
+
+concurrency:
+  group: release-${{ github.ref }}-${{ inputs.desktop_release }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -15,6 +37,34 @@ env:
   ONNXRUNTIME_NODE_INSTALL_CUDA: skip
 
 jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      name: ${{ steps.v.outputs.name }}
+      tag: ${{ steps.v.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          DESKTOP_RELEASE: ${{ inputs.desktop_release }}
+        run: |
+          pkg="$(node -p "require('./package.json').version")"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            name="${GITHUB_REF_NAME#v}"
+            [ "$name" = "$pkg" ] || echo "::warning::Tag $GITHUB_REF_NAME doesn't match package.json ($pkg); building $name."
+          elif [ -n "$DESKTOP_RELEASE" ]; then
+            name="${DESKTOP_RELEASE#v}"
+            if git ls-remote --exit-code --tags origin "refs/tags/v$name" >/dev/null; then
+              echo "::error::v$name already exists; pick a later version."; exit 1
+            fi
+          else
+            echo "::error::Run on a v* tag, or with desktop_release."; exit 1
+          fi
+          [[ "$name" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Version '$name' isn't x.y.z"; exit 1; }
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "tag=v$name" >> "$GITHUB_OUTPUT"
+          echo "Otto desktop $name" >> "$GITHUB_STEP_SUMMARY"
+
   test:
     runs-on: ubuntu-latest
     steps:
@@ -48,22 +98,25 @@ jobs:
         run: pnpm test
 
   prepare-release:
-    needs: [test]
+    needs: [version, test]
     runs-on: ubuntu-latest
     steps:
+      # electron-builder uploads to the draft release named after package.json's version. A
+      # desktop-only release has no tag yet: publishing the draft creates it at this commit.
       - name: Create draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
         run: |
-          tag="${GITHUB_REF#refs/tags/}"
-          existing=$(gh release view "$tag" --repo ${{ github.repository }} --json isDraft --jq '.isDraft' 2>/dev/null || echo "none")
+          existing=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' 2>/dev/null || echo "none")
           if [ "$existing" = "false" ]; then
-            gh release delete "$tag" --repo ${{ github.repository }} --yes
+            gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes
           fi
-          gh release create "$tag" --draft --title "$tag" --notes "" --repo ${{ github.repository }} 2>/dev/null || true
+          gh release create "$TAG" --draft --title "$TAG" --notes "" --target "$GITHUB_SHA" \
+            --repo "$GITHUB_REPOSITORY" 2>/dev/null || true
 
   build:
-    needs: [prepare-release]
+    needs: [version, prepare-release]
     strategy:
       fail-fast: false
       matrix:
@@ -103,10 +156,24 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # The artifacts, latest*.yml and the release electron-builder uploads to all take
+      # package.json's version, so make it the release's.
+      - name: Set the version
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.name }}
+        run: |
+          node -e '
+            const fs = require("fs");
+            const p = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            p.version = process.env.VERSION;
+            fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");'
+          echo "Building Otto $VERSION"
+
       - name: Build native addon (macOS only)
         if: matrix.platform == 'mac'
         run: |
-          cd src/native && npx node-gyp rebuild --target=$(node -e "console.log(require('electron/package.json').version)") --arch=arm64 --dist-url=https://electronjs.org/headers
+          cd src/native && npx node-gyp rebuild --target="$(node -e "console.log(require('electron/package.json').version)")" --arch=arm64 --dist-url=https://electronjs.org/headers
           mkdir -p ../../native
           cp build/Release/darwin_shortcut.node ../../native/
         # arm64 binary — x64 gets Rosetta translation. For true universal,
@@ -125,7 +192,7 @@ jobs:
         run: |
           git clone --depth 1 --branch v1.7.5 https://github.com/ggml-org/whisper.cpp /tmp/whisper-build
           cmake -S /tmp/whisper-build -B /tmp/whisper-build/build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF
-          cmake --build /tmp/whisper-build/build -j$(nproc) --target whisper-server
+          cmake --build /tmp/whisper-build/build -j"$(nproc)" --target whisper-server
           mkdir -p resources/voice
           cp /tmp/whisper-build/build/bin/whisper-server resources/voice/whisper-server
 
@@ -177,8 +244,10 @@ jobs:
           }
 
   publish:
-    needs: [build]
+    needs: [version, build]
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ needs.version.outputs.tag }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -187,22 +256,23 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          tag="${GITHUB_REF#refs/tags/}"
           if [ -f RELEASE_NOTES.md ]; then
-            awk -v ver="$tag" '
+            awk -v ver="$TAG" '
               /^Version v[0-9]/ { capture = ($2 == ver) ? 1 : 0; next }
               capture { print }
             ' RELEASE_NOTES.md > /tmp/release-notes-section.md
             if [ -s /tmp/release-notes-section.md ]; then
-              gh release edit "$tag" --notes-file /tmp/release-notes-section.md
+              gh release edit "$TAG" --notes-file /tmp/release-notes-section.md
             fi
             # If the tag has no matching section, leave release notes empty
             # rather than dumping the entire RELEASE_NOTES.md file.
           fi
 
+      # Published and latest: electron-updater offers it to installed desktops. For a desktop-only
+      # release this creates the tag (with GITHUB_TOKEN, so no workflow starts).
       - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          tag="${GITHUB_REF#refs/tags/}"
-          gh release edit "$tag" --draft=false
+          gh release edit "$TAG" --draft=false --latest
+          echo "Published $TAG" >> "$GITHUB_STEP_SUMMARY"
