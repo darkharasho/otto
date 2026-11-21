@@ -68,6 +68,7 @@ Grab the latest release for your platform:
 - **Linux** — [AppImage / deb](https://github.com/darkharasho/otto/releases/latest)
 - **Windows** — [Installer](https://github.com/darkharasho/otto/releases/latest) (signed; older unsigned releases need "More info → Run anyway" on SmartScreen)
 - **macOS** — [DMG (Intel + Apple Silicon)](https://github.com/darkharasho/otto/releases/latest) (signed + notarized)
+- **iPhone** — [Otto Remote on the App Store](https://apps.apple.com/us/app/otto-remote/id6774922610) (companion app for controlling Otto on your computer)
 
 ### Prerequisites
 
